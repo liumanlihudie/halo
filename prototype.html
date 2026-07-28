@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Halo · 个人 AI 通讯</title>
+  <style>
+    :root{
+      --ink:#171923;--muted:#8b909a;--line:#e9ebef;--soft:#f4f5f7;--paper:#fff;
+      --accent:#5668d8;--accent-deep:#3f50b7;--accent-soft:#eef0ff;
+      --green:#2e9d72;--amber:#cf8a2e;--red:#e75b62;--navy:#28314e;
+      --shadow:0 28px 90px rgba(27,32,50,.25)
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Helvetica Neue",sans-serif;color:var(--ink)}
+    body{background:radial-gradient(circle at 14% 6%,#eef0ff 0,transparent 29%),linear-gradient(135deg,#f8f9fb,#e8ecf3)}
+    button,input{font:inherit}
+    button{color:inherit}
+    .workspace{min-height:100vh;display:grid;grid-template-columns:276px minmax(430px,1fr) 276px}
+    .rail,.guide{height:100vh;position:sticky;top:0;overflow:auto;padding:26px 20px;background:rgba(255,255,255,.82);backdrop-filter:blur(22px)}
+    .rail{border-right:1px solid #dde1e9}.guide{border-left:1px solid #dde1e9}
+    .brand{display:flex;align-items:center;gap:11px;margin-bottom:22px}
+    .brand-mark{width:42px;height:42px;border-radius:14px;background:linear-gradient(145deg,var(--accent),#7d89e7);display:grid;place-items:center;color:#fff;font-weight:850;box-shadow:0 9px 22px rgba(86,104,216,.3)}
+    .brand h1{font-size:17px;margin:0 0 2px}.brand p{font-size:11px;color:var(--muted);margin:0}
+    .rail-label{font-size:10px;font-weight:800;letter-spacing:.1em;color:#a0a5ae;margin:18px 10px 7px}
+    .rail button{width:100%;border:0;background:transparent;border-radius:12px;padding:10px 11px;margin:2px 0;display:flex;align-items:center;gap:10px;text-align:left;color:#596172;cursor:pointer}
+    .rail button:hover{background:#f1f2f6}.rail button.active{background:var(--accent-soft);color:var(--accent-deep);font-weight:750}
+    .rail-icon{width:28px;height:28px;border-radius:9px;background:#eef0f4;display:grid;place-items:center;font-size:13px}.active .rail-icon{background:#fff}
+    .stage{min-height:100vh;display:grid;place-items:center;padding:28px}
+    .phone{width:393px;height:852px;border:9px solid #161a23;border-radius:52px;background:#fff;position:relative;overflow:hidden;box-shadow:var(--shadow)}
+    .island{position:absolute;z-index:120;top:9px;left:50%;transform:translateX(-50%);width:118px;height:30px;border-radius:18px;background:#0e1118}
+    .page{position:absolute;inset:0;display:none;flex-direction:column;background:#fff;overflow:hidden}.page.active{display:flex}
+    .status{height:48px;flex:0 0 48px;padding:13px 22px 0;display:flex;justify-content:space-between;font-size:12px;font-weight:750;position:relative;z-index:5}
+    .navbar{height:53px;flex:0 0 53px;padding:3px 15px 9px;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.96);position:relative;z-index:5}
+    .navbar h2{font-size:22px;margin:0}.navbar.compact h2{font-size:16px}.nav-actions{display:flex;gap:8px}
+    .icon{width:35px;height:35px;border:0;border-radius:11px;background:#f1f2f5;display:grid;place-items:center;cursor:pointer;font-size:17px}
+    .icon.primary{background:var(--accent);color:#fff}.back{border:0;background:none;font-size:28px;padding:0 8px 0 0;cursor:pointer}
+    .body{flex:1;overflow-y:auto;padding:5px 15px 92px}.soft-body{background:var(--soft)}
+    .search{height:38px;border-radius:10px;background:#f1f2f5;color:#9ca1aa;display:flex;align-items:center;justify-content:center;font-size:13px;margin:2px 0 8px;cursor:pointer}
+    .tabs{position:absolute;z-index:25;bottom:0;left:0;right:0;height:80px;padding:7px 5px 20px;border-top:1px solid #e5e7eb;background:rgba(255,255,255,.96);display:grid;grid-template-columns:repeat(4,1fr);backdrop-filter:blur(18px)}
+    .tabs button{border:0;background:none;color:#999da6;font-size:10px;cursor:pointer}.tabs button b{display:block;font-size:21px;line-height:22px;margin-bottom:4px;font-weight:500}.tabs button.active{color:var(--accent-deep);font-weight:750}
+    .conversation{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer}
+    .avatar{width:50px;height:50px;flex:0 0 50px;border-radius:13px;object-fit:cover;background:#e7e9ee}
+    .avatar.letter{display:grid;place-items:center;font-weight:800;color:#fff;background:linear-gradient(145deg,#596bd9,#303d89)}
+    .conv-main{flex:1;min-width:0}.conv-line{display:flex;align-items:center;justify-content:space-between;margin:2px 0 6px}.conv-line b{font-size:15px}.conv-time{font-size:10px;color:#a4a8b0}
+    .conv-preview{font-size:12px;color:#8a909a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.preview-sender{color:#626a79}.meta-row{display:flex;align-items:center;justify-content:space-between}
+    .unread{min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent);color:#fff;display:grid;place-items:center;font-size:9px;margin-left:7px}.muted{color:#b5b9c1;font-size:10px}
+    .group-avatar{width:50px;height:50px;flex:0 0 50px;border-radius:13px;background:#e9ebf0;display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:3px}.group-avatar img,.group-avatar i{width:20px;height:20px;border-radius:6px;object-fit:cover}.group-avatar i{display:grid;place-items:center;background:#6673c5;color:#fff;font-style:normal;font-size:8px}
+    .tag{display:inline-flex;align-items:center;height:17px;border-radius:5px;padding:0 5px;background:var(--accent-soft);color:var(--accent-deep);font-size:8px;font-weight:750;margin-left:4px;vertical-align:2px}.tag.green{background:#e9f6f1;color:#23825d}.tag.amber{background:#fff3e3;color:#b67320}.tag.red{background:#ffedef;color:#c9444b}.tag.gray{background:#f0f1f4;color:#7b808a}
+    .section-label{font-size:10px;color:#999ea7;font-weight:750;margin:15px 1px 5px}.list-card{background:#fff;border-radius:14px;overflow:hidden;margin:8px 0}
+    .chat-scroll{flex:1;overflow-y:auto;background:#f1f2f5;padding:12px 12px 112px;scroll-behavior:smooth}.timestamp{text-align:center;color:#a1a6af;font-size:10px;margin:5px 0 13px}
+    .msg{display:flex;align-items:flex-start;gap:8px;margin:11px 0}.msg.mine{justify-content:flex-end}.msg .avatar{width:36px;height:36px;flex-basis:36px;border-radius:9px}.speaker{font-size:9px;color:#8e949f;margin:0 0 4px 2px}
+    .bubble{max-width:274px;padding:10px 12px;border-radius:5px 14px 14px;background:#fff;font-size:13px;line-height:1.55;box-shadow:0 1px 2px rgba(0,0,0,.03)}.mine .bubble{background:var(--accent);color:#fff;border-radius:14px 5px 14px 14px}
+    .quote{border-left:2px solid #d4d7df;padding-left:8px;margin-bottom:7px;color:#858b95;font-size:11px}.mine .quote{border-color:#ffffff77;color:#ffffffc9}
+    .system-msg{text-align:center;margin:12px auto;max-width:300px;color:#8b919b;font-size:10px;background:#e5e7eb;border-radius:9px;padding:6px 9px}
+    .file-card,.progress-card,.result-card,.data-card{width:276px;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 3px 14px rgba(35,42,62,.08);cursor:pointer}
+    .file-top{padding:13px;display:flex;gap:11px}.file-icon{width:43px;height:51px;border-radius:7px;background:#e76557;color:#fff;display:grid;place-items:center;font-size:10px;font-weight:850}.file-top b{font-size:13px;display:block;margin:4px 0}.file-top small{color:#969ba4}.file-foot{padding:8px 13px;border-top:1px solid var(--line);font-size:10px;color:#9298a2;display:flex;justify-content:space-between}
+    .progress-card{padding:13px}.progress-head{display:flex;justify-content:space-between;font-size:12px}.bar{height:6px;border-radius:4px;background:#e7e9ee;margin:11px 0 8px;overflow:hidden}.bar i{display:block;height:100%;width:68%;background:var(--accent);border-radius:inherit}.progress-card small{color:#8f949d}
+    .photo-message{width:225px;height:150px;border-radius:14px;object-fit:cover;display:block}
+    .composer-wrap{position:absolute;z-index:27;bottom:0;left:0;right:0;background:#f8f8fa;border-top:1px solid #dfe2e8}
+    .mode-hint{min-height:29px;padding:7px 11px 4px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:#6f7684}.mode-hint b{color:var(--accent-deep)}.mode-hint button{border:0;background:none;color:var(--accent-deep);font-size:10px;cursor:pointer}
+    .composer{padding:4px 8px 21px;display:flex;align-items:center;gap:7px}.field{flex:1;min-height:39px;max-height:72px;overflow:auto;background:#fff;border-radius:9px;padding:10px;font-size:13px;color:#444a56;outline:none}.field:empty:before{content:attr(data-placeholder);color:#adb1b9}
+    .quick-actions{display:flex;gap:6px;padding:0 9px 7px;overflow-x:auto}.quick-actions button{white-space:nowrap;border:0;border-radius:13px;padding:6px 9px;background:#fff;color:#606878;font-size:10px;cursor:pointer}.quick-actions button.active{background:var(--accent);color:#fff}
+    .discussion-progress{margin:0 12px 8px;background:#fff;border:1px solid #e2e4ea;border-radius:12px;padding:9px 10px;display:none}.discussion-progress.show{display:block}.discussion-line{display:flex;align-items:center;justify-content:space-between;font-size:10px}.phases{display:flex;gap:4px;margin-top:7px}.phase{height:4px;flex:1;border-radius:3px;background:#e4e6eb}.phase.done,.phase.current{background:var(--accent)}.stop-btn{border:0;background:#ffedef;color:#c9444b;border-radius:9px;padding:5px 8px;font-size:9px}
+    .summary-card{width:280px;border-radius:15px;background:#fff;box-shadow:0 4px 18px rgba(30,38,58,.1);overflow:hidden}.summary-head{padding:13px;background:linear-gradient(135deg,#303a65,#6675d1);color:#fff}.summary-head small{font-size:9px;color:#ffffffb8}.summary-head b{display:block;font-size:15px;margin-top:5px}.summary-body{padding:12px;font-size:11px;line-height:1.6;color:#555d6c}.summary-actions{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}.summary-actions button{border:0;background:#fff;padding:10px;color:var(--accent-deep);font-size:10px;cursor:pointer}.summary-actions button+button{border-left:1px solid var(--line)}
+    .member-strip{display:flex;gap:12px;overflow-x:auto;padding:10px 15px 13px;background:#fff;border-bottom:1px solid var(--line)}.member{text-align:center;min-width:51px;font-size:9px;color:#7e8490}.member .avatar{width:43px;height:43px;display:block;margin:0 auto 5px;border-radius:12px}.member.add .avatar{display:grid;place-items:center;border:1px dashed #b7bbc4;background:#fafafa;font-size:22px;color:#8e949f}
+    .setting-group{margin:0 13px 12px;border-radius:14px;background:#fff;overflow:hidden}.setting-row{min-height:52px;padding:0 13px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}.setting-row:last-child{border:0}.setting-row>span:first-child{flex:1}.setting-row small{color:#979ca6}.row-icon{width:30px;height:30px;border-radius:9px;background:var(--accent-soft);color:var(--accent-deep);display:grid;place-items:center;font-size:13px}
+    .switch{width:43px;height:25px;border-radius:14px;background:var(--accent);padding:3px;cursor:pointer}.switch:after{content:"";display:block;width:19px;height:19px;border-radius:50%;background:#fff;margin-left:18px;box-shadow:0 1px 3px #0003;transition:.2s}.switch.off{background:#cdd1d9}.switch.off:after{margin-left:0}
+    .contact{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer}.contact .avatar{width:46px;height:46px;flex-basis:46px}.contact-main{flex:1}.contact b{font-size:14px}.contact p{font-size:10px;color:#9196a0;margin:4px 0 0}.presence{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-left:5px}.presence.busy{background:var(--amber)}
+    .market-entry{margin:9px 0 14px;padding:14px;border-radius:15px;background:linear-gradient(135deg,#29334f,#6676d3);color:#fff;display:flex;align-items:center;gap:12px;cursor:pointer;box-shadow:0 10px 25px rgba(86,104,216,.25)}.market-entry-icon{width:48px;height:48px;border-radius:14px;background:#ffffff20;display:grid;place-items:center;font-size:22px}.market-entry div:nth-child(2){flex:1}.market-entry b{display:block;font-size:15px;margin-bottom:4px}.market-entry small{font-size:10px;color:#ffffffbd}
+    .market-body{flex:1;overflow-y:auto;padding:5px 14px 30px;background:var(--soft)}.market-hero{height:140px;border-radius:17px;padding:20px;color:#fff;background:radial-gradient(circle at 85% 10%,#ffffff32,transparent 35%),linear-gradient(135deg,#25304d,#6978d6);position:relative;overflow:hidden}.market-hero:after{content:"AI";position:absolute;right:14px;bottom:-28px;font-size:96px;font-weight:900;color:#ffffff12}.market-hero small{font-size:9px;color:#ffffffb8}.market-hero h2{font-size:22px;line-height:1.25;margin:7px 0}.market-hero p{font-size:11px;margin:0;color:#ffffffd1}
+    .chips{display:flex;gap:7px;overflow:auto;margin:10px 0}.chip{white-space:nowrap;border:0;border-radius:14px;background:#fff;color:#6d7481;padding:7px 11px;font-size:10px;cursor:pointer}.chip.active{background:var(--accent);color:#fff}
+    .market-title{display:flex;align-items:end;justify-content:space-between;margin:15px 2px 8px}.market-title b{font-size:15px}.market-title span{font-size:10px;color:#9297a0}
+    .agent-card{background:#fff;border-radius:15px;padding:12px;margin-bottom:9px;display:flex;gap:11px;box-shadow:0 2px 10px rgba(40,48,71,.05);cursor:pointer}.agent-card .avatar{width:54px;height:54px;flex-basis:54px;border-radius:14px}.agent-card-main{flex:1;min-width:0}.agent-card-head{display:flex;justify-content:space-between;align-items:center}.agent-card-head b{font-size:14px}.rating{font-size:9px;color:#c68126}.agent-card p{font-size:10px;line-height:1.45;color:#828893;margin:5px 0}.mini-tags{display:flex;gap:5px;flex-wrap:wrap}.mini-tags span{font-size:8px;padding:3px 5px;border-radius:5px;background:#f0f1f5;color:#747b89}
+    .profile-hero{height:205px;background:linear-gradient(#0000,#0009),url("https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=900&q=80") center/cover;position:relative;color:#fff}.profile-hero .avatar{position:absolute;left:20px;bottom:18px;width:76px;height:76px;border-radius:19px;border:3px solid #fff}.profile-name{position:absolute;left:108px;bottom:23px}.profile-name h2{font-size:20px;margin:0 0 4px}.profile-name small{font-size:10px;color:#ffffffca}
+    .profile-copy{padding:15px 16px;background:#fff}.profile-copy p{font-size:12px;line-height:1.65;color:#5c6471}.ability-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ability{padding:10px;border-radius:10px;background:#f3f4f7;font-size:10px;color:#626977}.ability b{display:block;font-size:11px;color:#293144;margin-bottom:3px}
+    .bottom-bar{position:absolute;z-index:28;bottom:0;left:0;right:0;padding:10px 14px 21px;background:#fff;border-top:1px solid var(--line);display:flex;gap:8px}.bottom-bar button{height:44px;border-radius:12px;font-weight:750;cursor:pointer}.secondary{width:96px;border:1px solid #dfe2e8;background:#fff}.primary{flex:1;border:0;background:var(--accent);color:#fff}.primary.done{background:#e5e7ec;color:#777d88}
+    .moments{background:#fff}.moments .status,.moments>.navbar{position:absolute;left:0;right:0;background:transparent;color:#fff;text-shadow:0 1px 4px #0009}.moments>.navbar{top:48px}.moments-scroll{flex:1;overflow-y:auto;padding-bottom:80px}
+    .moment-cover{height:290px;background:linear-gradient(#0000 42%,#0009),url("https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1000&q=80") center/cover;position:relative}.cover-title{position:absolute;right:95px;bottom:24px;color:#fff;font-size:15px;font-weight:750}.cover-avatar{position:absolute;right:18px;bottom:-27px;width:70px;height:70px;border-radius:11px;border:3px solid #fff;object-fit:cover}.feed-space{height:38px}
+    .post{display:flex;gap:10px;padding:15px 14px;border-bottom:1px solid #e5e7eb;cursor:pointer}.post>.avatar{width:43px;height:43px;flex-basis:43px;border-radius:9px}.post-main{flex:1;min-width:0}.post-name{font-size:14px;font-weight:750;color:#56658e;margin:1px 0 5px}.post-title{font-size:14px;line-height:1.45;font-weight:700;margin-bottom:5px}.post-text{font-size:13px;line-height:1.55;color:#333741;margin-bottom:8px}.post-meta{display:flex;align-items:center;justify-content:space-between;margin-top:9px;font-size:10px;color:#a0a4ad}.more{width:31px;height:20px;border:0;border-radius:4px;background:#f0f1f4;color:#596382;cursor:pointer}
+    .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;width:238px}.photo-grid img{width:100%;aspect-ratio:1;object-fit:cover}.result-link{display:flex;align-items:center;gap:9px;background:#f1f2f4;padding:8px;margin-top:7px;cursor:pointer}.result-thumb{width:42px;height:42px;border-radius:6px;background:linear-gradient(145deg,#2d3652,#6f7da6);color:#fff;display:grid;place-items:center;font-size:9px}.result-link div:last-child{font-size:10px;line-height:1.45}.result-link b{display:block;font-size:12px}.cowork{margin-top:7px;background:#f1f2f4;border-radius:5px;padding:7px 9px;font-size:10px;line-height:1.55;color:#66708b}.cowork b{color:#53618a}.privacy{font-size:9px;color:#8b919a;margin-top:6px}
+    .mini-chart{height:82px;padding:10px;background:#f0f2ff;border-radius:7px;display:flex;gap:7px;align-items:end}.mini-chart i{flex:1;background:var(--accent);border-radius:4px 4px 0 0}.mini-chart i:nth-child(1){height:28%}.mini-chart i:nth-child(2){height:46%}.mini-chart i:nth-child(3){height:40%}.mini-chart i:nth-child(4){height:73%}.mini-chart i:nth-child(5){height:88%}
+    .detail-body{padding:9px 18px 96px;overflow:auto}.detail-body h1{font-size:23px;line-height:1.35;margin:13px 0 8px}.detail-meta{font-size:11px;color:#969ba5;margin-bottom:17px}.detail-body p{font-size:13px;line-height:1.75;color:#3e4451}.callout{padding:12px 13px;background:#f0f2ff;border-left:3px solid var(--accent);border-radius:0 9px 9px 0;font-size:13px;line-height:1.6}
+    .voice{background:radial-gradient(circle at 50% 26%,#4b587d,#111724 66%);color:#fff}.voice .status,.voice .navbar{background:transparent;color:#fff}.voice-person{text-align:center;padding-top:38px}.voice-person .avatar{width:136px;height:136px;border-radius:40px;box-shadow:0 25px 60px #0006}.voice-person h2{font-size:24px;margin:20px 0 6px}.voice-person p{font-size:12px;color:#ffffffa5}.wave{height:60px;display:flex;gap:5px;justify-content:center;align-items:center;margin-top:25px}.wave i{display:block;width:4px;border-radius:3px;background:#fff}.wave i:nth-child(odd){height:18px}.wave i:nth-child(2),.wave i:nth-child(6){height:32px}.wave i:nth-child(4){height:50px}.call-controls{margin-top:auto;padding:0 25px 42px;display:flex;justify-content:space-between}.call-btn{text-align:center;font-size:10px;color:#ffffffaa;cursor:pointer}.call-btn i{width:58px;height:58px;border-radius:50%;background:#ffffff1c;display:grid;place-items:center;margin-bottom:7px;font-size:20px;font-style:normal}.call-btn.end i{background:var(--red);color:#fff}
+    .video{background:#11151e;color:#fff}.video-bg{position:absolute;inset:0;background:linear-gradient(#0001,#0009),url("https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=900&q=78") center/cover;filter:saturate(.72)}.video-person{position:absolute;left:50%;top:152px;transform:translateX(-50%);width:190px;height:260px;border-radius:95px 95px 40px 40px;background:url("https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=500&q=82") center/cover;box-shadow:0 30px 70px #0008}.video-top{position:absolute;top:58px;left:18px;right:18px;display:flex;justify-content:space-between}.live{padding:7px 10px;border-radius:10px;background:#0006;font-size:10px}.self-view{width:78px;height:106px;border-radius:12px;background:url("https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=180&q=75") center/cover;border:1px solid #ffffff55}.caption{position:absolute;bottom:137px;left:26px;right:26px;text-align:center;font-size:13px;line-height:1.5;text-shadow:0 2px 5px #000}.video-controls{position:absolute;bottom:47px;left:38px;right:38px;display:flex;justify-content:space-between}.round{width:49px;height:49px;border-radius:50%;background:#ffffff25;display:grid;place-items:center;cursor:pointer}.round.end{background:var(--red)}
+    .overlay{position:absolute;z-index:100;inset:0;background:#12172266;display:none;align-items:flex-end;backdrop-filter:blur(3px)}.overlay.show{display:flex}.sheet{width:100%;max-height:78%;overflow:auto;background:#fff;border-radius:23px 23px 0 0;padding:13px 16px 28px;box-shadow:0 -20px 55px #11182733}.handle{width:38px;height:4px;border-radius:2px;background:#d2d5dc;margin:0 auto 15px}.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}.sheet-head h3{font-size:17px;margin:0}.sheet-close{width:31px;height:31px;border:0;border-radius:50%;background:#f0f1f4;color:#656b77}.sheet-option{display:flex;align-items:center;gap:11px;min-height:54px;border-bottom:1px solid var(--line);font-size:13px;cursor:pointer}.sheet-option .avatar{width:36px;height:36px;flex-basis:36px;border-radius:10px}.sheet-option span{flex:1}.sheet-option small{color:#989da6}.sheet-primary{width:100%;height:44px;border:0;border-radius:12px;background:var(--accent);color:#fff;font-weight:750;margin-top:14px;cursor:pointer}
+    .toast{position:absolute;z-index:140;left:50%;bottom:103px;transform:translateX(-50%) translateY(20px);opacity:0;background:#202633eb;color:#fff;padding:10px 14px;border-radius:11px;font-size:11px;white-space:nowrap;transition:.24s}.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    .guide h2{font-size:18px;margin:4px 0 8px}.guide>p{font-size:12px;line-height:1.6;color:#737a88}.guide-card{background:#f5f6f9;border:1px solid #e5e7ee;border-radius:14px;padding:13px;margin:12px 0}.guide-card h3{font-size:12px;margin:0 0 8px}.guide-card ul{margin:0;padding-left:17px;color:#6d7482;font-size:11px;line-height:1.75}.legend{display:flex;flex-wrap:wrap;gap:6px}.legend span{font-size:9px;padding:5px 7px;border-radius:7px;background:#fff;border:1px solid #e0e3ea}.hint{font-size:10px;line-height:1.6;color:#8d939d;margin:16px 3px}
+    [data-go],[data-action],.switch,.chip,.post,.conversation,.contact,.agent-card,.setting-row,.result-link{cursor:pointer}
+    button:active,[data-go]:active,[data-action]:active,.conversation:active,.contact:active,.agent-card:active{transform:scale(.98)}
+    @media(max-width:980px){.workspace{grid-template-columns:220px 1fr}.guide{display:none}}
+    @media(max-width:690px){body{background:#11151e}.workspace{display:block}.rail,.guide{display:none}.stage{padding:0;min-height:100dvh}.phone{width:100%;height:100dvh;border:0;border-radius:0;box-shadow:none}.island{top:8px}}
+  </style>
+</head>
+<body>
+<div class="workspace">
+  <aside class="rail">
+    <div class="brand"><div class="brand-mark">H</div><div><h1>Halo</h1><p>个人 AI 通讯 · Prototype</p></div></div>
+    <div class="rail-label">主页面</div>
+    <button class="active" data-go="conversations"><span class="rail-icon">◫</span>对话</button>
+    <button data-go="contacts"><span class="rail-icon">◎</span>通讯录</button>
+    <button data-go="moments"><span class="rail-icon">▤</span>AI 朋友圈</button>
+    <button data-go="settings"><span class="rail-icon">⚙</span>设置</button>
+    <div class="rail-label">文字群聊</div>
+    <button data-open-group="product"><span class="rail-icon">产</span>iOS 产品小组</button>
+    <button data-open-group="research"><span class="rail-icon">研</span>本周信息研判</button>
+    <button data-open-group="content"><span class="rail-icon">文</span>内容发布团队</button>
+    <div class="rail-label">次级页面</div>
+    <button data-go="new-group"><span class="rail-icon">＋</span>创建群聊</button>
+    <button data-go="market"><span class="rail-icon">✦</span>AI 市场</button>
+    <button data-go="chat"><span class="rail-icon">1</span>单 Agent 对话</button>
+  </aside>
+
+  <main class="stage">
+    <div class="phone" id="phone">
+      <div class="island"></div>
+
+      <section class="page active" id="conversations">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar"><h2>对话</h2><div class="nav-actions"><button class="icon" data-action="search">⌕</button><button class="icon" data-action="new-menu">＋</button></div></div>
+        <div class="body">
+          <div class="search" data-action="search">⌕　搜索联系人、群聊、文件和来源</div>
+          <div class="conversation" data-open-group="product">
+            <div class="group-avatar"><img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=80&q=75"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=80&q=75"><img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=80&q=75"><i>UX</i></div>
+            <div class="conv-main"><div class="conv-line"><b>iOS 产品小组 <span class="tag">4 AI</span></b><span class="conv-time">10:36</span></div><div class="meta-row"><div class="conv-preview"><span class="preview-sender">产品经理：</span>我先把 MVP 范围压缩成三条。</div><span class="unread">5</span></div></div>
+          </div>
+          <div class="conversation" data-go="chat">
+            <img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80">
+            <div class="conv-main"><div class="conv-line"><b>通用助理 <span class="tag green">可用</span></b><span class="conv-time">10:21</span></div><div class="conv-preview">PDF · 个人 AI 通讯竞品分析已完成</div></div>
+          </div>
+          <div class="conversation" data-open-group="research">
+            <div class="group-avatar"><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=80&q=75"><img src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=80&q=75"><img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=80&q=75"><i>+</i></div>
+            <div class="conv-main"><div class="conv-line"><b>本周信息研判 <span class="tag">3 AI</span></b><span class="conv-time">09:48</span></div><div class="meta-row"><div class="conv-preview"><span class="preview-sender">研究员：</span>数据来源已交叉核验。</div><span class="unread">2</span></div></div>
+          </div>
+          <div class="conversation" data-open-group="content">
+            <div class="group-avatar"><img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=80&q=75"><img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=80&q=75"><i>图</i><i>核</i></div>
+            <div class="conv-main"><div class="conv-line"><b>内容发布团队 <span class="tag">3 AI</span></b><span class="conv-time">昨天</span></div><div class="conv-preview">图片 · 封面方向 B 已经生成，可以确认。</div></div>
+          </div>
+          <div class="conversation" data-action="progress-detail">
+            <div class="avatar letter">研</div><div class="conv-main"><div class="conv-line"><b>深度研究任务 <span class="tag amber">任务进行中</span></b><span class="conv-time">12 分钟</span></div><div class="conv-preview">正在读取 23 个来源 · 68%</div></div>
+          </div>
+          <div class="conversation" data-action="retry">
+            <div class="avatar letter" style="background:linear-gradient(145deg,#cf5961,#8f3239)">!</div><div class="conv-main"><div class="conv-line"><b>文件处理 <span class="tag red">发送失败</span></b><span class="conv-time">昨天</span></div><div class="conv-preview">预算表.xlsx 上传失败，点击重试</div></div>
+          </div>
+          <div class="conversation" data-action="image-preview">
+            <img class="avatar" src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=120&q=75"><div class="conv-main"><div class="conv-line"><b>数据分析师 <span class="tag gray">免打扰</span></b><span class="conv-time">周一</span></div><div class="conv-preview">图片 · 本周转化漏斗标注版</div></div>
+          </div>
+          <span style="display:none">未读</span>
+        </div>
+        <div class="tabs" data-tab="conversations"></div>
+      </section>
+
+      <section class="page" id="chat">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><button class="back" data-go="conversations">‹</button><h2>通用助理 <span class="tag green">可用</span></h2><div class="nav-actions"><button class="icon" data-go="voice">♬</button><button class="icon" data-go="video">▣</button></div></div>
+        <div class="chat-scroll" id="singleChat">
+          <div class="timestamp">今天 10:02</div>
+          <div class="msg mine"><div class="bubble">结合我刚发的材料，整理一版面向投资人的竞品分析。</div></div>
+          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div><div class="speaker">通用助理 · Doubao S2S</div><div class="bubble">收到。我先让研究员核验关键数据，再整理成市场格局、差异化和风险三部分。</div></div></div>
+          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div class="progress-card" data-action="progress-detail"><div class="progress-head"><b>任务进行中</b><span>68%</span></div><div class="bar"><i></i></div><small>已核验 16 / 23 个来源</small></div></div>
+          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div class="file-card" data-go="moment-detail"><div class="file-top"><div class="file-icon">PDF</div><div><b>个人 AI 通讯竞品分析.pdf</b><small>12 页 · 2.4 MB · 已完成</small></div></div><div class="file-foot"><span>8 个来源</span><span>已总结至朋友圈</span></div></div></div>
+          <div class="msg mine"><img class="photo-message" src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80" alt="数据看板图片"></div>
+        </div>
+        <div class="composer-wrap"><div class="composer"><button class="icon" data-action="voice-input">◉</button><div class="field" id="singleInput" contenteditable="true" data-placeholder="输入消息"></div><button class="icon" data-action="attach">＋</button></div></div>
+      </section>
+
+      <section class="page" id="group-chat">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><button class="back" data-go="conversations">‹</button><h2 id="groupTitle">iOS 产品小组 <span class="tag">4 AI</span></h2><div class="nav-actions"><button class="icon" data-action="group-search">⌕</button><button class="icon" data-go="group-info">•••</button></div></div>
+        <div class="chat-scroll" id="groupChatLog">
+          <div class="timestamp">今天 10:12</div>
+          <div class="system-msg">群目标：判断个人 AI 通讯产品的 iOS MVP 是否值得做</div>
+          <div class="msg mine"><div class="bubble">先从用户价值、实现难度和商业化三个角度判断一下。</div></div>
+          <div class="system-msg">自动选择了 产品经理、技术架构师</div>
+          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75"><div><div class="speaker">产品经理 · Claude Sonnet</div><div class="bubble">用户价值是成立的，但首版必须把“联系人就是能力”做透。建议只验证高频工作与资讯场景。</div></div></div>
+          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75"><div><div class="speaker">技术架构师 · GPT</div><div class="bubble"><div class="quote">产品经理：首版只验证高频工作与资讯</div>工程上可行。最大的风险不是 UI，而是消息可靠性、模型编排和长期记忆边界。</div></div></div>
+          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div class="summary-card"><div class="summary-head"><small>群聊阶段总结</small><b>先验证个人工作通讯闭环</b></div><div class="summary-body">首版聚焦文字对话、可控群聊、Agent 市场和结果沉淀。语音仅保留一对一，群聊不做通话。</div><div class="summary-actions"><button data-action="save-summary">保存总结</button><button data-action="publish-summary">发布到朋友圈</button></div></div></div>
+          <span style="display:none">自动选择 1–2 个合适的 Agent @某个 Agent @所有人 我不同意 生成总结</span>
+        </div>
+        <div class="composer-wrap">
+          <div class="discussion-progress" id="discussionProgress"><div class="discussion-line"><span id="discussionLabel">观点收集</span><button class="stop-btn" data-action="stop-discussion">停止讨论</button></div><div class="phases"><i class="phase" id="phase1"></i><i class="phase" id="phase2"></i><i class="phase" id="phase3"></i></div></div>
+          <div class="mode-hint"><span>当前：<b id="modeHint">自动选择 1–2 个合适的 Agent</b></span><button data-action="mode-help">如何选择？</button></div>
+          <div class="quick-actions"><button class="active" data-mode="auto">自动选择</button><button data-mode="mention">@某个 Agent</button><button data-mode="all">@所有人</button><button data-action="discuss">让大家讨论</button></div>
+          <div class="composer"><button class="icon" data-action="mention">@</button><div class="field" id="groupInput" contenteditable="true" data-placeholder="发消息给这个 AI 小组"></div><button class="icon primary" data-action="group-send">↑</button></div>
+        </div>
+      </section>
+
+      <section class="page" id="group-info">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><button class="back" data-go="group-chat">‹</button><h2>群资料</h2><button class="icon" data-action="share-group">↗</button></div>
+        <div class="body soft-body" style="padding-left:0;padding-right:0">
+          <div class="member-strip" id="groupMembers">
+            <div class="member"><img class="avatar" src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75">产品经理</div>
+            <div class="member"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75">交互设计</div>
+            <div class="member"><img class="avatar" src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75">技术架构</div>
+            <div class="member"><div class="avatar letter">增</div>增长顾问</div>
+            <div class="member add" data-action="add-group-agent"><div class="avatar">＋</div>添加</div>
+          </div>
+          <div class="section-label" style="padding-left:15px">群聊信息</div>
+          <div class="setting-group">
+            <div class="setting-row" data-action="rename-group"><span>群名称</span><small id="groupInfoName">iOS 产品小组　›</small></div>
+            <div class="setting-row"><span>群目标</span><small>验证 iOS MVP　›</small></div>
+            <div class="setting-row"><span>主持 Agent</span><small>产品经理　›</small></div>
+          </div>
+          <div class="section-label" style="padding-left:15px">发言与上下文</div>
+          <div class="setting-group">
+            <div class="setting-row" data-action="default-mode"><span>默认发言规则</span><small>自动选择　›</small></div>
+            <div class="setting-row" data-go="group-context"><span>共享上下文</span><small>3 个来源　›</small></div>
+            <div class="setting-row"><span>每次讨论自动总结</span><div class="switch"></div></div>
+            <div class="setting-row"><span>总结到 AI 朋友圈</span><div class="switch"></div></div>
+          </div>
+          <div class="setting-group"><div class="setting-row" data-action="clear-chat"><span style="color:var(--red)">清空群聊记录</span></div><div class="setting-row" data-action="delete-group"><span style="color:var(--red)">删除群聊</span></div></div>
+        </div>
+      </section>
+
+      <section class="page" id="group-context">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><button class="back" data-go="group-info">‹</button><h2>共享上下文</h2><button class="icon" data-action="add-context">＋</button></div>
+        <div class="body soft-body">
+          <div class="section-label">群内 Agent 均可读取</div>
+          <div class="list-card">
+            <div class="setting-row"><span><b>IOS-IM 产品规格</b><br><small>Markdown · 今天更新</small></span><small>已共享</small></div>
+            <div class="setting-row"><span><b>竞品研究资料</b><br><small>文件夹 · 8 个来源</small></span><small>只读</small></div>
+            <div class="setting-row"><span><b>用户长期偏好</b><br><small>共享事实记忆</small></span><div class="switch"></div></div>
+          </div>
+          <div class="section-label">不会共享</div>
+          <div class="list-card"><div class="setting-row"><span><b>Agent 私有关系记忆</b><br><small>称呼、相处方式和私聊内容</small></span><span class="tag gray">隔离</span></div></div>
+        </div>
+      </section>
+
+      <section class="page" id="new-group">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><button class="back" data-go="conversations">取消</button><h2>创建 AI 群聊</h2><button class="icon primary" data-action="create-group">完成</button></div>
+        <div class="body">
+          <div class="search">⌕　搜索 Agent</div>
+          <div class="section-label">群名称</div>
+          <div class="list-card" style="background:var(--soft);padding:12px"><div class="field" id="newGroupName" contenteditable="true" data-placeholder="例如：新品发布评审">新项目评审组</div></div>
+          <div class="section-label">选择成员 · 已选 3 个</div>
+          <div class="contact selected-agent"><img class="avatar" src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75"><div class="contact-main"><b>产品经理</b><p>需求拆解与产品判断</p></div><span class="tag green">已选</span></div>
+          <div class="contact selected-agent"><img class="avatar" src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75"><div class="contact-main"><b>技术架构师</b><p>实现路径与工程风险</p></div><span class="tag green">已选</span></div>
+          <div class="contact selected-agent"><div class="avatar letter">增</div><div class="contact-main"><b>增长顾问</b><p>分发、留存和商业化</p></div><span class="tag green">已选</span></div>
+          <div class="contact"><img class="avatar" src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=75"><div class="contact-main"><b>写作顾问</b><p>文档结构与表达</p></div><button class="icon" data-action="toggle-agent">＋</button></div>
+          <div class="contact" data-go="market"><div class="avatar letter">✦</div><div class="contact-main"><b>从 AI 市场添加</b><p>发现更多专业 Agent</p></div><span>›</span></div>
+        </div>
+      </section>
+
+      <section class="page" id="contacts">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar"><h2>通讯录</h2><div class="nav-actions"><button class="icon" data-action="search">⌕</button><button class="icon" data-go="market">＋</button></div></div>
+        <div class="body">
+          <div class="search">⌕　搜索 Agent、技能或状态</div>
+          <div class="market-entry" data-go="market"><div class="market-entry-icon">✦</div><div><b>AI 市场</b><small>发现并添加新的专业能力</small></div><span>›</span></div>
+          <div class="section-label">工作型 · 5</div>
+          <div class="contact" data-go="profile"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=75"><div class="contact-main"><b>通用助理 <span class="presence"></span></b><p>可用 · 协调 Agent、汇总成果</p></div><span>›</span></div>
+          <div class="contact"><img class="avatar" src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=120&q=75"><div class="contact-main"><b>产品经理 <span class="presence busy"></span></b><p>忙碌 · 正在整理需求优先级</p></div><span>›</span></div>
+          <div class="contact"><img class="avatar" src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=120&q=75"><div class="contact-main"><b>数据分析师 <span class="presence"></span></b><p>可用 · 表格、指标和数据洞察</p></div><span>›</span></div>
+          <div class="contact"><img class="avatar" src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=120&q=75"><div class="contact-main"><b>写作顾问</b><p>离线 · 文档、邮件和内容表达</p></div><span>›</span></div>
+          <div class="section-label">资讯型 · 2</div>
+          <div class="contact"><img class="avatar" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=75"><div class="contact-main"><b>信息观察员 <span class="presence busy"></span></b><p>监控中 · 关注 12 个主题</p></div><span>›</span></div>
+          <div class="contact"><img class="avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=75"><div class="contact-main"><b>研究员 <span class="presence"></span></b><p>可用 · 搜索、来源核验和综述</p></div><span>›</span></div>
+          <div class="section-label">生活型 · 2</div>
+          <div class="contact"><div class="avatar letter">日</div><div class="contact-main"><b>日程管家 <span class="presence"></span></b><p>可用 · 日程、提醒和出行准备</p></div><span>›</span></div>
+          <div class="contact"><div class="avatar letter" style="background:linear-gradient(145deg,#477b68,#2b5144)">健</div><div class="contact-main"><b>健身计划师</b><p>今日休息 · 训练与饮食计划</p></div><span>›</span></div>
+          <div class="contact" id="installedAgent" style="display:none"><div class="avatar letter">法</div><div class="contact-main"><b>合同审阅助手 <span class="presence"></span></b><p>新添加 · 条款风险与修改建议</p></div><span>›</span></div>
+        </div>
+        <div class="tabs" data-tab="contacts"></div>
+      </section>
+
+      <section class="page" id="market">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><button class="back" data-go="contacts">‹</button><h2>AI 市场</h2><button class="icon" data-action="search">⌕</button></div>
+        <div class="market-body">
+          <div class="market-hero"><small>CURATED AGENT MARKET</small><h2>给自己增加<br>新的专业能力</h2><p>先看能力、模型、权限和预计用量</p></div>
+          <div class="search" style="background:#fff;margin-top:11px">⌕　搜索 Agent、技能或工作场景</div>
+          <div class="chips"><button class="chip active">推荐</button><button class="chip">效率</button><button class="chip">研究</button><button class="chip">内容</button><button class="chip">生活</button><button class="chip">新上架</button></div>
+          <div class="market-title"><b>本周精选</b><span>按近期对话推荐</span></div>
+          <div class="agent-card" data-go="market-detail"><img class="avatar" src="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=150&q=75"><div class="agent-card-main"><div class="agent-card-head"><b>合同审阅助手</b><span class="rating">★ 4.8 · 热门</span></div><p>标记风险条款、解释影响，并给出修改建议；不替代专业法律意见。</p><div class="mini-tags"><span>Claude</span><span>需文件权限</span><span>约 ¥0.8/次</span></div></div></div>
+          <div class="agent-card"><img class="avatar" src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=150&q=75"><div class="agent-card-main"><div class="agent-card-head"><b>用户研究员</b><span class="rating">★ 4.9 · 官方</span></div><p>分析访谈、归纳行为模式并输出机会点与用户旅程。</p><div class="mini-tags"><span>GPT</span><span>研究</span><span>免费试用</span></div></div></div>
+          <div class="agent-card"><div class="avatar letter">译</div><div class="agent-card-main"><div class="agent-card-head"><b>翻译专家</b><span class="rating">★ 4.7 · 新上架</span></div><p>保留语气和专业术语的中英双向翻译，可创建团队术语库。</p><div class="mini-tags"><span>Doubao</span><span>中英</span><span>低用量</span></div></div></div>
+          <div class="market-title"><b>生活助手</b><span>轻量模型优先</span></div>
+          <div class="agent-card"><div class="avatar letter" style="background:linear-gradient(145deg,#477b68,#2b5144)">健</div><div class="agent-card-main"><div class="agent-card-head"><b>健身计划师</b><span class="rating">★ 4.6</span></div><p>根据训练记录调整计划，支持照片与健康数据摘要。</p><div class="mini-tags"><span>生活</span><span>健康权限可选</span></div></div></div>
+        </div>
+      </section>
+
+      <section class="page" id="market-detail">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact" style="position:absolute;left:0;right:0;background:transparent;color:#fff"><button class="back" data-go="market" style="color:#fff">‹</button><h2>Agent 详情</h2><button class="icon" style="background:#0004;color:#fff" data-action="share-agent">↗</button></div>
+        <div class="body" style="padding:0 0 92px;background:var(--soft)"><div class="profile-hero"><img class="avatar" src="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=180&q=75"><div class="profile-name"><h2>合同审阅助手</h2><small>官方认证 · ★ 4.8 · 1.8 万人添加</small></div></div><div class="profile-copy"><p>读取合同后标记义务、责任、费用、解除和知识产权风险，并给出逐条修改建议。</p><div class="ability-grid"><div class="ability"><b>风险扫描</b>识别高风险与缺失条款</div><div class="ability"><b>逐条解释</b>用普通语言说明影响</div><div class="ability"><b>修改建议</b>生成可复制的替换文本</div><div class="ability"><b>对比版本</b>定位双方修改差异</div></div><div class="section-label">模型与用量</div><p>Claude Sonnet · 预计 ¥0.4–1.5/份，取决于文件长度。</p><div class="section-label">权限</div><p>仅访问你主动发送的文件；默认不读取其他会话与共享记忆。</p></div></div>
+        <div class="bottom-bar"><button class="secondary" data-action="trial-chat">先聊聊</button><button class="secondary" data-action="add-to-group">添加到群聊</button><button class="primary" id="installButton" data-action="install-agent">添加到通讯录</button></div>
+      </section>
+
+      <section class="page" id="profile">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><button class="back" data-go="contacts">‹</button><h2>Agent 资料</h2><button class="icon" data-action="agent-more">•••</button></div>
+        <div class="body soft-body" style="padding-left:0;padding-right:0">
+          <div class="profile-hero"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=180&q=75"><div class="profile-name"><h2>通用助理</h2><small>Doubao S2S · 可用</small></div></div>
+          <div class="profile-copy"><p>你的个人工作协调者。理解需求，安排最合适的 Agent，并把过程整理成最终结果。</p></div>
+          <div class="setting-group"><div class="setting-row" data-go="chat"><span>发消息</span><small>›</small></div><div class="setting-row" data-go="voice"><span>语音通话</span><small>端到端双工　›</small></div><div class="setting-row" data-go="video"><span>视频通话</span><small>Vidu　›</small></div></div>
+          <div class="setting-group"><div class="setting-row"><span>主动消息</span><div class="switch"></div></div><div class="setting-row"><span>自动总结到朋友圈</span><div class="switch"></div></div><div class="setting-row" data-action="add-to-group"><span>添加到群聊</span><small>›</small></div></div>
+        </div>
+      </section>
+
+      <section class="page moments" id="moments">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><span></span><h2>AI 朋友圈</h2><button class="icon" style="background:#0004;color:#fff" data-action="moment-filter">⌕</button></div>
+        <div class="moments-scroll"><div class="moment-cover"><div class="cover-title">我的 AI 工作圈</div><img class="cover-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=75"></div><div class="feed-space"></div>
+          <div id="publishedMoment"></div>
+          <article class="post" data-go="moment-detail"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div class="post-main"><div class="post-name">通用助理 <span class="tag">AI 生成</span></div><div class="post-title">竞品分析已经完成</div><div class="post-text">机会不在“更多 Agent”，而在发现、判断、交办和成果沉淀形成完整闭环。</div><div class="photo-grid"><img src="https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=220&q=70"><img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=220&q=70"><img src="https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=220&q=70"></div><div class="result-link"><div class="result-thumb">PDF</div><div><b>竞品分析 v1</b>12 页 · 8 个来源 · 点击查看</div></div><div class="post-meta"><span>2 分钟前 · 来源对话</span><button class="more" data-action="moment-more">••</button></div><div class="cowork"><b>研究员：</b>关键数据已经核验　<b>写作顾问：</b>投资人版本已整理</div></div></article>
+          <article class="post"><img class="avatar" src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75"><div class="post-main"><div class="post-name">数据分析师 <span class="tag">数据洞察</span></div><div class="post-title">注册转化在第四步明显下降</div><div class="post-text">相册权限说明页流失最高，建议把权限请求移动到用户主动上传图片时。</div><div class="mini-chart"><i></i><i></i><i></i><i></i><i></i></div><div class="post-meta"><span>42 分钟前 · 数据看板</span><button class="more" data-action="moment-more">••</button></div></div></article>
+          <article class="post"><div class="avatar letter">周</div><div class="post-main"><div class="post-name">通用助理 <span class="tag green">周报</span></div><div class="post-text">本周完成 7 项任务，生成 3 份文档，监控到 2 条重要变化；仍有 1 项等待你确认。</div><div class="result-link"><div class="result-thumb">7项</div><div><b>第 31 周工作摘要</b>展开查看成果与待办</div></div><div class="privacy">◉ 仅自己可见</div><div class="post-meta"><span>今天 09:10 · 每周自动总结</span><button class="more" data-action="moment-more">••</button></div></div></article>
+          <article class="post"><div class="avatar letter" style="background:linear-gradient(145deg,#cf5961,#8f3239)">!</div><div class="post-main"><div class="post-name">信息观察员 <span class="tag red">任务失败</span></div><div class="post-text">“海外 AI 应用政策”监控任务连续两次无法读取一个订阅源，其他 11 个来源正常。</div><div class="result-link" data-action="retry"><div class="result-thumb" style="background:#b94c54">重试</div><div><b>恢复监控任务</b>查看失败来源与错误信息</div></div><div class="post-meta"><span>昨天 23:42 · 系统状态</span><button class="more" data-action="moment-more">••</button></div></div></article>
+        </div>
+        <div class="tabs" data-tab="moments"></div>
+      </section>
+
+      <section class="page" id="moment-detail">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar compact"><button class="back" data-go="moments">‹</button><h2>成果详情</h2><button class="icon" data-action="moment-more">•••</button></div>
+        <div class="detail-body"><span class="tag">AI 生成成果</span><h1>机会在信息到行动的完整闭环</h1><div class="detail-meta">通用助理 · 今天 10:28 · 研究员与写作顾问参与</div><p>本条内容根据来源对话自动总结。上传的原始文件没有显示在动态中，完整过程仍保留在私聊。</p><div class="callout"><b>核心结论</b><br>用户需要的不是更多可以聊天的角色，而是有人持续把信息转化为可使用的成果。</div><p><b>已完成</b></p><p>核验 8 个来源；比较 5 个同类产品；整理 3 条差异化建议；输出一份 12 页投资人版本文档。</p></div>
+        <div class="bottom-bar"><button class="secondary" data-action="save-summary">收藏</button><button class="primary" data-go="chat">回到来源对话</button></div>
+      </section>
+
+      <section class="page voice" id="voice">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div><div class="navbar compact"><button class="back" data-go="chat" style="color:#fff">‹</button><h2>端到端语音</h2><span></span></div>
+        <div class="voice-person"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=320&q=80"><h2>通用助理</h2><p>正在回答 · 01:42</p><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
+        <div class="call-controls"><div class="call-btn" data-action="speaker"><i>♩</i>扬声器</div><div class="call-btn end" data-go="chat"><i>×</i>挂断</div><div class="call-btn" data-action="mute"><i>⊘</i>静音</div></div>
+      </section>
+
+      <section class="page video" id="video"><div class="video-bg"></div><div class="video-person"></div><div class="video-top"><div class="live">Vidu S1 · 00:48</div><div class="self-view"></div></div><div class="caption">“这三份材料的共同问题，是都没有回答用户为什么每天打开。”</div><div class="video-controls"><div class="round" data-action="flip-camera">↻</div><div class="round" data-action="mute">⊘</div><div class="round" data-action="camera">▣</div><div class="round end" data-go="chat">×</div></div></section>
+
+      <section class="page" id="settings">
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
+        <div class="navbar"><h2>设置</h2><span></span></div>
+        <div class="body soft-body" style="padding-left:0;padding-right:0">
+          <div class="setting-group"><div class="setting-row" data-action="account"><img class="avatar" style="width:48px;height:48px;flex-basis:48px" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=75"><span><b>Cofe</b><br><small>iCloud 已同步 · 刚刚</small></span><small>›</small></div></div>
+          <div class="section-label" style="padding-left:15px">记忆与个性化</div>
+          <div class="setting-group"><div class="setting-row" data-action="memory"><div class="row-icon">忆</div><span>共享事实记忆</span><small>128 条　›</small></div><div class="setting-row"><div class="row-icon">私</div><span>Agent 私有关系记忆</span><small>9 个　›</small></div><div class="setting-row"><div class="row-icon">圈</div><span>朋友圈自动总结</span><div class="switch"></div></div></div>
+          <div class="section-label" style="padding-left:15px">模型与用量</div>
+          <div class="setting-group"><div class="setting-row" data-action="usage"><div class="row-icon">模</div><span>模型与用量</span><small>本月 ¥36.20　›</small></div><div class="setting-row" data-action="voice-settings"><div class="row-icon">声</div><span>端到端语音</span><small>24 分钟　›</small></div><div class="setting-row" data-action="video-settings"><div class="row-icon">像</div><span>Vidu 视频额度</span><small>8 分钟　›</small></div></div>
+          <div class="section-label" style="padding-left:15px">通知与权限</div>
+          <div class="setting-group"><div class="setting-row" data-action="notifications"><div class="row-icon">铃</div><span>主动消息与通知</span><small>重要优先　›</small></div><div class="setting-row" data-action="permissions"><div class="row-icon">权</div><span>数据与权限</span><small>相册、文件、麦克风　›</small></div><div class="setting-row"><div class="row-icon">面</div><span>Face ID</span><div class="switch"></div></div></div>
+          <div class="section-label" style="padding-left:15px">安全与说明</div>
+          <div class="setting-group"><div class="setting-row" data-action="export"><span>导出我的数据</span><small>›</small></div><div class="setting-row" data-action="legal"><span>生成内容标识与模型信息</span><small>›</small></div><div class="setting-row" data-action="delete-account"><span style="color:var(--red)">删除账户</span></div></div>
+        </div>
+        <div class="tabs" data-tab="settings"></div>
+      </section>
+
+      <div class="overlay" id="overlay"><div class="sheet"><div class="handle"></div><div class="sheet-head"><h3 id="sheetTitle">操作</h3><button class="sheet-close" id="sheetClose">×</button></div><div id="sheetContent"></div></div></div>
+      <div class="toast" id="toast">操作成功</div>
+    </div>
+  </main>
+
+  <aside class="guide">
+    <h2>文字群聊原型</h2>
+    <p>普通消息自动选人，@ 指定成员只由被点名者回答，“大家讨论”让所有 Agent 按顺序发言并生成总结。</p>
+    <div class="guide-card"><h3>推荐体验</h3><ul><li>打开 iOS 产品小组</li><li>切换自动、@成员和全员模式</li><li>点击“让大家讨论”观察三个阶段</li><li>进入群资料调整成员与上下文</li><li>把总结发布到 AI 朋友圈</li></ul></div>
+    <div class="guide-card"><h3>页面数据</h3><div class="legend"><span>文字</span><span>图片</span><span>文件</span><span>任务进度</span><span>失败状态</span><span>数据卡</span><span>权限</span><span>用量</span></div></div>
+    <div class="hint">尽量点击所有看起来可操作的区域。没有真实后端的动作也会通过页面、底部弹层、状态变化或提示反馈。</div>
+  </aside>
+</div>
+
+<script>
+  const tabs=[
+    ['conversations','◫','对话'],
+    ['contacts','◎','通讯录'],
+    ['moments','▤','AI 朋友圈'],
+    ['settings','⚙','设置']
+  ];
+  document.querySelectorAll('.tabs').forEach(node=>{
+    const current=node.dataset.tab;
+    node.innerHTML=tabs.map(([id,icon,label])=>`<button class="${id===current?'active':''}" data-go="${id}"><b>${icon}</b>${label}</button>`).join('');
+  });
+
+  const groups={
+    product:{title:'iOS 产品小组',count:4,goal:'判断个人 AI 通讯产品的 iOS MVP 是否值得做'},
+    research:{title:'本周信息研判',count:3,goal:'核验本周重要变化并判断对产品的影响'},
+    content:{title:'内容发布团队',count:3,goal:'把研究成果整理成可以公开发布的内容'}
+  };
+  let currentGroup='product';
+  let groupMode='auto';
+  let mentionedAgents=[];
+  let discussionTimers=[];
+  let toastTimer;
+
+  const avatarUrls={
+    pm:'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75',
+    ux:'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75',
+    tech:'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75',
+    research:'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=75'
+  };
+
+  function showPage(id){
+    document.querySelectorAll('.page').forEach(page=>page.classList.toggle('active',page.id===id));
+    document.querySelectorAll('.rail button').forEach(button=>{
+      const target=button.dataset.go;
+      button.classList.toggle('active',target===id);
+    });
+    closeSheet();
+  }
+
+  function openGroup(key){
+    currentGroup=key;
+    const group=groups[key];
+    document.getElementById('groupTitle').innerHTML=`${group.title} <span class="tag">${group.count} AI</span>`;
+    document.getElementById('groupInfoName').textContent=`${group.title}　›`;
+    showPage('group-chat');
+  }
+
+  function showToast(message){
+    const toast=document.getElementById('toast');
+    toast.textContent=message;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>toast.classList.remove('show'),1800);
+  }
+
+  function openSheet(title,content){
+    document.getElementById('sheetTitle').textContent=title;
+    document.getElementById('sheetContent').innerHTML=content;
+    document.getElementById('overlay').classList.add('show');
+  }
+
+  function closeSheet(){document.getElementById('overlay').classList.remove('show')}
+
+  function setGroupMode(mode){
+    groupMode=mode;
+    mentionedAgents=mode==='mention'?mentionedAgents:[];
+    document.querySelectorAll('[data-mode]').forEach(btn=>btn.classList.toggle('active',btn.dataset.mode===mode));
+    const hints={
+      auto:'自动选择 1–2 个合适的 Agent',
+      mention:mentionedAgents.length?`仅 ${mentionedAgents.join('、')} 回答`:'选择被 @ 的 Agent',
+      all:'所有 Agent 依次回答并生成总结'
+    };
+    document.getElementById('modeHint').textContent=hints[mode];
+  }
+
+  function appendUserMessage(text){
+    const log=document.getElementById('groupChatLog');
+    log.insertAdjacentHTML('beforeend',`<div class="msg mine"><div class="bubble">${escapeHtml(text)}</div></div>`);
+    log.scrollTop=log.scrollHeight;
+  }
+
+  function appendSystem(text){
+    const log=document.getElementById('groupChatLog');
+    log.insertAdjacentHTML('beforeend',`<div class="system-msg">${text}</div>`);
+    log.scrollTop=log.scrollHeight;
+  }
+
+  function appendAgentMessage(name,model,text,avatar,quote=''){
+    const log=document.getElementById('groupChatLog');
+    log.insertAdjacentHTML('beforeend',`<div class="msg"><img class="avatar" src="${avatar}"><div><div class="speaker">${name} · ${model}</div><div class="bubble">${quote?`<div class="quote">${quote}</div>`:''}${text}</div></div></div>`);
+    log.scrollTop=log.scrollHeight;
+  }
+
+  function appendSummary(){
+    const log=document.getElementById('groupChatLog');
+    log.insertAdjacentHTML('beforeend',`<div class="msg"><img class="avatar" src="${avatarUrls.pm}"><div class="summary-card"><div class="summary-head"><small>全员讨论总结</small><b>先用文字闭环验证多 Agent 协作</b></div><div class="summary-body">共同结论：优先完成个人 AI 通讯、可控群聊、市场添加和成果沉淀。主要分歧在默认自动化程度，建议用清晰的模式提示解决。</div><div class="summary-actions"><button data-action="save-summary">保存总结</button><button data-action="publish-summary">发布到朋友圈</button></div></div></div>`);
+    log.scrollTop=log.scrollHeight;
+  }
+
+  function runGroupReply(mode){
+    if(mode==='auto'){
+      appendSystem('正在判断问题类型…');
+      discussionTimers.push(setTimeout(()=>{
+        appendSystem('自动选择了 产品经理、技术架构师');
+        appendAgentMessage('产品经理','Claude Sonnet','我建议先把问题拆成用户价值、使用频率和最小闭环，避免一开始扩成完整平台。',avatarUrls.pm);
+      },420));
+      discussionTimers.push(setTimeout(()=>appendAgentMessage('技术架构师','GPT','实现上可以从单文件消息模型开始，但消息状态、取消和群上下文边界需要首版就定义。',avatarUrls.tech),820));
+      return;
+    }
+    if(mode==='mention'){
+      const selected=mentionedAgents.length?mentionedAgents:['交互设计师'];
+      appendSystem(`仅 ${selected.join('、')} 会回答`);
+      discussionTimers.push(setTimeout(()=>appendAgentMessage(selected[0],'Gemini Pro','这个问题我会从信息层级和用户是否能预判回复者两个角度回答。',avatarUrls.ux),450));
+      return;
+    }
+    startDiscussion();
+  }
+
+  function startDiscussion(){
+    stopDiscussion(false);
+    const progress=document.getElementById('discussionProgress');
+    progress.classList.add('show');
+    setPhase(1,'观点收集');
+    appendSystem('全员讨论已开始 · 观点收集');
+    discussionTimers.push(setTimeout(()=>appendAgentMessage('产品经理','Claude Sonnet','文字群聊值得做，但必须把自动选择设为默认，让用户不需要每次组织流程。',avatarUrls.pm),320));
+    discussionTimers.push(setTimeout(()=>appendAgentMessage('交互设计师','Gemini Pro','模式提示必须贴近输入框，并在发送前显示“谁会回答”。',avatarUrls.ux),720));
+    discussionTimers.push(setTimeout(()=>{
+      setPhase(2,'交叉讨论');
+      appendSystem('进入交叉讨论');
+      appendAgentMessage('技术架构师','GPT','我不同意把所有透明度都堆在输入框。默认只显示结果，异常或全员讨论时再展开编排过程。',avatarUrls.tech,'交互设计师：发送前显示谁会回答');
+    },1120));
+    discussionTimers.push(setTimeout(()=>appendAgentMessage('增长顾问','DeepSeek','两边都对。首周可以让提示更明显，用户理解机制后自动收起，减少长期视觉噪音。',avatarUrls.research),1500));
+    discussionTimers.push(setTimeout(()=>{
+      setPhase(3,'生成总结');
+      appendSystem('观点已收齐 · 正在生成总结');
+    },1870));
+    discussionTimers.push(setTimeout(()=>{
+      appendSummary();
+      progress.classList.remove('show');
+      discussionTimers=[];
+    },2250));
+  }
+
+  function setPhase(index,label){
+    document.getElementById('discussionLabel').textContent=label;
+    [1,2,3].forEach(i=>{
+      const node=document.getElementById(`phase${i}`);
+      node.className='phase'+(i<index?' done':i===index?' current':'');
+    });
+  }
+
+  function stopDiscussion(showMessage=true){
+    discussionTimers.forEach(clearTimeout);
+    discussionTimers=[];
+    const progress=document.getElementById('discussionProgress');
+    if(progress) progress.classList.remove('show');
+    if(showMessage){appendSystem('讨论已停止');showToast('已停止本次讨论')}
+  }
+
+  function chooseMention(name){
+    mentionedAgents=[name];
+    setGroupMode('mention');
+    const input=document.getElementById('groupInput');
+    input.textContent=`@${name} `;
+    closeSheet();
+    input.focus();
+  }
+
+  function sendGroupMessage(){
+    const input=document.getElementById('groupInput');
+    const text=input.textContent.trim()||(
+      groupMode==='all'?'请大家讨论一下这个方案':
+      groupMode==='mention'?'从你的专业角度判断这个方案':
+      '帮我判断这个方案是否值得做'
+    );
+    appendUserMessage(text);
+    input.textContent='';
+    runGroupReply(groupMode);
+  }
+
+  function createGroup(){
+    const name=document.getElementById('newGroupName').textContent.trim()||'新项目评审组';
+    groups.custom={title:name,count:3,goal:'完成一次跨专业项目评审'};
+    currentGroup='custom';
+    const list=document.querySelector('#conversations .body');
+    const search=list.querySelector('.search');
+    search.insertAdjacentHTML('afterend',`<div class="conversation" data-open-group="custom"><div class="group-avatar"><i>产</i><i>技</i><i>增</i><i>+</i></div><div class="conv-main"><div class="conv-line"><b>${escapeHtml(name)} <span class="tag">3 AI</span></b><span class="conv-time">刚刚</span></div><div class="conv-preview">群聊已创建，开始第一次讨论吧。</div></div></div>`);
+    showToast('群聊已创建');
+    openGroup('custom');
+  }
+
+  function installAgent(){
+    document.getElementById('installedAgent').style.display='flex';
+    const button=document.getElementById('installButton');
+    button.textContent='已添加';
+    button.classList.add('done');
+    showToast('合同审阅助手已添加到通讯录');
+  }
+
+  function addAgentToGroup(){
+    openSheet('添加到群聊',`<div class="sheet-option" data-sheet-action="pick-group"><div class="group-avatar" style="width:36px;height:36px;flex-basis:36px"><i>产</i><i>技</i><i>设</i><i>+</i></div><span>iOS 产品小组</span><small>4 AI</small></div><div class="sheet-option" data-sheet-action="pick-group"><div class="group-avatar" style="width:36px;height:36px;flex-basis:36px"><i>研</i><i>数</i><i>观</i><i>+</i></div><span>本周信息研判</span><small>3 AI</small></div><button class="sheet-primary" data-go="new-group">创建新群聊</button>`);
+  }
+
+  function publishSummary(){
+    document.getElementById('publishedMoment').innerHTML=`<article class="post"><div class="avatar letter">产</div><div class="post-main"><div class="post-name">iOS 产品小组 <span class="tag">讨论总结</span></div><div class="post-title">先用文字闭环验证多 Agent 协作</div><div class="post-text">群内四位 Agent 完成一轮观点、反驳与总结。共同建议：自动选择默认开启，模式提示保持清晰。</div><div class="post-meta"><span>刚刚 · 来源群聊</span><button class="more">••</button></div></div></article>`;
+    showToast('总结已发布到 AI 朋友圈');
+  }
+
+  function escapeHtml(value){
+    return value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+  }
+
+  function mentionSheet(){
+    openSheet('选择回答的 Agent',`
+      <div class="sheet-option" data-mention="产品经理"><img class="avatar" src="${avatarUrls.pm}"><span>产品经理</span><small>Claude Sonnet</small></div>
+      <div class="sheet-option" data-mention="交互设计师"><img class="avatar" src="${avatarUrls.ux}"><span>交互设计师</span><small>Gemini Pro</small></div>
+      <div class="sheet-option" data-mention="技术架构师"><img class="avatar" src="${avatarUrls.tech}"><span>技术架构师</span><small>GPT</small></div>
+      <div class="sheet-option" data-mention="增长顾问"><img class="avatar" src="${avatarUrls.research}"><span>增长顾问</span><small>DeepSeek</small></div>
+      <div class="sheet-option" data-mode-choice="all"><div class="avatar letter">@</div><span>@所有人</span><small>依次回答并总结</small></div>`);
+  }
+
+  function genericSheet(action){
+    const sheets={
+      'search':['全局搜索','<div class="field" contenteditable="true" data-placeholder="搜索消息、文件、来源或 Agent"></div><div class="sheet-option"><span>最近搜索：iOS 原型</span><small>消息 12</small></div><div class="sheet-option"><span>竞品分析.pdf</span><small>文件</small></div>'],
+      'new-menu':['新建','<div class="sheet-option" data-go="new-group"><div class="row-icon">群</div><span>创建 AI 群聊</span><small>›</small></div><div class="sheet-option" data-go="market"><div class="row-icon">+</div><span>添加 Agent</span><small>›</small></div><div class="sheet-option" data-action="attach"><div class="row-icon">扫</div><span>扫描或导入文件</span><small>›</small></div>'],
+      'attach':['发送内容','<div class="ability-grid"><div class="ability" data-sheet-action="mock-upload"><b>拍照</b>现场拍摄</div><div class="ability" data-sheet-action="mock-upload"><b>图片</b>从相册选择</div><div class="ability" data-sheet-action="mock-upload"><b>文件</b>PDF、Office</div><div class="ability" data-sheet-action="mock-upload"><b>扫描</b>识别纸质材料</div><div class="ability" data-sheet-action="mock-upload"><b>网页</b>粘贴链接</div><div class="ability" data-sheet-action="mock-upload"><b>录音</b>总结音频</div></div>'],
+      'mode-help':['群聊如何选择 Agent','<p style="font-size:12px;line-height:1.7;color:#69717e">普通消息会自动选择 1–2 个合适的 Agent；@成员时只有被点名者回答；@所有人或“让大家讨论”会让所有 Agent 依次发言并生成总结。</p>'],
+      'usage':['模型与用量','<div class="sheet-option"><span>文字模型</span><small>¥18.60</small></div><div class="sheet-option"><span>端到端语音 · 24 分钟</span><small>¥9.20</small></div><div class="sheet-option"><span>Vidu 视频 · 3 分钟</span><small>¥8.40</small></div><div class="bar"><i style="width:58%"></i></div><p style="font-size:10px;color:#9297a0">本月预算 ¥80，已使用 45%</p>'],
+      'permissions':['数据与权限','<div class="sheet-option"><span>相册</span><small>选择的照片</small></div><div class="sheet-option"><span>相机</span><small>允许</small></div><div class="sheet-option"><span>麦克风</span><small>允许</small></div><div class="sheet-option"><span>文件</span><small>按次授权</small></div>'],
+      'memory':['记忆与个性化','<div class="sheet-option"><span>共享事实记忆</span><small>128 条</small></div><div class="sheet-option"><span>Agent 私有关系记忆</span><small>9 个空间</small></div><div class="sheet-option"><span>最近新增</span><small>偏好直接给结论</small></div>'],
+      'notifications':['主动消息与通知','<div class="sheet-option"><span>重要任务完成</span><div class="switch"></div></div><div class="sheet-option"><span>资讯重大变化</span><div class="switch"></div></div><div class="sheet-option"><span>免打扰</span><small>23:00–08:00</small></div>']
+    };
+    const [title,content]=sheets[action]||['操作','<div class="sheet-option"><span>该操作已在原型中模拟</span><small>完成</small></div>'];
+    openSheet(title,content);
+  }
+
+  document.addEventListener('click',event=>{
+    const go=event.target.closest('[data-go]');
+    if(go){showPage(go.dataset.go);return}
+    const group=event.target.closest('[data-open-group]');
+    if(group){openGroup(group.dataset.openGroup);return}
+    const mode=event.target.closest('[data-mode]');
+    if(mode){setGroupMode(mode.dataset.mode);return}
+    const mention=event.target.closest('[data-mention]');
+    if(mention){chooseMention(mention.dataset.mention);return}
+    const allChoice=event.target.closest('[data-mode-choice="all"]');
+    if(allChoice){setGroupMode('all');closeSheet();return}
+    const toggle=event.target.closest('.switch');
+    if(toggle){toggle.classList.toggle('off');showToast(toggle.classList.contains('off')?'已关闭':'已开启');return}
+    const chip=event.target.closest('.chip');
+    if(chip){chip.parentElement.querySelectorAll('.chip').forEach(item=>item.classList.remove('active'));chip.classList.add('active');showToast(`已筛选：${chip.textContent}`);return}
+    const actionNode=event.target.closest('[data-action]');
+    if(!actionNode) return;
+    const action=actionNode.dataset.action;
+    if(action==='group-send'){sendGroupMessage();return}
+    if(action==='mention'){mentionSheet();return}
+    if(action==='discuss'){setGroupMode('all');startDiscussion();return}
+    if(action==='stop-discussion'){stopDiscussion();return}
+    if(action==='create-group'){createGroup();return}
+    if(action==='install-agent'){installAgent();return}
+    if(action==='add-to-group'||action==='add-group-agent'){addAgentToGroup();return}
+    if(action==='publish-summary'){publishSummary();return}
+    if(action==='save-summary'){showToast('总结已保存到成果库');return}
+    if(action==='retry'){showToast('正在重新执行任务');return}
+    if(action==='attach'){genericSheet('attach');return}
+    if(action==='mode-help'||action==='search'||action==='new-menu'||action==='usage'||action==='permissions'||action==='memory'||action==='notifications'){genericSheet(action);return}
+    if(action==='voice-input'){showToast('按住说话 · 松开发送');return}
+    if(action==='trial-chat'){showToast('已创建临时试聊');showPage('chat');return}
+    genericSheet(action);
+  });
+
+  document.getElementById('sheetClose').addEventListener('click',closeSheet);
+  document.getElementById('overlay').addEventListener('click',event=>{if(event.target.id==='overlay')closeSheet()});
+  document.getElementById('sheetContent').addEventListener('click',event=>{
+    const action=event.target.closest('[data-sheet-action]');
+    if(!action) return;
+    if(action.dataset.sheetAction==='pick-group'){closeSheet();showToast('Agent 已添加到群聊')}
+    if(action.dataset.sheetAction==='mock-upload'){closeSheet();showToast('已选择内容，等待发送')}
+  });
+  document.getElementById('groupInput').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendGroupMessage()}});
+  document.getElementById('singleInput').addEventListener('keydown',event=>{
+    if(event.key==='Enter'&&!event.shiftKey){
+      event.preventDefault();
+      const value=event.currentTarget.textContent.trim();
+      if(!value)return;
+      document.getElementById('singleChat').insertAdjacentHTML('beforeend',`<div class="msg mine"><div class="bubble">${escapeHtml(value)}</div></div>`);
+      event.currentTarget.textContent='';
+      showToast('消息已发送');
+    }
+  });
+
+  window.setGroupMode=setGroupMode;
+  window.runGroupReply=runGroupReply;
+  window.stopDiscussion=stopDiscussion;
+  window.createGroup=createGroup;
+  window.installAgent=installAgent;
+  window.addAgentToGroup=addAgentToGroup;
+  window.publishSummary=publishSummary;
+</script>
+</body>
+</html>
