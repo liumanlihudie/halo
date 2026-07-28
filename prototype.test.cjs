@@ -271,6 +271,7 @@ test('iOS surfaces use hidden overlay scrolling without browser-width tracks', (
     'body ios-scroll',
     'chat-scroll ios-scroll',
     'market-body ios-scroll',
+    'chips ios-scroll',
     'moments-scroll ios-scroll',
     'detail-body ios-scroll',
     'sheet ios-scroll'
