@@ -44,4 +44,43 @@ The browser-rendered phone frame fits entirely inside the available viewport. It
 
 No remaining P0, P1, or P2 issue was found in the reported state. Desktop scaling can make the phone appear slightly smaller on short windows; this is intentional to preserve the full device frame.
 
+## Design QA — AI 市场与设置页升级
+
+- Source visual truth: `/Users/cofe/office Lady/IOS-IM/qa-reference-settings-profile.png`
+- AI 市场截图: `/Users/cofe/office Lady/IOS-IM/qa-market-50-agents.png`
+- 设置页截图: `/Users/cofe/office Lady/IOS-IM/qa-settings-profile.png`
+- Browser viewport: `1041 × 806` CSS px
+- Rendered phone frame: `346 × 750` CSS px
+- Measured phone bounds: `y=28` through `y=778`
+
+### Full-view comparison evidence
+
+新版设置页保留原参考图的 iOS 分组列表结构，同时把头部资料区扩展为身份、同步状态和三项统计组成的完整资料卡。AI 市场以 10 位专家为首屏，继续滚动分批加载至 50 位；筛选、搜索和详情页使用同一份专家数据。
+
+### Fidelity surfaces
+
+- Fonts and typography: 使用 SF/PingFang 系统字体，资料标题、辅助文字和统计数字形成清晰的三级层级。
+- Spacing and layout rhythm: 资料卡实测高度 `144px`；设置列表可独立滚动，末组底部 `y=679`，固定标签栏顶部 `y=700`，没有遮挡。
+- Colors and visual tokens: 沿用单一靛蓝强调色、浅灰页面底色和白色分组卡片，不引入微信品牌色或素材。
+- Image quality: 用户头像与市场专家头像保持清晰裁切；加载失败时提供文字头像回退。
+- Copy and content: 资料卡展示 Halo ID、使用偏好、iCloud 同步、Agent 数、本月用量和共享记忆数。
+- Icons: 设置页 12 个功能入口全部使用同一套 Phosphor 矢量图标，无文字占位图标。
+- Responsiveness: 修复短视口中变换前尺寸参与网格对齐的问题；手机从原来的 `y=79–829` 调整为 `y=28–778`，完整落在 806px 视口内。
+- Interactions: 验证搜索“合同”得到 3 位匹配专家；“法律财税”筛选得到 8 位专家；连续滚动从 `10 / 50` 加载到 `50 / 50`；专家卡可进入对应详情。
+- Console: 浏览器控制台无错误。
+
+### Comparison history
+
+1. Earlier P1 finding: 手机虽被缩放，但 CSS Grid 仍以缩放前的 `852px` 高度进行安全对齐，短视口中底部越界。
+   - Fix: 舞台改为顶部对齐，手机缩放原点改为顶部居中，并按缩放后的实际高度计算顶部留白。
+   - Post-fix evidence: 手机底部为 `778px`，距视口底部保留 `28px`。
+2. Earlier P2 finding: 设置页个人资料信息量不足，功能入口使用文字图形。
+   - Fix: 增加资料摘要、同步状态和统计区；全部入口替换为统一 SVG 图标字体。
+   - Post-fix evidence: 12 个入口图标全部存在，资料卡关键字段完整显示。
+3. Earlier P2 finding: AI 市场样本过少，无法验证真实发现和浏览体验。
+   - Fix: 增加 50 位跨 6 类场景的专家、搜索、分类、10 位一批的增量加载和数据绑定详情。
+   - Post-fix evidence: 默认 `10 / 50`，最终 `50 / 50`，详情页名称与模型信息随所选专家变化。
+
+No remaining P0, P1, or P2 issue was found in the tested market and settings states.
+
 final result: passed
