@@ -136,3 +136,31 @@ No remaining P0, P1, or P2 issue was found in the tested conversation states.
 No remaining P0, P1, or P2 issue was found in the reported states.
 
 final result: passed
+
+## Design QA — 账户、认证与 Token 充值
+
+- Browser viewport: `1900 × 850` CSS px
+- Automated contract tests: 24 passed, 0 failed
+- Pages checked: 设置、账户中心、切换账号、修改密码、Token 中心、充值确认、充值结果、密码登录、验证码登录、忘记密码
+
+### Interaction evidence
+
+- 设置页展示账户安全、Token 充值和独立退出登录入口。
+- Token 中心显示 128,600 初始余额、3 个套餐和 4 类交易；选择 260K 套餐并用支付宝模拟支付后，余额更新为 388,600。
+- 充值成功与失败结果均可返回余额页或重新支付。
+- 账号列表展示 3 个 mock 账号；切换到「产品研究」后设置资料同步更新并返回对话页。
+- 修改密码的不一致状态显示字段级错误；合法密码提交后返回账户中心。
+- 退出登录包含取消与确认；确认后进入不含四栏主导航的登录页。
+- 密码登录的空账号和弱密码会显示字段错误；合法输入后回到对话页。
+- 验证码登录完成联系方式、发送、六位输入和登录闭环。
+- 忘记密码完成联系方式、验证码和新密码三步，最终返回登录页。
+
+### Layout evidence
+
+- 登录页和 Token 中心均测得 `scrollWidth - clientWidth = 0`。
+- Token 中心、充值确认、充值结果、切换账号和设置页标题保持居中。
+- 认证页不渲染底部四栏主导航。
+- 页面内容未被圆角、底部安全区或固定按钮裁切。
+- 浏览器控制台无 warning 或 error。
+
+final result: passed

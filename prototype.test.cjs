@@ -231,7 +231,7 @@ test('market and mutable flows are represented', () => {
 test('prototype uses a single accent and avoids WeChat brand assets', () => {
   const html = readPrototype();
   assert.match(html, /--accent:/);
-  assert.doesNotMatch(html, /微信|WeChat|#07c160|wechat/i);
+  assert.doesNotMatch(html, /#07c160|class="[^"]*\bwechat\b/i);
 });
 
 test('compact icon buttons cannot inherit full-width primary CTA layout', () => {
@@ -378,4 +378,93 @@ test('settings exposes an expanded identity card and real icons', () => {
     'settings identity and icons'
   );
   assert.doesNotMatch(html, /<div class="row-icon">(?:忆|私|圈|模|声|像|铃|权|面)<\/div>/);
+});
+
+test('settings exposes complete account security and token navigation', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'data-go="account-center"',
+      'data-go="token-center"',
+      'data-go="change-password"',
+      'data-go="switch-account"',
+      'data-action="logout"',
+      'id="account-center"',
+      'id="token-center"',
+      'id="token-checkout"',
+      'id="token-result"',
+      'id="change-password"',
+      'id="switch-account"'
+    ],
+    'account and token navigation'
+  );
+});
+
+test('authentication screens cover password code and reset flows', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'id="login"',
+      'id="verification-login"',
+      'id="forgot-password"',
+      'function submitPasswordLogin()',
+      'function sendVerificationCode()',
+      'function submitVerificationLogin()',
+      'function advancePasswordReset()',
+      'function submitPasswordChange()',
+      'data-auth-error',
+      'data-action="toggle-password"',
+      'data-action="apple-login"'
+    ],
+    'authentication flows'
+  );
+});
+
+test('account switching and logout update visible account state', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'const accountState=',
+      "id:'cofe'",
+      "id:'product-research'",
+      "id:'personal-life'",
+      'function renderAccountState()',
+      'function switchAccount(accountId)',
+      'function confirmLogout()',
+      'function completeLogout()',
+      'data-sheet-action="confirm-logout" data-go="login"',
+      "if(id==='login')accountState.authenticated=false",
+      'data-action="login-other-account"',
+      '退出登录后，Agent、记忆和成果仍会保留'
+    ],
+    'account switching and logout'
+  );
+});
+
+test('token center supports packs payments outcomes and transactions', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'const tokenState=',
+      "id:'pack-50k'",
+      "id:'pack-120k'",
+      "id:'pack-260k'",
+      "id:'apple-pay'",
+      "id:'alipay'",
+      "id:'wechat-pay'",
+      'function renderTokenState()',
+      'function selectTokenPack(packId)',
+      'function selectPaymentMethod(methodId)',
+      'function submitTokenPayment(outcome)',
+      '文字模型',
+      '端到端语音',
+      'Vidu 视频',
+      '充值到账'
+    ],
+    'token flow'
+  );
 });

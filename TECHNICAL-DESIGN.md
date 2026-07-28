@@ -511,3 +511,49 @@ Moment 展示“AI 生成”、来源、参与 Agent 和时间。用户可回到
 7. 是否需要端到端加密；若需要，服务端模型处理与 E2EE 的边界如何定义。
 
 这些问题在进入接口开发前必须用正式文档和小型技术验证确认，不能由演示版假设替代。
+
+## 18. 账户、认证与 Token 原型状态
+
+HTML 演示版新增三组仅存在于内存的状态：
+
+### `accountState`
+
+- `currentId`：当前 mock 账号。
+- `authenticated`：是否处于登录状态。
+- `accounts`：Cofe、产品研究、个人生活三个账号的资料。
+
+账号切换后，设置资料卡、账户中心和充值订单账户会同步刷新。正式实现必须由服务端会话确认当前用户，不能信任客户端传入的账号 ID。
+
+### `authState`
+
+- `loginMethod`：password 或 verification。
+- `verificationSent` 与 `verificationSeconds`：验证码发送和倒计时状态。
+- `resetStep`：忘记密码的 1–3 步状态。
+
+原型只做前端格式校验。正式实现必须包含验证码频率限制、设备与 IP 风控、密码哈希、会话轮换、Apple 登录凭据验证、Keychain 存储和服务端撤销能力。
+
+### `tokenState`
+
+- `balance`：当前 Token 余额。
+- `packs`：充值套餐。
+- `payments`：支付方式展示。
+- `transactions`：充值与消耗记录。
+- `selectedPackId`、`selectedPaymentId` 和 `result`：当前结算状态。
+
+正式计费必须使用服务端不可变账本。客户端余额仅作显示，充值到账以支付平台回调、幂等订单和服务端签名结果为准。支付失败不得改变余额；重复回调不得重复入账。
+
+### 页面状态
+
+认证与资金页面沿用既有 `showPage(pageId)` 状态机：
+
+- `login`
+- `verification-login`
+- `forgot-password`
+- `account-center`
+- `change-password`
+- `switch-account`
+- `token-center`
+- `token-checkout`
+- `token-result`
+
+进入 `login` 时清除本地登录状态；认证成功后返回 `conversations`。演示状态刷新即重置，不构成正式的安全边界。
