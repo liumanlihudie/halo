@@ -289,7 +289,7 @@
       <section class="page" id="market-detail">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
         <div class="navbar compact" style="position:absolute;left:0;right:0;background:transparent;color:#fff"><button class="back" data-go="market" style="color:#fff" aria-label="返回"><i class="ph ph-caret-left"></i></button><h2>Agent 详情</h2><button class="icon" style="background:#0004;color:#fff" data-action="share-agent" aria-label="分享"><i class="ph ph-share-network"></i></button></div>
-        <div class="body ios-scroll" style="padding:0 0 92px;background:var(--soft)"><div class="profile-hero"><img class="avatar" src="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=180&q=75"><div class="profile-name"><h2>合同审阅助手</h2><small>官方认证 · ★ 4.8 · 1.8 万人添加</small></div></div><div class="profile-copy"><p>读取合同后标记义务、责任、费用、解除和知识产权风险，并给出逐条修改建议。</p><div class="ability-grid"><div class="ability"><b>风险扫描</b>识别高风险与缺失条款</div><div class="ability"><b>逐条解释</b>用普通语言说明影响</div><div class="ability"><b>修改建议</b>生成可复制的替换文本</div><div class="ability"><b>对比版本</b>定位双方修改差异</div></div><div class="section-label">模型与用量</div><p>Claude Sonnet · 预计 ¥0.4–1.5/份，取决于文件长度。</p><div class="section-label">权限</div><p>仅访问你主动发送的文件；默认不读取其他会话与共享记忆。</p></div></div>
+        <div class="body ios-scroll" style="padding:0 0 92px;background:var(--soft)"><div class="profile-hero"><img class="avatar" id="marketDetailAvatar" src="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=180&q=75" alt="合同审阅助手"><div class="profile-name"><h2 id="marketDetailName">合同审阅助手</h2><small id="marketDetailMeta">官方认证 · ★ 4.8 · 热门</small></div></div><div class="profile-copy"><p id="marketDetailDescription">读取合同后标记义务、责任、费用、解除和知识产权风险，并给出逐条修改建议。</p><div class="ability-grid" id="marketDetailAbilities"><div class="ability"><b>合同</b>围绕合同完成专业处理</div><div class="ability"><b>风险</b>围绕风险完成专业处理</div><div class="ability"><b>修订</b>围绕修订完成专业处理</div></div><div class="section-label">模型与用量</div><p id="marketDetailModel">Claude Sonnet · 约 ¥0.4–1.5/份</p><div class="section-label">权限</div><p id="marketDetailPermissions">仅访问你主动发送的文件，不替代专业法律意见。</p></div></div>
         <div class="bottom-bar"><button class="secondary" data-action="trial-chat">先聊聊</button><button class="secondary" data-action="add-to-group">添加到群聊</button><button class="primary" id="installButton" data-action="install-agent">添加到通讯录</button></div>
       </section>
 
@@ -448,6 +448,7 @@
 
   const MARKET_PAGE_SIZE=10;
   const marketState={category:'推荐',query:'',visibleCount:MARKET_PAGE_SIZE,selectedId:null};
+  const installedAgentIds=new Set();
 
   function filterMarketAgents(){
     const query=marketState.query.trim().toLowerCase();
@@ -500,6 +501,44 @@
     if(marketState.visibleCount>=total)return;
     marketState.visibleCount=Math.min(total,marketState.visibleCount+MARKET_PAGE_SIZE);
     renderMarketAgents();
+  }
+
+  function openMarketAgent(id){
+    const agent=marketAgents.find(item=>item.id===id);
+    if(!agent){
+      showToast('没有找到这个专家');
+      showPage('market');
+      return;
+    }
+    marketState.selectedId=id;
+    document.getElementById('marketDetailAvatar').src=agent.avatar;
+    document.getElementById('marketDetailAvatar').alt=agent.name;
+    document.getElementById('marketDetailName').textContent=agent.name;
+    document.getElementById('marketDetailMeta').textContent=`${agent.verified?'认证专家':'独立专家'} · ★ ${agent.rating.toFixed(1)} · ${agent.badge}`;
+    document.getElementById('marketDetailDescription').textContent=agent.description;
+    document.getElementById('marketDetailAbilities').innerHTML=agent.tags.map(tag=>`<div class="ability"><b>${escapeHtml(tag)}</b>围绕${escapeHtml(tag)}完成专业处理</div>`).join('');
+    document.getElementById('marketDetailModel').textContent=`${agent.model} · ${agent.price}`;
+    document.getElementById('marketDetailPermissions').textContent=agent.permissions;
+    const button=document.getElementById('installButton');
+    const installed=installedAgentIds.has(id);
+    button.textContent=installed?'已添加':'添加到通讯录';
+    button.classList.toggle('done',installed);
+    showPage('market-detail');
+  }
+
+  function installSelectedAgent(){
+    const id=marketState.selectedId||'contract-review';
+    const agent=marketAgents.find(item=>item.id===id);
+    if(!agent)return;
+    installedAgentIds.add(id);
+    const button=document.getElementById('installButton');
+    button.textContent='已添加';
+    button.classList.add('done');
+    const list=document.querySelector('#contacts .body');
+    if(!document.getElementById(`installed-${id}`)){
+      list.insertAdjacentHTML('beforeend',`<div class="contact" id="installed-${id}"><img class="avatar" src="${agent.avatar}" alt="${escapeHtml(agent.name)}"><div class="contact-main"><b>${escapeHtml(agent.name)} <span class="presence"></span></b><p>新添加 · ${escapeHtml(agent.tags.join('、'))}</p></div><span>›</span></div>`);
+    }
+    showToast(`${agent.name}已添加到通讯录`);
   }
 
   function syncComposerInsets(){
@@ -686,11 +725,7 @@
   }
 
   function installAgent(){
-    document.getElementById('installedAgent').style.display='flex';
-    const button=document.getElementById('installButton');
-    button.textContent='已添加';
-    button.classList.add('done');
-    showToast('合同审阅助手已添加到通讯录');
+    installSelectedAgent();
   }
 
   function addAgentToGroup(){
@@ -731,6 +766,8 @@
   }
 
   document.addEventListener('click',event=>{
+    const agentCard=event.target.closest('[data-agent-id]');
+    if(agentCard){openMarketAgent(agentCard.dataset.agentId);return}
     const go=event.target.closest('[data-go]');
     if(go){showPage(go.dataset.go);return}
     const group=event.target.closest('[data-open-group]');
@@ -802,6 +839,15 @@
     const body=event.currentTarget;
     if(body.scrollTop+body.clientHeight>=body.scrollHeight-80)loadMoreMarketAgents();
   });
+  document.getElementById('marketAgentList').addEventListener('error',event=>{
+    if(!(event.target instanceof HTMLImageElement))return;
+    const card=event.target.closest('[data-agent-id]');
+    const agent=marketAgents.find(item=>item.id===card?.dataset.agentId);
+    const fallback=document.createElement('div');
+    fallback.className='avatar letter';
+    fallback.textContent=agent?.name.slice(0,1)||'AI';
+    event.target.replaceWith(fallback);
+  },true);
 
   if('ResizeObserver' in window){
     const composerObserver=new ResizeObserver(syncComposerInsets);

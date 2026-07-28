@@ -224,3 +224,20 @@ test('AI market supports filtering, search, and ten-item incremental loading', (
     'market behavior'
   );
 });
+
+test('every market expert can populate the shared detail screen', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'function openMarketAgent(id)',
+      'function installSelectedAgent()',
+      'id="marketDetailName"',
+      'id="marketDetailDescription"',
+      'id="marketDetailAbilities"',
+      'id="marketDetailModel"',
+      'id="marketDetailPermissions"'
+    ],
+    'market detail binding'
+  );
+});
