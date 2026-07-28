@@ -147,8 +147,26 @@ test('compact icon buttons cannot inherit full-width primary CTA layout', () => 
 
 test('navigation controls use one real icon family with explicit glyph sizing', () => {
   const html = readPrototype();
-  assert.match(html, /remixicon@4\.6\.0/);
+  assert.match(html, /@phosphor-icons\/web@2\.1\.1/);
+  assert.doesNotMatch(html, /remixicon|class="ri-/);
   assert.match(html, /\.icon>i\s*\{[^}]*font-size\s*:\s*18px/);
   assert.match(html, /\.rail-icon i\s*\{[^}]*font-size\s*:\s*16px/);
   assert.match(html, /\.tabs button i\s*\{[^}]*font-size\s*:\s*21px/);
+});
+
+test('iOS surfaces use hidden overlay scrolling without browser-width tracks', () => {
+  const html = readPrototype();
+  assert.match(html, /html,body\{[^}]*overflow:hidden/);
+  assert.match(html, /\.ios-scroll\{[^}]*scrollbar-width:none/);
+  assert.match(html, /\.ios-scroll::-webkit-scrollbar\{display:none/);
+  for (const className of [
+    'body ios-scroll',
+    'chat-scroll ios-scroll',
+    'market-body ios-scroll',
+    'moments-scroll ios-scroll',
+    'detail-body ios-scroll',
+    'sheet ios-scroll'
+  ]) {
+    assert.ok(html.includes(className), `scrolling surface should include “${className}”`);
+  }
 });
