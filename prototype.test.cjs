@@ -241,3 +241,28 @@ test('every market expert can populate the shared detail screen', () => {
     'market detail binding'
   );
 });
+
+test('settings exposes an expanded identity card and real icons', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'class="settings-profile-card"',
+      'Halo ID',
+      '偏好直接结论 · 主要用于产品与研究',
+      '已添加 Agent',
+      '本月用量',
+      'ph ph-brain',
+      'ph ph-users',
+      'ph ph-sparkle',
+      'ph ph-chart-donut',
+      'ph ph-waveform',
+      'ph ph-video-camera',
+      'ph ph-bell',
+      'ph ph-shield-check',
+      'ph ph-scan'
+    ],
+    'settings identity and icons'
+  );
+  assert.doesNotMatch(html, /<div class="row-icon">(?:忆|私|圈|模|声|像|铃|权|面)<\/div>/);
+});
