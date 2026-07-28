@@ -137,6 +137,16 @@ No remaining P0, P1, or P2 issue was found in the reported states.
 
 final result: passed
 
+## Design QA — 退出登录点击修复
+
+- Root cause: 高层级 Toast 即使透明仍参与点击命中，覆盖了退出确认弹层的主按钮。
+- Fix: Toast 设置 `pointer-events: none`，保留视觉反馈但不再阻挡下方控件。
+- Browser verification: 从设置页和账户中心分别打开退出确认，鼠标点击「退出登录」后均进入登录页，弹层关闭。
+- Hit-test verification: 修复前按钮中心命中 `#toast`；修复后命中退出按钮自身。
+- Browser console: 0 warning，0 error。
+
+final result: passed
+
 ## Design QA — 账户、认证与 Token 充值
 
 - Browser viewport: `1900 × 850` CSS px

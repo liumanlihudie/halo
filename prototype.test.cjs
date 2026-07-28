@@ -302,6 +302,15 @@ test('phone and chat composers stay clear of rounded corners and overlays', () =
   );
 });
 
+test('toast feedback never intercepts taps on controls beneath it', () => {
+  const html = readPrototype();
+  assert.match(
+    html,
+    /\.toast\{[^}]*pointer-events:none/,
+    'transparent or visible toast feedback must not block buttons'
+  );
+});
+
 test('AI market defines exactly 50 varied experts', () => {
   const html = readPrototype();
   const block = html.match(/const marketAgents=\[([\s\S]*?)\n  \];/);
