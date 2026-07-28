@@ -188,3 +188,22 @@ test('phone and chat composers stay clear of rounded corners and overlays', () =
     'responsive phone layout'
   );
 });
+
+test('AI market defines exactly 50 varied experts', () => {
+  const html = readPrototype();
+  const block = html.match(/const marketAgents=\[([\s\S]*?)\n  \];/);
+  assert.ok(block, 'marketAgents should be declared');
+  const ids = [...block[1].matchAll(/\bid:'([^']+)'/g)].map(match => match[1]);
+  assert.equal(ids.length, 50);
+  assert.equal(new Set(ids).size, 50);
+  expectAll(
+    block[1],
+    ['效率', '研究', '内容', '数据', '法律财税', '生活'],
+    'market categories'
+  );
+  expectAll(
+    block[1],
+    ['Claude Sonnet', 'GPT', 'Gemini Pro', 'DeepSeek', 'Doubao'],
+    'market models'
+  );
+});

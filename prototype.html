@@ -76,6 +76,7 @@
     .chips{display:flex;gap:7px;overflow:auto;margin:10px 0}.chip{white-space:nowrap;border:0;border-radius:14px;background:#fff;color:#6d7481;padding:7px 11px;font-size:10px;cursor:pointer}.chip.active{background:var(--accent);color:#fff}
     .market-title{display:flex;align-items:end;justify-content:space-between;margin:15px 2px 8px}.market-title b{font-size:15px}.market-title span{font-size:10px;color:#9297a0}
     .agent-card{background:#fff;border-radius:15px;padding:12px;margin-bottom:9px;display:flex;gap:11px;box-shadow:0 2px 10px rgba(40,48,71,.05);cursor:pointer}.agent-card .avatar{width:54px;height:54px;flex-basis:54px;border-radius:14px}.agent-card-main{flex:1;min-width:0}.agent-card-head{display:flex;justify-content:space-between;align-items:center}.agent-card-head b{font-size:14px}.rating{font-size:9px;color:#c68126}.agent-card p{font-size:10px;line-height:1.45;color:#828893;margin:5px 0}.mini-tags{display:flex;gap:5px;flex-wrap:wrap}.mini-tags span{font-size:8px;padding:3px 5px;border-radius:5px;background:#f0f1f5;color:#747b89}
+    .market-load-state{text-align:center;padding:8px 0 16px;color:#9a9faa;font-size:10px}
     .profile-hero{height:205px;background:linear-gradient(#0000,#0009),url("https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=900&q=80") center/cover;position:relative;color:#fff}.profile-hero .avatar{position:absolute;left:20px;bottom:18px;width:76px;height:76px;border-radius:19px;border:3px solid #fff}.profile-name{position:absolute;left:108px;bottom:23px}.profile-name h2{font-size:20px;margin:0 0 4px}.profile-name small{font-size:10px;color:#ffffffca}
     .profile-copy{padding:15px 16px;background:#fff}.profile-copy p{font-size:12px;line-height:1.65;color:#5c6471}.ability-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ability{padding:10px;border-radius:10px;background:#f3f4f7;font-size:10px;color:#626977}.ability b{display:block;font-size:11px;color:#293144;margin-bottom:3px}
     .bottom-bar{position:absolute;z-index:28;bottom:0;left:0;right:0;padding:10px 14px 21px;background:#fff;border-top:1px solid var(--line);display:flex;gap:8px}.bottom-bar button{height:44px;border-radius:12px;font-weight:750;cursor:pointer}.bottom-bar .secondary{width:96px;border:1px solid #dfe2e8;background:#fff}.bottom-bar .primary{flex:1;border:0;background:var(--accent);color:#fff}.bottom-bar .primary.done{background:#e5e7ec;color:#777d88}
@@ -278,12 +279,9 @@
           <div class="market-hero"><small>CURATED AGENT MARKET</small><h2>给自己增加<br>新的专业能力</h2><p>先看能力、模型、权限和预计用量</p></div>
           <div class="search" style="background:#fff;margin-top:11px">⌕　搜索 Agent、技能或工作场景</div>
           <div class="chips"><button class="chip active">推荐</button><button class="chip">效率</button><button class="chip">研究</button><button class="chip">内容</button><button class="chip">生活</button><button class="chip">新上架</button></div>
-          <div class="market-title"><b>本周精选</b><span>按近期对话推荐</span></div>
-          <div class="agent-card" data-go="market-detail"><img class="avatar" src="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=150&q=75"><div class="agent-card-main"><div class="agent-card-head"><b>合同审阅助手</b><span class="rating">★ 4.8 · 热门</span></div><p>标记风险条款、解释影响，并给出修改建议；不替代专业法律意见。</p><div class="mini-tags"><span>Claude</span><span>需文件权限</span><span>约 ¥0.8/次</span></div></div></div>
-          <div class="agent-card"><img class="avatar" src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=150&q=75"><div class="agent-card-main"><div class="agent-card-head"><b>用户研究员</b><span class="rating">★ 4.9 · 官方</span></div><p>分析访谈、归纳行为模式并输出机会点与用户旅程。</p><div class="mini-tags"><span>GPT</span><span>研究</span><span>免费试用</span></div></div></div>
-          <div class="agent-card"><div class="avatar letter">译</div><div class="agent-card-main"><div class="agent-card-head"><b>翻译专家</b><span class="rating">★ 4.7 · 新上架</span></div><p>保留语气和专业术语的中英双向翻译，可创建团队术语库。</p><div class="mini-tags"><span>Doubao</span><span>中英</span><span>低用量</span></div></div></div>
-          <div class="market-title"><b>生活助手</b><span>轻量模型优先</span></div>
-          <div class="agent-card"><div class="avatar letter" style="background:linear-gradient(145deg,#477b68,#2b5144)">健</div><div class="agent-card-main"><div class="agent-card-head"><b>健身计划师</b><span class="rating">★ 4.6</span></div><p>根据训练记录调整计划，支持照片与健康数据摘要。</p><div class="mini-tags"><span>生活</span><span>健康权限可选</span></div></div></div>
+          <div class="market-title"><b id="marketHeading">本周精选</b><span id="marketCount">已显示 10 / 50</span></div>
+          <div id="marketAgentList"></div>
+          <div class="market-load-state" id="marketLoadState">继续向下滑动加载更多</div>
         </div>
       </section>
 
@@ -393,6 +391,89 @@
     tech:'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75',
     research:'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=75'
   };
+
+  const marketAgents=[
+    {id:'task-planner',name:'任务规划师',category:'效率',description:'把模糊目标拆成优先级、里程碑和今天可以执行的动作。',rating:4.9,badge:'热门',model:'Claude Sonnet',price:'约 ¥0.2/次',tags:['计划','优先级','复盘'],avatar:'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'只读取你主动分享的目标、任务与日历摘要。'},
+    {id:'meeting-notes',name:'会议纪要官',category:'效率',description:'从录音或文字中提取结论、分歧、负责人和截止时间。',rating:4.8,badge:'官方',model:'Doubao',price:'约 ¥0.3/次',tags:['会议','待办','纪要'],avatar:'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'按次访问你选择的录音、聊天或会议文件。'},
+    {id:'email-drafter',name:'邮件沟通顾问',category:'效率',description:'根据关系、目的和上下文起草简洁得体的商务邮件。',rating:4.7,badge:'精选',model:'GPT',price:'约 ¥0.1/封',tags:['邮件','沟通','跟进'],avatar:'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你粘贴的邮件内容与指定联系人备注。'},
+    {id:'spreadsheet-cleaner',name:'表格整理师',category:'效率',description:'识别脏数据、统一格式并生成可复用的清洗步骤。',rating:4.8,badge:'热门',model:'DeepSeek',price:'约 ¥0.4/表',tags:['Excel','清洗','公式'],avatar:'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅处理你主动上传的表格文件。'},
+    {id:'project-coordinator',name:'项目协调员',category:'效率',description:'跟踪多人任务依赖，提前提示延期风险并整理周进展。',rating:4.6,badge:'精选',model:'Gemini Pro',price:'约 ¥0.3/次',tags:['项目','风险','协作'],avatar:'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'读取你授权的群聊总结与项目文档。'},
+    {id:'document-formatter',name:'文档排版专家',category:'效率',description:'统一标题、目录、图表说明和引用格式，输出交付版文档。',rating:4.7,badge:'新上架',model:'Doubao',price:'约 ¥0.2/份',tags:['排版','目录','规范'],avatar:'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'仅访问本次上传的文档。'},
+    {id:'presentation-builder',name:'演示文稿策划',category:'效率',description:'把长文档转成叙事清晰的演示结构、要点和讲稿。',rating:4.8,badge:'热门',model:'Claude Sonnet',price:'约 ¥0.6/份',tags:['PPT','叙事','讲稿'],avatar:'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅读取你选中的资料和品牌规范。'},
+    {id:'inbox-triage',name:'收件箱分诊员',category:'效率',description:'按紧急度和行动类型整理消息，并给出回复建议。',rating:4.5,badge:'新上架',model:'GPT',price:'约 ¥0.1/批',tags:['收件箱','分类','回复'],avatar:'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'按次访问你选择的消息，不自动发送。'},
+    {id:'workflow-automator',name:'工作流设计师',category:'效率',description:'发现重复步骤并设计可执行的自动化流程与异常分支。',rating:4.9,badge:'官方',model:'DeepSeek',price:'约 ¥0.5/流程',tags:['自动化','流程','提效'],avatar:'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'只读取你指定的应用说明和操作样例。'},
+    {id:'user-research',name:'用户研究员',category:'研究',description:'分析访谈、归纳行为模式并输出机会点与用户旅程。',rating:4.9,badge:'官方',model:'GPT',price:'约 ¥0.5/份',tags:['访谈','洞察','旅程'],avatar:'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你选择的访谈记录和研究资料。'},
+    {id:'market-research',name:'市场研究顾问',category:'研究',description:'整理市场规模、参与者、增长驱动与商业机会假设。',rating:4.8,badge:'热门',model:'Claude Sonnet',price:'约 ¥0.8/份',tags:['市场','规模','机会'],avatar:'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'可访问公开网页和你提供的内部材料。'},
+    {id:'academic-review',name:'论文综述助手',category:'研究',description:'梳理论文脉络、方法差异、证据强度和待研究问题。',rating:4.7,badge:'精选',model:'Gemini Pro',price:'约 ¥0.6/主题',tags:['论文','综述','引用'],avatar:'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问公开论文及你上传的文献。'},
+    {id:'policy-monitor',name:'政策观察员',category:'研究',description:'持续比较政策更新，提炼适用范围、时间点和业务影响。',rating:4.8,badge:'官方',model:'DeepSeek',price:'约 ¥0.4/次',tags:['政策','监管','影响'],avatar:'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问公开政策来源，不代替法律意见。'},
+    {id:'competitor-intel',name:'竞品情报员',category:'研究',description:'跟踪产品、定价、渠道与用户反馈变化并标记异常。',rating:4.9,badge:'热门',model:'GPT',price:'约 ¥0.5/次',tags:['竞品','变化','情报'],avatar:'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问公开网页和你创建的监控清单。'},
+    {id:'fact-checker',name:'事实核验员',category:'研究',description:'交叉检查数字、引语和结论，标记证据不足之处。',rating:4.9,badge:'官方',model:'Claude Sonnet',price:'约 ¥0.3/次',tags:['核验','来源','证据'],avatar:'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问公开来源和你指定的原始材料。'},
+    {id:'patent-scout',name:'专利检索顾问',category:'研究',description:'按技术主题检索相关专利并比较权利要求与申请趋势。',rating:4.6,badge:'新上架',model:'Gemini Pro',price:'约 ¥0.9/次',tags:['专利','技术','检索'],avatar:'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'访问公开专利数据库，不提供法律结论。'},
+    {id:'trend-analyst',name:'趋势分析师',category:'研究',description:'从新闻、社区与产品信号中识别正在形成的趋势。',rating:4.7,badge:'精选',model:'Doubao',price:'约 ¥0.3/次',tags:['趋势','信号','判断'],avatar:'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问公开信息和你关注的主题列表。'},
+    {id:'source-librarian',name:'资料图书管理员',category:'研究',description:'整理来源、去重、分类并生成可追溯的研究资料库。',rating:4.6,badge:'新上架',model:'DeepSeek',price:'约 ¥0.2/批',tags:['资料','归档','引用'],avatar:'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'仅整理你授权的文件与网页收藏。'},
+    {id:'writing-coach',name:'写作顾问',category:'内容',description:'帮助搭建结构、压缩废话并保持清晰有力的表达。',rating:4.9,badge:'热门',model:'Claude Sonnet',price:'约 ¥0.3/篇',tags:['写作','结构','表达'],avatar:'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问本次稿件和你选择的写作偏好。'},
+    {id:'copy-editor',name:'中文编辑',category:'内容',description:'检查语病、逻辑跳跃和术语一致性，保留作者语气。',rating:4.8,badge:'官方',model:'Doubao',price:'约 ¥0.2/篇',tags:['编辑','校对','中文'],avatar:'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你主动发送的文本。'},
+    {id:'social-editor',name:'社媒内容编辑',category:'内容',description:'将成果改写为适合不同平台的信息密度和发布节奏。',rating:4.7,badge:'精选',model:'GPT',price:'约 ¥0.2/组',tags:['社媒','分发','改写'],avatar:'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问你提供的内容与账号语气规范。'},
+    {id:'script-writer',name:'短视频脚本师',category:'内容',description:'从选题生成开场、冲突、信息点和镜头节奏。',rating:4.6,badge:'新上架',model:'Gemini Pro',price:'约 ¥0.4/条',tags:['脚本','短视频','镜头'],avatar:'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'访问你选择的素材和公开参考。'},
+    {id:'brand-voice',name:'品牌语气设计师',category:'内容',description:'提炼品牌用词、句式、禁用表达并检查内容一致性。',rating:4.8,badge:'热门',model:'Claude Sonnet',price:'约 ¥0.6/次',tags:['品牌','语气','规范'],avatar:'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问你授权的品牌材料与历史内容。'},
+    {id:'translation-expert',name:'翻译专家',category:'内容',description:'保留语气和专业术语的中英双向翻译，可维护术语库。',rating:4.7,badge:'新上架',model:'Doubao',price:'约 ¥0.2/千字',tags:['翻译','中英','术语'],avatar:'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'仅访问本次文本与用户保存的术语表。'},
+    {id:'visual-brief',name:'视觉需求策划',category:'内容',description:'把抽象创意转成设计师可执行的画面、构图和素材清单。',rating:4.6,badge:'精选',model:'Gemini Pro',price:'约 ¥0.3/份',tags:['视觉','Brief','素材'],avatar:'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问你选择的参考图与品牌资料。'},
+    {id:'newsletter-editor',name:'Newsletter 主编',category:'内容',description:'筛选主题、组织栏目并把多条信息编辑成一期简报。',rating:4.7,badge:'官方',model:'GPT',price:'约 ¥0.5/期',tags:['简报','选题','编辑'],avatar:'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问你授权的订阅源和草稿。'},
+    {id:'data-analyst',name:'数据分析师',category:'数据',description:'从表格和指标中发现变化、异常与可行动的解释。',rating:4.9,badge:'热门',model:'DeepSeek',price:'约 ¥0.5/次',tags:['指标','分析','洞察'],avatar:'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅处理你主动上传的数据文件。'},
+    {id:'sql-expert',name:'SQL 专家',category:'数据',description:'根据业务问题编写、解释和优化 SQL，并检查口径。',rating:4.8,badge:'官方',model:'GPT',price:'约 ¥0.3/次',tags:['SQL','查询','口径'],avatar:'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'只访问你粘贴的结构与样例数据。'},
+    {id:'dashboard-review',name:'数据看板评审员',category:'数据',description:'检查指标层级、图表选择和误导性表达，给出重排方案。',rating:4.7,badge:'精选',model:'Gemini Pro',price:'约 ¥0.3/页',tags:['看板','图表','可视化'],avatar:'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问你上传的截图、报表或数据说明。'},
+    {id:'experiment-analyst',name:'实验分析师',category:'数据',description:'设计 A/B 实验、校验样本与显著性并解释业务影响。',rating:4.8,badge:'热门',model:'Claude Sonnet',price:'约 ¥0.6/实验',tags:['实验','A/B','显著性'],avatar:'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你选择的实验方案和结果数据。'},
+    {id:'forecast-planner',name:'预测规划师',category:'数据',description:'基于历史数据建立情景预测并展示关键假设和区间。',rating:4.6,badge:'新上架',model:'DeepSeek',price:'约 ¥0.7/模型',tags:['预测','情景','假设'],avatar:'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'仅处理你授权的数据，不连接生产数据库。'},
+    {id:'survey-statistician',name:'问卷统计师',category:'数据',description:'清洗问卷、交叉分析人群差异并输出可靠性提示。',rating:4.7,badge:'精选',model:'Doubao',price:'约 ¥0.4/份',tags:['问卷','统计','人群'],avatar:'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问本次问卷和匿名结果。'},
+    {id:'finance-modeler',name:'财务建模师',category:'数据',description:'构建收入、成本、现金流和敏感性分析的基础模型。',rating:4.8,badge:'官方',model:'GPT',price:'约 ¥0.9/模型',tags:['财务','模型','现金流'],avatar:'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你主动发送的财务数据。'},
+    {id:'data-storyteller',name:'数据叙事顾问',category:'数据',description:'把分析结果组织成决策者容易理解的结论和证据链。',rating:4.7,badge:'新上架',model:'Claude Sonnet',price:'约 ¥0.4/份',tags:['叙事','结论','汇报'],avatar:'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'访问你选择的数据摘要和汇报背景。'},
+    {id:'contract-review',name:'合同审阅助手',category:'法律财税',description:'标记风险条款、解释影响，并给出逐条修改建议。',rating:4.8,badge:'热门',model:'Claude Sonnet',price:'约 ¥0.4–1.5/份',tags:['合同','风险','修订'],avatar:'https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你主动发送的文件，不替代专业法律意见。'},
+    {id:'tax-assistant',name:'个税与报销助手',category:'法律财税',description:'整理票据与常见个税问题，生成待核对清单和申报准备项。',rating:4.6,badge:'精选',model:'Doubao',price:'约 ¥0.3/次',tags:['个税','报销','票据'],avatar:'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅处理你上传的票据，不代替税务师。'},
+    {id:'invoice-auditor',name:'发票审核员',category:'法律财税',description:'检查发票字段、重复报销线索和费用归属异常。',rating:4.7,badge:'官方',model:'DeepSeek',price:'约 ¥0.2/批',tags:['发票','审核','费用'],avatar:'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问本次上传的发票与报销规则。'},
+    {id:'compliance-advisor',name:'合规检查顾问',category:'法律财税',description:'按规则清单检查流程和文档，标记需要专业复核的风险点。',rating:4.7,badge:'热门',model:'GPT',price:'约 ¥0.8/次',tags:['合规','检查','风险'],avatar:'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'访问你提供的制度与材料，不作最终合规结论。'},
+    {id:'labor-law',name:'用工风险助手',category:'法律财税',description:'检查招聘、合同、考勤和离职材料中的常见用工风险。',rating:4.6,badge:'新上架',model:'Gemini Pro',price:'约 ¥0.6/次',tags:['用工','劳动','风险'],avatar:'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'仅访问你主动上传的材料，不替代律师意见。'},
+    {id:'procurement-review',name:'采购条款顾问',category:'法律财税',description:'比较供应商报价与合同条款，识别付款和交付风险。',rating:4.7,badge:'精选',model:'Claude Sonnet',price:'约 ¥0.7/份',tags:['采购','供应商','条款'],avatar:'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你选择的报价单和合同。'},
+    {id:'ip-advisor',name:'知识产权助手',category:'法律财税',description:'整理商标、版权和合作成果归属问题的核对清单。',rating:4.6,badge:'新上架',model:'DeepSeek',price:'约 ¥0.5/次',tags:['商标','版权','归属'],avatar:'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'访问公开数据库和你提供的材料，不提供法律结论。'},
+    {id:'budgeting-advisor',name:'个人预算顾问',category:'法律财税',description:'整理收入与固定支出，建立月度预算和异常消费提醒。',rating:4.7,badge:'官方',model:'Doubao',price:'约 ¥0.2/月',tags:['预算','支出','储蓄'],avatar:'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你主动录入或上传的账单摘要。'},
+    {id:'fitness-planner',name:'健身计划师',category:'生活',description:'根据训练记录、时间和目标调整每周训练与恢复计划。',rating:4.7,badge:'热门',model:'Doubao',price:'约 ¥0.2/周',tags:['训练','恢复','习惯'],avatar:'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'健康数据权限可选，不提供医疗诊断。'},
+    {id:'travel-planner',name:'旅行规划师',category:'生活',description:'按时间、预算和兴趣组织路线、预订清单与出行提醒。',rating:4.8,badge:'官方',model:'Gemini Pro',price:'约 ¥0.4/行程',tags:['旅行','路线','预算'],avatar:'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'可访问公开旅行信息和你选择的日历。'},
+    {id:'meal-planner',name:'家庭饮食计划师',category:'生活',description:'结合人数、忌口和时间安排一周菜单与采购清单。',rating:4.6,badge:'精选',model:'Doubao',price:'约 ¥0.2/周',tags:['菜单','采购','家庭'],avatar:'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅保存你主动设置的饮食偏好。'},
+    {id:'learning-coach',name:'学习教练',category:'生活',description:'把学习目标拆成节奏、练习和阶段测试，并跟踪薄弱点。',rating:4.8,badge:'热门',model:'GPT',price:'约 ¥0.3/周',tags:['学习','练习','复习'],avatar:'https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你选择的学习材料和进度。'},
+    {id:'home-organizer',name:'居家整理顾问',category:'生活',description:'按空间和使用频率制定整理步骤、物品清单与维护节奏。',rating:4.5,badge:'新上架',model:'Gemini Pro',price:'约 ¥0.2/空间',tags:['整理','空间','清单'],avatar:'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'照片权限按次授权，不保存原始家庭照片。'},
+    {id:'family-scheduler',name:'家庭日程管家',category:'生活',description:'协调家庭成员日程、接送、账单与重要日期提醒。',rating:4.7,badge:'官方',model:'Doubao',price:'约 ¥0.2/月',tags:['日程','提醒','家庭'],avatar:'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你选择共享的日历和提醒事项。'},
+    {id:'reading-companion',name:'阅读陪练',category:'生活',description:'根据阅读内容提问、解释概念并生成可回顾的读书卡片。',rating:4.7,badge:'精选',model:'Claude Sonnet',price:'约 ¥0.2/章',tags:['阅读','提问','卡片'],avatar:'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'仅访问你上传或粘贴的阅读内容。'},
+    {id:'wellness-journal',name:'情绪日记助手',category:'生活',description:'帮助记录情绪与触发事件，整理长期变化和自我照顾提示。',rating:4.6,badge:'新上架',model:'Claude Sonnet',price:'约 ¥0.1/次',tags:['日记','情绪','复盘'],avatar:'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=75',verified:false,permissions:'内容默认私密，不提供心理或医疗诊断。'}
+  ];
+
+  const MARKET_PAGE_SIZE=10;
+  const marketState={category:'推荐',query:'',visibleCount:MARKET_PAGE_SIZE,selectedId:null};
+
+  function filterMarketAgents(){
+    const query=marketState.query.trim().toLowerCase();
+    return marketAgents.filter(agent=>{
+      const categoryMatch=marketState.category==='推荐'
+        || marketState.category==='新上架'&&agent.badge==='新上架'
+        || agent.category===marketState.category;
+      const haystack=[agent.name,agent.description,agent.category,...agent.tags].join(' ').toLowerCase();
+      return categoryMatch&&(!query||haystack.includes(query));
+    });
+  }
+
+  function renderMarketAgents(){
+    const filtered=filterMarketAgents();
+    const visible=filtered.slice(0,marketState.visibleCount);
+    document.getElementById('marketAgentList').innerHTML=visible.map(agent=>`
+      <article class="agent-card" data-agent-id="${agent.id}">
+        <img class="avatar" src="${agent.avatar}" alt="${escapeHtml(agent.name)}">
+        <div class="agent-card-main">
+          <div class="agent-card-head"><b>${escapeHtml(agent.name)}</b><span class="rating">★ ${agent.rating.toFixed(1)} · ${escapeHtml(agent.badge)}</span></div>
+          <p>${escapeHtml(agent.description)}</p>
+          <div class="mini-tags"><span>${escapeHtml(agent.model)}</span><span>${escapeHtml(agent.price)}</span>${agent.tags.slice(0,2).map(tag=>`<span>${escapeHtml(tag)}</span>`).join('')}</div>
+        </div>
+      </article>
+    `).join('');
+    document.getElementById('marketCount').textContent=`已显示 ${visible.length} / ${filtered.length}`;
+  }
 
   function syncComposerInsets(){
     document.querySelectorAll('.composer-wrap').forEach(wrap=>{
@@ -685,6 +766,7 @@
     fitPhoneToStage();
     syncComposerInsets();
   });
+  renderMarketAgents();
   fitPhoneToStage();
   syncComposerInsets();
 
