@@ -170,3 +170,21 @@ test('iOS surfaces use hidden overlay scrolling without browser-width tracks', (
     assert.ok(html.includes(className), `scrolling surface should include “${className}”`);
   }
 });
+
+test('phone and chat composers stay clear of rounded corners and overlays', () => {
+  const html = readPrototype();
+  assert.match(html, /--phone-safe-bottom:\s*30px/);
+  assert.match(
+    html,
+    /\.chat-scroll\{[^}]*padding:12px 12px var\(--composer-offset,\s*128px\)/
+  );
+  assert.match(
+    html,
+    /\.composer\{[^}]*padding:4px 9px var\(--phone-safe-bottom\)/
+  );
+  expectAll(
+    html,
+    ['function syncComposerInsets()', 'ResizeObserver', 'function fitPhoneToStage()'],
+    'responsive phone layout'
+  );
+});
