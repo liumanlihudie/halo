@@ -39,6 +39,90 @@ test('conversation list includes three distinct text groups', () => {
   );
 });
 
+test('every conversation list item maps to one of twelve rich mock conversations', () => {
+  const html = readPrototype();
+  const ids = [...html.matchAll(/data-conversation-id="([^"$]+)"/g)].map(match => match[1]);
+  assert.equal(new Set(ids).size, 9);
+  expectAll(
+    html,
+    [
+      'const conversationMocks={',
+      "'general-assistant'",
+      "'data-analyst-chat'",
+      "'calendar-assistant'",
+      "'translation-expert-chat'",
+      "'contract-review-chat'",
+      "'deep-research-task'",
+      "'file-processing'",
+      "'monitoring-chat'",
+      "'system-assistant'"
+    ],
+    'conversation dataset'
+  );
+});
+
+test('conversation mocks cover rich message and failure formats', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      "type:'text'",
+      "type:'quote'",
+      "type:'image'",
+      "type:'gallery'",
+      "type:'file'",
+      "type:'voice'",
+      "type:'link'",
+      "type:'table'",
+      "type:'chart'",
+      "type:'progress'",
+      "type:'checklist'",
+      "type:'calendar'",
+      "type:'risk'",
+      "type:'error'",
+      "type:'system'"
+    ],
+    'message types'
+  );
+  expectAll(
+    html,
+    ['function renderMessage(message)', 'function renderConversation(id)', 'function openConversation(id)'],
+    'conversation renderer'
+  );
+});
+
+test('all three groups define independent members goals and histories', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      "product:{title:'iOS 产品小组'",
+      "research:{title:'本周信息研判'",
+      "content:{title:'内容发布团队'",
+      'function renderGroupMessages(group)'
+    ],
+    'group histories'
+  );
+  expectAll(html, ['交叉核验', '来源可信度', '封面方向 B', '事实核验'], 'distinct group content');
+});
+
+test('single conversation sends and scenario actions update visible state', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'function sendSingleMessage()',
+      'function updateConversationPreview(id,text)',
+      'function runConversationAction(action,id)',
+      'retry-upload',
+      'stop-task',
+      'grant-permission',
+      'view-usage'
+    ],
+    'conversation mutation'
+  );
+});
+
 test('group chat exposes all three reply modes and no call controls', () => {
   const html = readPrototype();
   expectAll(

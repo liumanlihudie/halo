@@ -61,6 +61,9 @@
     .file-top{padding:13px;display:flex;gap:11px}.file-icon{width:43px;height:51px;border-radius:7px;background:#e76557;color:#fff;display:grid;place-items:center;font-size:10px;font-weight:850}.file-top b{font-size:13px;display:block;margin:4px 0}.file-top small{color:#969ba4}.file-foot{padding:8px 13px;border-top:1px solid var(--line);font-size:10px;color:#9298a2;display:flex;justify-content:space-between}
     .progress-card{padding:13px}.progress-head{display:flex;justify-content:space-between;font-size:12px}.bar{height:6px;border-radius:4px;background:#e7e9ee;margin:11px 0 8px;overflow:hidden}.bar i{display:block;height:100%;width:68%;background:var(--accent);border-radius:inherit}.progress-card small{color:#8f949d}
     .photo-message{width:225px;height:150px;border-radius:14px;object-fit:cover;display:block}
+    .message-stack{width:276px}.quote-block{padding:8px 9px;margin-bottom:7px;border-left:3px solid #cdd2df;background:#f6f7f9;border-radius:0 8px 8px 0;color:#6d7480;font-size:10px}.gallery-message{width:246px;display:grid;grid-template-columns:repeat(2,1fr);gap:3px}.gallery-message img{width:100%;height:93px;object-fit:cover}.gallery-message img:first-child{border-radius:13px 0 0}.gallery-message img:nth-child(2){border-radius:0 13px 0 0}.gallery-message img:nth-last-child(2){border-radius:0 0 0 13px}.gallery-message img:last-child{border-radius:0 0 13px}
+    .voice-message,.link-card,.checklist-card,.calendar-card,.risk-card,.error-card,.system-notice,.table-card,.chart-card{width:276px;background:#fff;border-radius:14px;padding:12px;box-shadow:0 3px 14px rgba(35,42,62,.07);font-size:11px}.voice-message{display:flex;align-items:center;gap:9px}.voice-message i{font-size:20px;color:var(--accent-deep)}.voice-wave{display:flex;align-items:center;gap:2px;flex:1}.voice-wave i{width:2px;height:13px;background:var(--accent);border-radius:2px}.voice-message small,.link-card small,.calendar-card small{color:#8c929c}.link-card{display:flex;gap:10px}.link-icon{width:42px;height:42px;flex:0 0 42px;border-radius:10px;background:#eef0ff;color:var(--accent-deep);display:grid;place-items:center;font-size:18px}.link-card b,.calendar-card b,.risk-card b,.error-card b,.table-card b,.chart-card b{display:block;font-size:12px;margin-bottom:4px}.link-card p,.risk-card p,.error-card p{margin:3px 0;line-height:1.45;color:#69717e}
+    .metric-grid{width:276px;display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.metric{padding:10px 5px;background:#fff;border-radius:11px;text-align:center}.metric b{display:block;font-size:14px}.metric small{font-size:8px;color:#8f949e}.data-table{width:100%;border-collapse:collapse;font-size:9px;margin-top:8px}.data-table th,.data-table td{padding:6px 4px;text-align:left;border-bottom:1px solid var(--line)}.data-table th{color:#858b96;font-weight:600}.chart-card .mini-chart{margin-top:8px}.checklist-card li{list-style:none;padding:5px 0;border-bottom:1px solid var(--line)}.checklist-card li:last-child{border:0}.checklist-card i{margin-right:6px;color:var(--green)}.calendar-card{display:grid;grid-template-columns:48px 1fr;gap:10px}.calendar-date{border-radius:10px;background:var(--accent-soft);color:var(--accent-deep);display:grid;place-items:center;font-weight:800;font-size:14px}.calendar-card button,.risk-card button,.error-card button,.system-notice button{margin-top:9px;border:0;border-radius:9px;padding:7px 9px;background:var(--accent);color:#fff;font-size:9px}.risk-card{border-left:4px solid var(--amber)}.risk-card.high{border-color:var(--red)}.risk-pill{display:inline-block;padding:3px 6px;border-radius:6px;background:#ffedef;color:#c9444b;font-size:8px}.error-card{background:#fff7f7;border:1px solid #f4d5d7}.error-card i{color:var(--red);font-size:17px}.system-notice{width:auto;max-width:290px;margin:10px auto;background:#e6e8ed;color:#727986;text-align:center;box-shadow:none}.system-notice.warning{background:#fff3e3;color:#9b651e}.system-notice.success{background:#e9f6f1;color:#28785a}.message-actions{display:flex;gap:6px;flex-wrap:wrap}.message-actions button{border:0;border-radius:8px;padding:6px 8px;background:#eef0ff;color:var(--accent-deep);font-size:9px}
     .composer-wrap{position:absolute;z-index:27;bottom:0;left:0;right:0;background:#f8f8fa;border-top:1px solid #dfe2e8}
     .mode-hint{min-height:29px;padding:7px 11px 4px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:#6f7684}.mode-hint b{color:var(--accent-deep)}.mode-hint button{border:0;background:none;color:var(--accent-deep);font-size:10px;cursor:pointer}
     .composer{padding:4px 9px var(--phone-safe-bottom);display:flex;align-items:center;gap:7px}.composer .icon{align-self:flex-end;background:#eef0f4}.composer .icon.primary{background:var(--accent)}.field{flex:1;min-width:0;min-height:39px;max-height:72px;overflow:auto;background:#fff;border-radius:9px;padding:10px;font-size:13px;color:#444a56;outline:none}.field:empty:before{content:attr(data-placeholder);color:#adb1b9}
@@ -132,7 +135,7 @@
             <div class="group-avatar"><img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=80&q=75"><img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=80&q=75"><img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=80&q=75"><i>UX</i></div>
             <div class="conv-main"><div class="conv-line"><b>iOS 产品小组 <span class="tag">4 AI</span></b><span class="conv-time">10:36</span></div><div class="meta-row"><div class="conv-preview"><span class="preview-sender">产品经理：</span>我先把 MVP 范围压缩成三条。</div><span class="unread">5</span></div></div>
           </div>
-          <div class="conversation" data-go="chat">
+          <div class="conversation" data-conversation-id="general-assistant">
             <img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=160&q=80">
             <div class="conv-main"><div class="conv-line"><b>通用助理 <span class="tag green">可用</span></b><span class="conv-time">10:21</span></div><div class="conv-preview">PDF · 个人 AI 通讯竞品分析已完成</div></div>
           </div>
@@ -144,14 +147,29 @@
             <div class="group-avatar"><img src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=80&q=75"><img src="https://images.unsplash.com/photo-1573497019940-1c28c88b4f3e?auto=format&fit=crop&w=80&q=75"><i>图</i><i>核</i></div>
             <div class="conv-main"><div class="conv-line"><b>内容发布团队 <span class="tag">3 AI</span></b><span class="conv-time">昨天</span></div><div class="conv-preview">图片 · 封面方向 B 已经生成，可以确认。</div></div>
           </div>
-          <div class="conversation" data-action="progress-detail">
+          <div class="conversation" data-conversation-id="deep-research-task">
             <div class="avatar letter">研</div><div class="conv-main"><div class="conv-line"><b>深度研究任务 <span class="tag amber">任务进行中</span></b><span class="conv-time">12 分钟</span></div><div class="conv-preview">正在读取 23 个来源 · 68%</div></div>
           </div>
-          <div class="conversation" data-action="retry">
+          <div class="conversation" data-conversation-id="file-processing">
             <div class="avatar letter" style="background:linear-gradient(145deg,#cf5961,#8f3239)">!</div><div class="conv-main"><div class="conv-line"><b>文件处理 <span class="tag red">发送失败</span></b><span class="conv-time">昨天</span></div><div class="conv-preview">预算表.xlsx 上传失败，点击重试</div></div>
           </div>
-          <div class="conversation" data-action="image-preview">
+          <div class="conversation" data-conversation-id="data-analyst-chat">
             <img class="avatar" src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=120&q=75"><div class="conv-main"><div class="conv-line"><b>数据分析师 <span class="tag gray">免打扰</span></b><span class="conv-time">周一</span></div><div class="conv-preview">图片 · 本周转化漏斗标注版</div></div>
+          </div>
+          <div class="conversation" data-conversation-id="calendar-assistant">
+            <div class="avatar letter" style="background:linear-gradient(145deg,#2d9c83,#176253)">日</div><div class="conv-main"><div class="conv-line"><b>日程管家 <span class="tag green">待确认</span></b><span class="conv-time">周一</span></div><div class="conv-preview">日历 · 周四 15:00 产品复盘会</div></div>
+          </div>
+          <div class="conversation" data-conversation-id="translation-expert-chat">
+            <div class="avatar letter" style="background:linear-gradient(145deg,#7a68d8,#44388e)">译</div><div class="conv-main"><div class="conv-line"><b>翻译专家 <span class="tag">中英</span></b><span class="conv-time">周日</span></div><div class="conv-preview">语音 · 00:18 已转写并翻译</div></div>
+          </div>
+          <div class="conversation" data-conversation-id="contract-review-chat">
+            <div class="avatar letter" style="background:linear-gradient(145deg,#b07a39,#694219)">合</div><div class="conv-main"><div class="conv-line"><b>合同审阅助手 <span class="tag red">3 项高风险</span></b><span class="conv-time">周六</span></div><div class="conv-preview">DOCX · 服务采购合同审阅完成</div></div>
+          </div>
+          <div class="conversation" data-conversation-id="monitoring-chat">
+            <div class="avatar letter" style="background:linear-gradient(145deg,#3476b9,#1f456d)">监</div><div class="conv-main"><div class="conv-line"><b>信息监控 <span class="tag amber">重要变化</span></b><span class="conv-time">周五</span></div><div class="meta-row"><div class="conv-preview">网页 · 竞品价格页发生 4 处变化</div><span class="unread">4</span></div></div>
+          </div>
+          <div class="conversation" data-conversation-id="system-assistant">
+            <div class="avatar letter" style="background:linear-gradient(145deg,#596172,#2e3440)">H</div><div class="conv-main"><div class="conv-line"><b>Halo 系统助手 <span class="tag gray">系统</span></b><span class="conv-time">周四</span></div><div class="conv-preview">模型额度剩余 12%，部分任务将自动降级</div></div>
           </div>
           <span style="display:none">未读</span>
         </div>
@@ -160,16 +178,9 @@
 
       <section class="page" id="chat">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="conversations" aria-label="返回"><i class="ph ph-caret-left"></i></button><h2>通用助理 <span class="tag green">可用</span></h2><div class="nav-actions"><button class="icon" data-go="voice" aria-label="语音通话"><i class="ph ph-phone"></i></button><button class="icon" data-go="video" aria-label="视频通话"><i class="ph ph-video-camera"></i></button></div></div>
-        <div class="chat-scroll ios-scroll" id="singleChat">
-          <div class="timestamp">今天 10:02</div>
-          <div class="msg mine"><div class="bubble">结合我刚发的材料，整理一版面向投资人的竞品分析。</div></div>
-          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div><div class="speaker">通用助理 · Doubao S2S</div><div class="bubble">收到。我先让研究员核验关键数据，再整理成市场格局、差异化和风险三部分。</div></div></div>
-          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div class="progress-card" data-action="progress-detail"><div class="progress-head"><b>任务进行中</b><span>68%</span></div><div class="bar"><i></i></div><small>已核验 16 / 23 个来源</small></div></div>
-          <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div class="file-card" data-go="moment-detail"><div class="file-top"><div class="file-icon">PDF</div><div><b>个人 AI 通讯竞品分析.pdf</b><small>12 页 · 2.4 MB · 已完成</small></div></div><div class="file-foot"><span>8 个来源</span><span>已总结至朋友圈</span></div></div></div>
-          <div class="msg mine"><img class="photo-message" src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80" alt="数据看板图片"></div>
-        </div>
-        <div class="composer-wrap"><div class="composer"><button class="icon" data-action="voice-input" aria-label="语音输入"><i class="ph ph-microphone"></i></button><div class="field" id="singleInput" contenteditable="true" data-placeholder="输入消息"></div><button class="icon" data-action="attach" aria-label="添加附件"><i class="ph ph-plus"></i></button></div></div>
+        <div class="navbar compact"><button class="back" data-go="conversations" aria-label="返回"><i class="ph ph-caret-left"></i></button><h2 id="singleChatTitle">通用助理 <span class="tag green" id="singleChatStatus">可用</span></h2><div class="nav-actions" id="singleCallActions"><button class="icon" data-go="voice" aria-label="语音通话"><i class="ph ph-phone"></i></button><button class="icon" data-go="video" aria-label="视频通话"><i class="ph ph-video-camera"></i></button></div></div>
+        <div class="chat-scroll ios-scroll" id="singleChat"></div>
+        <div class="composer-wrap"><div class="quick-actions ios-scroll" id="singleQuickActions"></div><div class="composer"><button class="icon" data-action="voice-input" aria-label="语音输入"><i class="ph ph-microphone"></i></button><div class="field" id="singleInput" contenteditable="true" data-placeholder="输入消息"></div><button class="icon" data-action="attach" aria-label="添加附件"><i class="ph ph-plus"></i></button><button class="icon primary" data-action="single-send" aria-label="发送"><i class="ph ph-arrow-up"></i></button></div></div>
       </section>
 
       <section class="page" id="group-chat">
@@ -381,9 +392,35 @@
   });
 
   const groups={
-    product:{title:'iOS 产品小组',count:4,goal:'判断个人 AI 通讯产品的 iOS MVP 是否值得做'},
-    research:{title:'本周信息研判',count:3,goal:'核验本周重要变化并判断对产品的影响'},
-    content:{title:'内容发布团队',count:3,goal:'把研究成果整理成可以公开发布的内容'}
+    product:{title:'iOS 产品小组',count:4,goal:'判断个人 AI 通讯产品的 iOS MVP 是否值得做',host:'产品经理',members:[
+      {name:'产品经理',model:'Claude Sonnet',avatarKey:'pm'},{name:'交互设计师',model:'Gemini Pro',avatarKey:'ux'},{name:'技术架构师',model:'GPT',avatarKey:'tech'},{name:'增长顾问',model:'DeepSeek',avatarKey:'research'}
+    ],messages:[
+      {type:'system',text:'群目标：判断个人 AI 通讯产品的 iOS MVP 是否值得做'},
+      {type:'text',mine:true,text:'先从用户价值、实现难度和商业化三个角度判断一下。'},
+      {type:'system',text:'自动选择了 产品经理、技术架构师'},
+      {type:'text',sender:'产品经理',model:'Claude Sonnet',avatarKey:'pm',text:'用户价值成立，但首版必须把“联系人就是能力”做透。建议只验证高频工作与资讯场景。'},
+      {type:'quote',sender:'技术架构师',model:'GPT',avatarKey:'tech',quote:'产品经理：首版只验证高频工作与资讯',text:'工程上可行。最大风险不是 UI，而是消息可靠性、模型编排和长期记忆边界。'},
+      {type:'checklist',sender:'交互设计师',model:'Gemini Pro',avatarKey:'ux',title:'首版交互验收',items:['发送前知道谁会回答','讨论可随时停止','结果可保存或发布']}
+    ]},
+    research:{title:'本周信息研判',count:3,goal:'核验本周重要变化并判断对产品的影响',host:'信息观察员',members:[
+      {name:'信息观察员',model:'DeepSeek',avatarKey:'research'},{name:'研究员',model:'Claude Sonnet',avatarKey:'pm'},{name:'数据分析师',model:'GPT',avatarKey:'tech'}
+    ],messages:[
+      {type:'system',text:'监控窗口：过去 7 天 · 36 个公开来源'},
+      {type:'link',sender:'信息观察员',model:'DeepSeek',avatarKey:'research',title:'三家 AI 应用调整个人订阅价格',domain:'公开价格页 · 今天 08:40',text:'检测到价格、额度和年付折扣变化。'},
+      {type:'text',mine:true,text:'先做交叉核验，别只看公告。'},
+      {type:'table',sender:'数据分析师',model:'GPT',avatarKey:'tech',title:'来源可信度',columns:['来源','可信度','结论'],rows:[['官方价格页','高','已变化'],['应用商店','高','同步'],['社区截图','低','待核验']]},
+      {type:'quote',sender:'研究员',model:'Claude Sonnet',avatarKey:'pm',quote:'社区称免费额度下调 50%',text:'交叉核验后只能确认部分地区灰度，不能直接推断为全量策略。'},
+      {type:'risk',sender:'信息观察员',model:'DeepSeek',avatarKey:'research',level:'中风险',title:'来源冲突',text:'两份二手来源与官方页面不一致，建议继续观察 48 小时。'}
+    ]},
+    content:{title:'内容发布团队',count:3,goal:'把研究成果整理成可以公开发布的内容',host:'写作顾问',members:[
+      {name:'写作顾问',model:'Claude Sonnet',avatarKey:'pm'},{name:'事实核验员',model:'GPT',avatarKey:'tech'},{name:'视觉策划',model:'Gemini Pro',avatarKey:'ux'}
+    ],messages:[
+      {type:'system',text:'发布目标：周三 18:00 前完成公众号与朋友圈两个版本'},
+      {type:'text',sender:'写作顾问',model:'Claude Sonnet',avatarKey:'pm',text:'长文结构已经压成三段：变化、影响、个人用户该怎么选。'},
+      {type:'quote',sender:'事实核验员',model:'GPT',avatarKey:'tech',quote:'“所有产品都提高了价格”',text:'事实核验未通过。准确表述应为“三款样本中有两款调整了个人套餐”。'},
+      {type:'gallery',sender:'视觉策划',model:'Gemini Pro',avatarKey:'ux',title:'封面方向 B 已生成',images:['https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=300&q=72','https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=300&q=72','https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=300&q=72','https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=300&q=72']},
+      {type:'checklist',sender:'写作顾问',model:'Claude Sonnet',avatarKey:'pm',title:'发布排期',items:['事实核验完成','封面方向 B 待确认','朋友圈短版待排版']}
+    ]}
   };
   let currentGroup='product';
   let groupMode='auto';
@@ -397,6 +434,82 @@
     tech:'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75',
     research:'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=100&q=75'
   };
+
+  const conversationMocks={
+    'general-assistant':{id:'general-assistant',type:'agent',title:'通用助理',status:'可用',avatar:avatarUrls.ux,model:'Doubao S2S',preview:'PDF · 个人 AI 通讯竞品分析已完成',time:'10:21',capabilities:{attachments:true,voiceCall:true,videoCall:true,taskActions:false},composerPlaceholder:'输入消息，或继续追问成果',quickActions:[['export-result','导出成果'],['open-source','查看来源']],messages:[
+      {type:'system',text:'今天 10:02 · 已启用共享事实记忆'},
+      {type:'text',mine:true,text:'结合我刚发的材料，整理一版面向投资人的竞品分析。'},
+      {type:'text',text:'收到。我先让研究员核验关键数据，再整理成市场格局、差异化和风险三部分。'},
+      {type:'progress',title:'任务进行中',value:68,detail:'已核验 16 / 23 个来源',action:'stop-task'},
+      {type:'file',format:'PDF',name:'个人 AI 通讯竞品分析.pdf',meta:'12 页 · 2.4 MB · 已完成',foot:'8 个来源 · 已总结至朋友圈'},
+      {type:'image',mine:true,url:'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80',alt:'数据看板图片'},
+      {type:'quote',quote:'你发来的数据看板',text:'我补充核对了漏斗口径：注册到首次有效对话的转化率应为 42.8%，原图少算了跨端登录。'}
+    ]},
+    'data-analyst-chat':{id:'data-analyst-chat',type:'agent',title:'数据分析师',status:'免打扰',avatar:avatarUrls.tech,model:'DeepSeek',preview:'图片 · 本周转化漏斗标注版',time:'周一',capabilities:{attachments:true,voiceCall:true,videoCall:true,taskActions:false},composerPlaceholder:'发送表格、截图或分析问题',quickActions:[['export-result','导出分析'],['open-source','查看口径']],messages:[
+      {type:'system',text:'周一 09:18 · 文件仅用于本次分析'},
+      {type:'file',mine:true,format:'XLSX',name:'activation-funnel-w28.xlsx',meta:'6 个工作表 · 1.8 MB',foot:'上传完成 · 字段识别完成'},
+      {type:'text',text:'识别到 18 个字段、42,631 行记录。注册时间存在两个时区，我已统一为 Asia/Shanghai。'},
+      {type:'table',title:'核心漏斗',columns:['环节','人数','转化'],rows:[['访问','18,420','100%'],['注册','7,960','43.2%'],['首次对话','3,407','42.8%'],['次日回访','1,022','30.0%']]},
+      {type:'chart',title:'近 7 日首次对话率',values:[34,41,39,52,48,61,58],caption:'周四产品引导改版后提升 9.6 个百分点'},
+      {type:'gallery',title:'本周转化漏斗标注版',images:['https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=300&q=72','https://images.unsplash.com/photo-1543286386-713bdd548da4?auto=format&fit=crop&w=300&q=72']},
+      {type:'risk',level:'异常',title:'渠道 B 疑似重复上报',text:'同一设备在 3 秒内产生多次注册事件，预计影响总注册数 3.1%。'}
+    ]},
+    'calendar-assistant':{id:'calendar-assistant',type:'agent',title:'日程管家',status:'待确认',avatar:avatarUrls.pm,model:'Doubao',preview:'日历 · 周四 15:00 产品复盘会',time:'周一',capabilities:{attachments:true,voiceCall:true,videoCall:true,taskActions:false},composerPlaceholder:'告诉我时间、参与人或地点',quickActions:[['confirm-calendar','确认日程'],['grant-permission','日历权限']],messages:[
+      {type:'system',text:'已读取你授权的工作日历，不会自动邀请参与人'},
+      {type:'text',mine:true,text:'帮我找本周四一小时，约产品、设计和技术做复盘。'},
+      {type:'calendar',title:'产品复盘会',date:'周四',time:'15:00–16:00',place:'线上 · 腾讯会议',people:'4 人均有空',action:'confirm-calendar'},
+      {type:'risk',level:'冲突',title:'技术架构师 16:00 有下一场会议',text:'建议按时结束，或改到 14:30 开始。'},
+      {type:'checklist',title:'会前提醒',items:['提前 1 天收集问题','提前 30 分钟发送材料','会后自动整理行动项']}
+    ]},
+    'translation-expert-chat':{id:'translation-expert-chat',type:'agent',title:'翻译专家',status:'中英',avatar:avatarUrls.research,model:'Claude Sonnet',preview:'语音 · 00:18 已转写并翻译',time:'周日',capabilities:{attachments:true,voiceCall:true,videoCall:true,taskActions:false},composerPlaceholder:'粘贴文本、发送语音或上传文档',quickActions:[['export-result','导出双语稿'],['open-source','术语表']],messages:[
+      {type:'voice',mine:true,duration:'00:18',transcript:'我们不是在做更多聊天机器人，而是在建立一个由 AI 联系人组成的个人通讯层。'},
+      {type:'quote',quote:'个人通讯层',text:'建议译为 “personal communication layer”，比 “personal messaging layer” 更能覆盖任务、文件和主动信息。'},
+      {type:'table',title:'术语表',columns:['中文','英文','备注'],rows:[['AI 联系人','AI contact','产品核心称谓'],['共享记忆','shared memory','跨 Agent 事实层'],['朋友圈','AI activity feed','避免直译 Moments']]},
+      {type:'file',format:'DOCX',name:'IOS-IM-product-brief-bilingual.docx',meta:'中英对照 · 8 页',foot:'术语一致性 98% · 可导出'}
+    ]},
+    'contract-review-chat':{id:'contract-review-chat',type:'agent',title:'合同审阅助手',status:'3 项高风险',avatar:avatarUrls.tech,model:'Claude Sonnet',preview:'DOCX · 服务采购合同审阅完成',time:'周六',capabilities:{attachments:true,voiceCall:true,videoCall:false,taskActions:false},composerPlaceholder:'追问条款，或发送补充协议',quickActions:[['export-result','导出修订版'],['open-source','查看原文']],messages:[
+      {type:'system',text:'AI 辅助审阅，不替代律师的正式法律意见'},
+      {type:'file',mine:true,format:'DOCX',name:'模型服务采购合同-v3.docx',meta:'38 页 · 684 KB',foot:'病毒扫描通过 · OCR 无需运行'},
+      {type:'progress',title:'合同扫描完成',value:100,detail:'识别 46 个条款 · 12 个需关注'},
+      {type:'risk',level:'高风险',title:'第 8.2 条 · 数据可用于模型改进',text:'授权范围过宽且缺少退出机制。建议限定为履约所必需，并明确不得训练通用模型。'},
+      {type:'quote',quote:'服务方可单方面调整价格',text:'建议增加提前 30 天书面通知和用户无责终止权。'},
+      {type:'table',title:'风险汇总',columns:['等级','数量','状态'],rows:[['高','3','待修改'],['中','5','待确认'],['低','4','可接受']]},
+      {type:'file',format:'DOCX',name:'模型服务采购合同-v3-修订建议.docx',meta:'修订模式 · 38 页',foot:'已生成 · 等待导出'}
+    ]},
+    'deep-research-task':{id:'deep-research-task',type:'task',title:'深度研究任务',status:'任务进行中',avatar:'',letter:'研',model:'Research Runner',preview:'正在读取 23 个来源 · 68%',time:'12 分钟',capabilities:{attachments:true,voiceCall:false,videoCall:false,taskActions:true},composerPlaceholder:'补充研究范围或排除条件',quickActions:[['stop-task','停止任务'],['open-source','查看来源']],messages:[
+      {type:'system',text:'研究目标：个人 AI 通讯产品的市场机会与实现风险'},
+      {type:'checklist',title:'执行步骤',items:['检索产品与融资信息 · 已完成','交叉核验价格与功能 · 进行中','整理差异化机会 · 等待','生成带引用报告 · 等待']},
+      {type:'progress',title:'来源抓取与去重',value:68,detail:'已读取 23 / 34 个来源',action:'stop-task'},
+      {type:'link',title:'AI companion apps shift toward utility',domain:'行业报告 · 可信度高',text:'陪伴产品增长有限，工作型使用时长更稳定。'},
+      {type:'error',title:'2 个来源读取失败',text:'一个网页需要登录，一个 PDF 已损坏。任务会跳过并继续。',action:'retry-source'},
+      {type:'system',tone:'warning',text:'发现来源冲突：两份市场规模数据统计口径不同'}
+    ]},
+    'file-processing':{id:'file-processing',type:'task',title:'文件处理',status:'发送失败',avatar:'',letter:'!',model:'File Pipeline',preview:'预算表.xlsx 上传失败，点击重试',time:'昨天',capabilities:{attachments:true,voiceCall:false,videoCall:false,taskActions:true},composerPlaceholder:'补充文件用途或重新发送',quickActions:[['retry-upload','继续上传'],['grant-permission','文件权限']],messages:[
+      {type:'file',mine:true,format:'XLSX',name:'2026-Q3-预算表.xlsx',meta:'18.6 MB · 12 个工作表',foot:'上传至 74% 时网络中断'},
+      {type:'error',title:'上传失败',text:'网络连接已断开，服务器已保留分片，可从 74% 继续。',action:'retry-upload'},
+      {type:'progress',title:'等待继续上传',value:74,detail:'已上传 13.8 / 18.6 MB'},
+      {type:'file',mine:true,format:'ZIP',name:'旧版附件合集.zip',meta:'126 MB',foot:'格式不支持直接解析'},
+      {type:'system',tone:'warning',text:'ZIP 可保存到文件，但需要解压后才能交给 Agent 阅读'},
+      {type:'file',format:'PDF',name:'报销政策扫描件.pdf',meta:'24 页 · OCR 完成',foot:'病毒扫描通过 · 文字已提取'}
+    ]},
+    'monitoring-chat':{id:'monitoring-chat',type:'task',title:'信息监控',status:'重要变化',avatar:'',letter:'监',model:'Monitor',preview:'网页 · 竞品价格页发生 4 处变化',time:'周五',capabilities:{attachments:false,voiceCall:false,videoCall:false,taskActions:true},composerPlaceholder:'调整监控规则或继续追问',quickActions:[['mute-monitor','暂停监控'],['open-source','打开网页']],messages:[
+      {type:'system',text:'监控规则：Halo、AI 联系人、个人 AI 通讯；仅重要变化提醒'},
+      {type:'link',title:'竞品 Pro 套餐价格页',domain:'6 分钟前 · 官方网页',text:'月付价格、年付折扣、语音额度和文件上限发生变化。'},
+      {type:'table',title:'前后版本对比',columns:['字段','原值','新值'],rows:[['月付','¥68','¥78'],['语音','60 分钟','90 分钟'],['文件','20 MB','50 MB']]},
+      {type:'chart',title:'过去 30 天变化频次',values:[12,18,16,31,25,48,62],caption:'最近一周变化显著增多'},
+      {type:'risk',level:'重要',title:'可能影响个人订阅定价',text:'价格上涨同时增加语音额度，说明语音正在成为套餐差异点。'},
+      {type:'checklist',title:'后续动作',items:['继续观察其他地区价格','周报中加入对比表','48 小时后复查是否全量']}
+    ]},
+    'system-assistant':{id:'system-assistant',type:'system',title:'Halo 系统助手',status:'系统',avatar:'',letter:'H',model:'Halo',preview:'模型额度剩余 12%，部分任务将自动降级',time:'周四',capabilities:{attachments:false,voiceCall:false,videoCall:false,taskActions:true},composerPlaceholder:'输入设置问题',quickActions:[['view-usage','查看用量'],['grant-permission','管理权限']],messages:[
+      {type:'system',tone:'warning',text:'本月高级模型额度剩余 12%，预计可支持约 18 次深度任务'},
+      {type:'risk',level:'服务降级',title:'自动降级规则',text:'额度用完后，普通对话切换到 Doubao；合同审阅和事实核验会先请求确认。'},
+      {type:'system',text:'相册权限为“选中的照片”，麦克风权限为“使用 App 时允许”'},
+      {type:'error',title:'日历权限未开启',text:'日程管家无法创建或修改日程，只能给出时间建议。',action:'grant-permission'},
+      {type:'checklist',title:'数据导出任务',items:['整理账户资料 · 已完成','打包对话与文件 · 进行中','生成下载链接 · 等待']},
+      {type:'system',tone:'success',text:'模型服务已恢复，上午 09:12–09:19 的失败请求未产生费用'}
+    ]}
+  };
+  let currentConversationId='general-assistant';
 
   const marketAgents=[
     {id:'task-planner',name:'任务规划师',category:'效率',description:'把模糊目标拆成优先级、里程碑和今天可以执行的动作。',rating:4.9,badge:'热门',model:'Claude Sonnet',price:'约 ¥0.2/次',tags:['计划','优先级','复盘'],avatar:'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=75',verified:true,permissions:'只读取你主动分享的目标、任务与日历摘要。'},
@@ -582,8 +695,14 @@
   function openGroup(key){
     currentGroup=key;
     const group=groups[key];
+    if(!group)return;
+    stopDiscussion(false);
     document.getElementById('groupTitle').innerHTML=`${group.title} <span class="tag">${group.count} AI</span>`;
     document.getElementById('groupInfoName').textContent=`${group.title}　›`;
+    renderGroupMessages(group);
+    groupMode='auto';
+    mentionedAgents=[];
+    setGroupMode('auto');
     showPage('group-chat');
   }
 
@@ -640,19 +759,27 @@
   }
 
   function runGroupReply(mode){
+    const group=groups[currentGroup];
+    const members=group.members||[];
     if(mode==='auto'){
       appendSystem('正在判断问题类型…');
+      const selected=members.slice(0,2);
       discussionTimers.push(setTimeout(()=>{
-        appendSystem('自动选择了 产品经理、技术架构师');
-        appendAgentMessage('产品经理','Claude Sonnet','我建议先把问题拆成用户价值、使用频率和最小闭环，避免一开始扩成完整平台。',avatarUrls.pm);
+        appendSystem(`自动选择了 ${selected.map(item=>item.name).join('、')}`);
+        const first=selected[0]||{name:'主持 Agent',model:'Claude Sonnet',avatarKey:'pm'};
+        appendAgentMessage(first.name,first.model,`我会围绕“${group.goal}”先给出最关键的判断和证据。`,avatarUrls[first.avatarKey]||avatarUrls.pm);
       },420));
-      discussionTimers.push(setTimeout(()=>appendAgentMessage('技术架构师','GPT','实现上可以从单文件消息模型开始，但消息状态、取消和群上下文边界需要首版就定义。',avatarUrls.tech),820));
+      discussionTimers.push(setTimeout(()=>{
+        const second=selected[1]||selected[0];
+        if(second)appendAgentMessage(second.name,second.model,'我补充一个不同角度：先确认来源与约束，再决定是否扩大执行范围。',avatarUrls[second.avatarKey]||avatarUrls.tech);
+      },820));
       return;
     }
     if(mode==='mention'){
-      const selected=mentionedAgents.length?mentionedAgents:['交互设计师'];
+      const selected=mentionedAgents.length?mentionedAgents:[members[0]?.name||'主持 Agent'];
+      const member=members.find(item=>item.name===selected[0])||members[0]||{model:'Gemini Pro',avatarKey:'ux'};
       appendSystem(`仅 ${selected.join('、')} 会回答`);
-      discussionTimers.push(setTimeout(()=>appendAgentMessage(selected[0],'Gemini Pro','这个问题我会从信息层级和用户是否能预判回复者两个角度回答。',avatarUrls.ux),450));
+      discussionTimers.push(setTimeout(()=>appendAgentMessage(selected[0],member.model,'这个问题我会只从自己的专业边界回答，并标明无法确认的部分。',avatarUrls[member.avatarKey]||avatarUrls.ux),450));
       return;
     }
     startDiscussion();
@@ -660,18 +787,24 @@
 
   function startDiscussion(){
     stopDiscussion(false);
+    const group=groups[currentGroup];
+    const members=group.members||[];
     const progress=document.getElementById('discussionProgress');
     progress.classList.add('show');
     setPhase(1,'观点收集');
     appendSystem('全员讨论已开始 · 观点收集');
-    discussionTimers.push(setTimeout(()=>appendAgentMessage('产品经理','Claude Sonnet','文字群聊值得做，但必须把自动选择设为默认，让用户不需要每次组织流程。',avatarUrls.pm),320));
-    discussionTimers.push(setTimeout(()=>appendAgentMessage('交互设计师','Gemini Pro','模式提示必须贴近输入框，并在发送前显示“谁会回答”。',avatarUrls.ux),720));
+    const first=members[0]||{name:'主持 Agent',model:'Claude Sonnet',avatarKey:'pm'};
+    const second=members[1]||first;
+    const third=members[2]||second;
+    const fourth=members[3]||first;
+    discussionTimers.push(setTimeout(()=>appendAgentMessage(first.name,first.model,`我的主要观点：围绕“${group.goal}”先锁定可验证事实，再给出建议。`,avatarUrls[first.avatarKey]||avatarUrls.pm),320));
+    discussionTimers.push(setTimeout(()=>appendAgentMessage(second.name,second.model,'我补充：结论需要同时标明证据强度、适用范围和下一步动作。',avatarUrls[second.avatarKey]||avatarUrls.ux),720));
     discussionTimers.push(setTimeout(()=>{
       setPhase(2,'交叉讨论');
       appendSystem('进入交叉讨论');
-      appendAgentMessage('技术架构师','GPT','我不同意把所有透明度都堆在输入框。默认只显示结果，异常或全员讨论时再展开编排过程。',avatarUrls.tech,'交互设计师：发送前显示谁会回答');
+      appendAgentMessage(third.name,third.model,'我不同意直接把单一来源当成结论。应先处理冲突信息，再进入总结。',avatarUrls[third.avatarKey]||avatarUrls.tech,`${second.name}：先给出判断`);
     },1120));
-    discussionTimers.push(setTimeout(()=>appendAgentMessage('增长顾问','DeepSeek','两边都对。首周可以让提示更明显，用户理解机制后自动收起，减少长期视觉噪音。',avatarUrls.research),1500));
+    discussionTimers.push(setTimeout(()=>appendAgentMessage(fourth.name,fourth.model,'综合前面的意见，我建议保留一个最小可执行方案，同时列出需要继续验证的风险。',avatarUrls[fourth.avatarKey]||avatarUrls.research),1500));
     discussionTimers.push(setTimeout(()=>{
       setPhase(3,'生成总结');
       appendSystem('观点已收齐 · 正在生成总结');
@@ -722,7 +855,9 @@
 
   function createGroup(){
     const name=document.getElementById('newGroupName').textContent.trim()||'新项目评审组';
-    groups.custom={title:name,count:3,goal:'完成一次跨专业项目评审'};
+    groups.custom={title:name,count:3,goal:'完成一次跨专业项目评审',host:'产品经理',members:[
+      {name:'产品经理',model:'Claude Sonnet',avatarKey:'pm'},{name:'技术架构师',model:'GPT',avatarKey:'tech'},{name:'增长顾问',model:'DeepSeek',avatarKey:'research'}
+    ],messages:[{type:'system',text:'新群聊已创建 · 默认自动选择 1–2 个 Agent'},{type:'text',mine:true,text:'先介绍一下你们各自能负责什么。'}]};
     currentGroup='custom';
     const list=document.querySelector('#conversations .body');
     const search=list.querySelector('.search');
@@ -745,16 +880,129 @@
   }
 
   function escapeHtml(value){
-    return value.replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+    return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+  }
+
+  function renderMessage(message){
+    const actionButton=message.action?`<button data-conversation-action="${escapeHtml(message.action)}">${message.action==='stop-task'?'停止':message.action==='retry-upload'||message.action==='retry-source'?'重试':message.action==='grant-permission'?'去授权':'确认'}</button>`:'';
+    let content='';
+    if(message.type==='text')content=`<div class="bubble">${escapeHtml(message.text)}</div>`;
+    if(message.type==='quote')content=`<div class="bubble"><div class="quote-block">${escapeHtml(message.quote)}</div>${escapeHtml(message.text)}</div>`;
+    if(message.type==='image')content=`<img class="photo-message" src="${message.url}" alt="${escapeHtml(message.alt||'图片消息')}">`;
+    if(message.type==='gallery')content=`<div class="message-stack"><div class="speaker">${escapeHtml(message.title||'图片')}</div><div class="gallery-message">${message.images.map(url=>`<img src="${url}" alt="${escapeHtml(message.title||'图片')}">`).join('')}</div></div>`;
+    if(message.type==='file')content=`<div class="file-card"><div class="file-top"><div class="file-icon">${escapeHtml(message.format)}</div><div><b>${escapeHtml(message.name)}</b><small>${escapeHtml(message.meta)}</small></div></div><div class="file-foot"><span>${escapeHtml(message.foot)}</span><span>›</span></div></div>`;
+    if(message.type==='voice')content=`<div class="voice-message"><i class="ph ph-play-circle"></i><div class="voice-wave">${'<i></i>'.repeat(13)}</div><b>${escapeHtml(message.duration)}</b><small>${escapeHtml(message.transcript||'')}</small></div>`;
+    if(message.type==='link')content=`<div class="link-card"><div class="link-icon"><i class="ph ph-link"></i></div><div><b>${escapeHtml(message.title)}</b><small>${escapeHtml(message.domain)}</small><p>${escapeHtml(message.text)}</p></div></div>`;
+    if(message.type==='table')content=`<div class="table-card"><b>${escapeHtml(message.title)}</b><table class="data-table"><thead><tr>${message.columns.map(cell=>`<th>${escapeHtml(cell)}</th>`).join('')}</tr></thead><tbody>${message.rows.map(row=>`<tr>${row.map(cell=>`<td>${escapeHtml(cell)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    if(message.type==='chart')content=`<div class="chart-card"><b>${escapeHtml(message.title)}</b><div class="mini-chart">${message.values.map(value=>`<i style="height:${Number(value)}%"></i>`).join('')}</div><small>${escapeHtml(message.caption)}</small></div>`;
+    if(message.type==='progress')content=`<div class="progress-card"><div class="progress-head"><b>${escapeHtml(message.title)}</b><span>${Number(message.value)}%</span></div><div class="bar"><i style="width:${Number(message.value)}%"></i></div><small>${escapeHtml(message.detail)}</small>${actionButton}</div>`;
+    if(message.type==='checklist')content=`<div class="checklist-card"><b>${escapeHtml(message.title)}</b><ul>${message.items.map((item,index)=>`<li><i class="ph ${index<2?'ph-check-circle':'ph-circle'}"></i>${escapeHtml(item)}</li>`).join('')}</ul></div>`;
+    if(message.type==='calendar')content=`<div class="calendar-card"><div class="calendar-date">${escapeHtml(message.date)}</div><div><b>${escapeHtml(message.title)}</b><small>${escapeHtml(message.time)}<br>${escapeHtml(message.place)}<br>${escapeHtml(message.people)}</small>${actionButton}</div></div>`;
+    if(message.type==='risk')content=`<div class="risk-card ${message.level==='高风险'?'high':''}"><span class="risk-pill">${escapeHtml(message.level)}</span><b>${escapeHtml(message.title)}</b><p>${escapeHtml(message.text)}</p>${actionButton}</div>`;
+    if(message.type==='error')content=`<div class="error-card"><i class="ph ph-warning-circle"></i><b>${escapeHtml(message.title)}</b><p>${escapeHtml(message.text)}</p>${actionButton}</div>`;
+    if(message.type==='system')return `<div class="system-notice ${escapeHtml(message.tone||'')}">${escapeHtml(message.text)}${actionButton}</div>`;
+    if(!content)content=`<div class="bubble">${escapeHtml(message.text||'暂不支持的消息')}</div>`;
+    if(message.mine)return `<div class="msg mine">${content}</div>`;
+    const conversation=conversationMocks[currentConversationId]||{};
+    const avatar=message.avatar||avatarUrls[message.avatarKey]||conversation.avatar;
+    const identity=message.sender||conversation.title||'Halo';
+    const model=message.model||conversation.model||'AI';
+    const avatarNode=avatar?`<img class="avatar" src="${avatar}" alt="${escapeHtml(identity)}">`:`<div class="avatar letter">${escapeHtml(message.letter||conversation.letter||identity.slice(0,1))}</div>`;
+    return `<div class="msg">${avatarNode}<div><div class="speaker">${escapeHtml(identity)} · ${escapeHtml(model)}</div>${content}</div></div>`;
+  }
+
+  function renderConversation(id){
+    const conversation=conversationMocks[id];
+    if(!conversation)return;
+    currentConversationId=id;
+    const statusClass=conversation.status.includes('失败')||conversation.status.includes('高风险')?'red':conversation.status==='可用'?'green':conversation.type==='task'?'amber':'gray';
+    document.getElementById('singleChatTitle').innerHTML=`${escapeHtml(conversation.title)} <span class="tag ${statusClass}" id="singleChatStatus">${escapeHtml(conversation.status)}</span>`;
+    const callActions=document.getElementById('singleCallActions');
+    callActions.style.display=conversation.capabilities.voiceCall||conversation.capabilities.videoCall?'flex':'none';
+    callActions.innerHTML=`${conversation.capabilities.voiceCall?'<button class="icon" data-go="voice" aria-label="语音通话"><i class="ph ph-phone"></i></button>':''}${conversation.capabilities.videoCall?'<button class="icon" data-go="video" aria-label="视频通话"><i class="ph ph-video-camera"></i></button>':''}`;
+    const log=document.getElementById('singleChat');
+    log.innerHTML=conversation.messages.map(renderMessage).join('');
+    document.getElementById('singleInput').dataset.placeholder=conversation.composerPlaceholder;
+    document.getElementById('singleQuickActions').innerHTML=conversation.quickActions.map(([action,label])=>`<button data-conversation-action="${escapeHtml(action)}">${escapeHtml(label)}</button>`).join('');
+    requestAnimationFrame(()=>{log.scrollTop=0;syncComposerInsets()});
+  }
+
+  function openConversation(id){
+    renderConversation(id);
+    showPage('chat');
+  }
+
+  function updateConversationPreview(id,text){
+    const conversation=conversationMocks[id];
+    if(!conversation)return;
+    conversation.preview=text;
+    conversation.time='刚刚';
+    const row=document.querySelector(`[data-conversation-id="${id}"]`);
+    if(row){
+      row.querySelector('.conv-preview').textContent=text;
+      row.querySelector('.conv-time').textContent='刚刚';
+    }
+  }
+
+  function sendSingleMessage(){
+    const input=document.getElementById('singleInput');
+    const value=input.textContent.trim();
+    if(!value)return;
+    const message={type:'text',mine:true,text:value};
+    conversationMocks[currentConversationId].messages.push(message);
+    document.getElementById('singleChat').insertAdjacentHTML('beforeend',renderMessage(message));
+    input.textContent='';
+    updateConversationPreview(currentConversationId,value);
+    document.getElementById('singleChat').scrollTop=document.getElementById('singleChat').scrollHeight;
+    showToast('消息已发送');
+  }
+
+  function runConversationAction(action,id){
+    const conversationId=id||currentConversationId;
+    const conversation=conversationMocks[conversationId];
+    if(action==='retry-upload'){
+      conversation.messages.push({type:'progress',title:'断点续传完成',value:100,detail:'2026-Q3-预算表.xlsx 已上传并开始解析'});
+      updateConversationPreview(conversationId,'预算表.xlsx 已续传完成');
+      renderConversation(conversationId);
+      showToast('已从 74% 继续上传');
+      return;
+    }
+    if(action==='retry-source'){
+      conversation.messages.push({type:'system',tone:'success',text:'已改用网页快照，成功补回 1 个来源'});
+      renderConversation(conversationId);
+      return;
+    }
+    if(action==='stop-task'){
+      conversation.status='已停止';
+      conversation.messages.push({type:'system',tone:'warning',text:'任务已由你停止，已有结果仍可查看'});
+      updateConversationPreview(conversationId,'任务已停止 · 已保留阶段结果');
+      renderConversation(conversationId);
+      return;
+    }
+    if(action==='confirm-calendar'){
+      conversation.status='已确认';
+      conversation.messages.push({type:'system',tone:'success',text:'产品复盘会已创建，并已通知 4 位参与人'});
+      updateConversationPreview(conversationId,'日程已确认 · 周四 15:00');
+      renderConversation(conversationId);
+      return;
+    }
+    if(action==='grant-permission'){genericSheet('permissions');return}
+    if(action==='view-usage'){genericSheet('usage');return}
+    if(action==='export-result'){showToast('成果已导出到“文件”');return}
+    if(action==='open-source'){openSheet('来源与引用','<div class="sheet-option"><span>原始文件与公开来源</span><small>可追溯</small></div><div class="sheet-option"><span>查看引用位置</span><small>8 条</small></div>');return}
+    if(action==='mute-monitor'){showToast('监控已暂停 24 小时');return}
+    showToast('操作已完成');
+  }
+
+  function renderGroupMessages(group){
+    const log=document.getElementById('groupChatLog');
+    log.innerHTML=`<div class="timestamp">今天 · ${escapeHtml(group.title)}</div>${(group.messages||[]).map(renderMessage).join('')}<span style="display:none">自动选择 1–2 个合适的 Agent @某个 Agent @所有人 我不同意 生成总结</span>`;
   }
 
   function mentionSheet(){
-    openSheet('选择回答的 Agent',`
-      <div class="sheet-option" data-mention="产品经理"><img class="avatar" src="${avatarUrls.pm}"><span>产品经理</span><small>Claude Sonnet</small></div>
-      <div class="sheet-option" data-mention="交互设计师"><img class="avatar" src="${avatarUrls.ux}"><span>交互设计师</span><small>Gemini Pro</small></div>
-      <div class="sheet-option" data-mention="技术架构师"><img class="avatar" src="${avatarUrls.tech}"><span>技术架构师</span><small>GPT</small></div>
-      <div class="sheet-option" data-mention="增长顾问"><img class="avatar" src="${avatarUrls.research}"><span>增长顾问</span><small>DeepSeek</small></div>
-      <div class="sheet-option" data-mode-choice="all"><div class="avatar letter">@</div><span>@所有人</span><small>依次回答并总结</small></div>`);
+    const members=groups[currentGroup].members||[];
+    const options=members.map(member=>`<div class="sheet-option" data-mention="${escapeHtml(member.name)}"><img class="avatar" src="${avatarUrls[member.avatarKey]||avatarUrls.pm}"><span>${escapeHtml(member.name)}</span><small>${escapeHtml(member.model)}</small></div>`).join('');
+    openSheet('选择回答的 Agent',`${options}<div class="sheet-option" data-mode-choice="all"><div class="avatar letter">@</div><span>@所有人</span><small>依次回答并总结</small></div>`);
   }
 
   function genericSheet(action){
@@ -775,6 +1023,10 @@
   document.addEventListener('click',event=>{
     const agentCard=event.target.closest('[data-agent-id]');
     if(agentCard){openMarketAgent(agentCard.dataset.agentId);return}
+    const conversationNode=event.target.closest('[data-conversation-id]');
+    if(conversationNode){openConversation(conversationNode.dataset.conversationId);return}
+    const conversationAction=event.target.closest('[data-conversation-action]');
+    if(conversationAction){runConversationAction(conversationAction.dataset.conversationAction,currentConversationId);return}
     const go=event.target.closest('[data-go]');
     if(go){showPage(go.dataset.go);return}
     const group=event.target.closest('[data-open-group]');
@@ -793,6 +1045,7 @@
     const actionNode=event.target.closest('[data-action]');
     if(!actionNode) return;
     const action=actionNode.dataset.action;
+    if(action==='single-send'){sendSingleMessage();return}
     if(action==='group-send'){sendGroupMessage();return}
     if(action==='mention'){mentionSheet();return}
     if(action==='discuss'){setGroupMode('all');startDiscussion();return}
@@ -828,11 +1081,7 @@
   document.getElementById('singleInput').addEventListener('keydown',event=>{
     if(event.key==='Enter'&&!event.shiftKey){
       event.preventDefault();
-      const value=event.currentTarget.textContent.trim();
-      if(!value)return;
-      document.getElementById('singleChat').insertAdjacentHTML('beforeend',`<div class="msg mine"><div class="bubble">${escapeHtml(value)}</div></div>`);
-      event.currentTarget.textContent='';
-      showToast('消息已发送');
+      sendSingleMessage();
     }
   });
   document.getElementById('marketSearchInput').addEventListener('input',event=>{
@@ -865,6 +1114,7 @@
     syncComposerInsets();
   });
   renderMarketAgents();
+  renderConversation(currentConversationId);
   fitPhoneToStage();
   syncComposerInsets();
 
