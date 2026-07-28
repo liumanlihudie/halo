@@ -73,10 +73,11 @@
     .contact{display:flex;align-items:center;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer}.contact .avatar{width:46px;height:46px;flex-basis:46px}.contact-main{flex:1}.contact b{font-size:14px}.contact p{font-size:10px;color:#9196a0;margin:4px 0 0}.presence{width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;margin-left:5px}.presence.busy{background:var(--amber)}
     .market-entry{margin:9px 0 14px;padding:14px;border-radius:15px;background:linear-gradient(135deg,#29334f,#6676d3);color:#fff;display:flex;align-items:center;gap:12px;cursor:pointer;box-shadow:0 10px 25px rgba(86,104,216,.25)}.market-entry-icon{width:48px;height:48px;border-radius:14px;background:#ffffff20;display:grid;place-items:center;font-size:22px}.market-entry div:nth-child(2){flex:1}.market-entry b{display:block;font-size:15px;margin-bottom:4px}.market-entry small{font-size:10px;color:#ffffffbd}
     .market-body{flex:1;overflow-y:auto;padding:5px 14px 30px;background:var(--soft)}.market-hero{height:140px;border-radius:17px;padding:20px;color:#fff;background:radial-gradient(circle at 85% 10%,#ffffff32,transparent 35%),linear-gradient(135deg,#25304d,#6978d6);position:relative;overflow:hidden}.market-hero:after{content:"AI";position:absolute;right:14px;bottom:-28px;font-size:96px;font-weight:900;color:#ffffff12}.market-hero small{font-size:9px;color:#ffffffb8}.market-hero h2{font-size:22px;line-height:1.25;margin:7px 0}.market-hero p{font-size:11px;margin:0;color:#ffffffd1}
+    .market-search{justify-content:flex-start;gap:7px;padding:0 11px}.market-search i{font-size:16px}.market-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:#343a46;font-size:12px}.market-search input::placeholder{color:#9ca1aa}
     .chips{display:flex;gap:7px;overflow:auto;margin:10px 0}.chip{white-space:nowrap;border:0;border-radius:14px;background:#fff;color:#6d7481;padding:7px 11px;font-size:10px;cursor:pointer}.chip.active{background:var(--accent);color:#fff}
     .market-title{display:flex;align-items:end;justify-content:space-between;margin:15px 2px 8px}.market-title b{font-size:15px}.market-title span{font-size:10px;color:#9297a0}
     .agent-card{background:#fff;border-radius:15px;padding:12px;margin-bottom:9px;display:flex;gap:11px;box-shadow:0 2px 10px rgba(40,48,71,.05);cursor:pointer}.agent-card .avatar{width:54px;height:54px;flex-basis:54px;border-radius:14px}.agent-card-main{flex:1;min-width:0}.agent-card-head{display:flex;justify-content:space-between;align-items:center}.agent-card-head b{font-size:14px}.rating{font-size:9px;color:#c68126}.agent-card p{font-size:10px;line-height:1.45;color:#828893;margin:5px 0}.mini-tags{display:flex;gap:5px;flex-wrap:wrap}.mini-tags span{font-size:8px;padding:3px 5px;border-radius:5px;background:#f0f1f5;color:#747b89}
-    .market-load-state{text-align:center;padding:8px 0 16px;color:#9a9faa;font-size:10px}
+    .market-load-state{text-align:center;padding:8px 0 16px;color:#9a9faa;font-size:10px}.market-empty{padding:28px 16px;text-align:center;background:#fff;border-radius:15px;color:#858b96}.market-empty i{display:block;font-size:28px;color:#a6abb5;margin-bottom:8px}.market-empty b{display:block;font-size:13px;color:#454c59;margin-bottom:5px}.market-empty p{font-size:10px;line-height:1.5;margin:0 0 12px}.market-empty button{border:0;border-radius:11px;padding:8px 12px;background:var(--accent);color:#fff;font-size:10px}
     .profile-hero{height:205px;background:linear-gradient(#0000,#0009),url("https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=900&q=80") center/cover;position:relative;color:#fff}.profile-hero .avatar{position:absolute;left:20px;bottom:18px;width:76px;height:76px;border-radius:19px;border:3px solid #fff}.profile-name{position:absolute;left:108px;bottom:23px}.profile-name h2{font-size:20px;margin:0 0 4px}.profile-name small{font-size:10px;color:#ffffffca}
     .profile-copy{padding:15px 16px;background:#fff}.profile-copy p{font-size:12px;line-height:1.65;color:#5c6471}.ability-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ability{padding:10px;border-radius:10px;background:#f3f4f7;font-size:10px;color:#626977}.ability b{display:block;font-size:11px;color:#293144;margin-bottom:3px}
     .bottom-bar{position:absolute;z-index:28;bottom:0;left:0;right:0;padding:10px 14px 21px;background:#fff;border-top:1px solid var(--line);display:flex;gap:8px}.bottom-bar button{height:44px;border-radius:12px;font-weight:750;cursor:pointer}.bottom-bar .secondary{width:96px;border:1px solid #dfe2e8;background:#fff}.bottom-bar .primary{flex:1;border:0;background:var(--accent);color:#fff}.bottom-bar .primary.done{background:#e5e7ec;color:#777d88}
@@ -277,8 +278,8 @@
         <div class="navbar compact"><button class="back" data-go="contacts" aria-label="返回"><i class="ph ph-caret-left"></i></button><h2>AI 市场</h2><button class="icon" data-action="search" aria-label="搜索"><i class="ph ph-magnifying-glass"></i></button></div>
         <div class="market-body ios-scroll">
           <div class="market-hero"><small>CURATED AGENT MARKET</small><h2>给自己增加<br>新的专业能力</h2><p>先看能力、模型、权限和预计用量</p></div>
-          <div class="search" style="background:#fff;margin-top:11px">⌕　搜索 Agent、技能或工作场景</div>
-          <div class="chips"><button class="chip active">推荐</button><button class="chip">效率</button><button class="chip">研究</button><button class="chip">内容</button><button class="chip">生活</button><button class="chip">新上架</button></div>
+          <label class="search market-search" style="background:#fff;margin-top:11px"><i class="ph ph-magnifying-glass"></i><input id="marketSearchInput" type="search" placeholder="搜索 Agent、技能或工作场景"></label>
+          <div class="chips" id="marketCategories"><button class="chip active" data-market-category="推荐">推荐</button><button class="chip" data-market-category="效率">效率</button><button class="chip" data-market-category="研究">研究</button><button class="chip" data-market-category="内容">内容</button><button class="chip" data-market-category="数据">数据</button><button class="chip" data-market-category="法律财税">法律财税</button><button class="chip" data-market-category="生活">生活</button><button class="chip" data-market-category="新上架">新上架</button></div>
           <div class="market-title"><b id="marketHeading">本周精选</b><span id="marketCount">已显示 10 / 50</span></div>
           <div id="marketAgentList"></div>
           <div class="market-load-state" id="marketLoadState">继续向下滑动加载更多</div>
@@ -462,7 +463,8 @@
   function renderMarketAgents(){
     const filtered=filterMarketAgents();
     const visible=filtered.slice(0,marketState.visibleCount);
-    document.getElementById('marketAgentList').innerHTML=visible.map(agent=>`
+    const list=document.getElementById('marketAgentList');
+    list.innerHTML=visible.length?visible.map(agent=>`
       <article class="agent-card" data-agent-id="${agent.id}">
         <img class="avatar" src="${agent.avatar}" alt="${escapeHtml(agent.name)}">
         <div class="agent-card-main">
@@ -471,8 +473,33 @@
           <div class="mini-tags"><span>${escapeHtml(agent.model)}</span><span>${escapeHtml(agent.price)}</span>${agent.tags.slice(0,2).map(tag=>`<span>${escapeHtml(tag)}</span>`).join('')}</div>
         </div>
       </article>
-    `).join('');
+    `).join(''):`<div class="market-empty"><i class="ph ph-magnifying-glass"></i><b>没有找到匹配的专家</b><p>换个关键词，或者清除当前分类后再试。</p><button data-action="clear-market-filter">清除筛选</button></div>`;
+    document.getElementById('marketHeading').textContent=marketState.category==='推荐'?'本周精选':marketState.category;
     document.getElementById('marketCount').textContent=`已显示 ${visible.length} / ${filtered.length}`;
+    document.getElementById('marketLoadState').textContent=!filtered.length?'':visible.length<filtered.length?'继续向下滑动加载更多':'已显示全部专家';
+  }
+
+  function setMarketCategory(category){
+    marketState.category=category;
+    marketState.visibleCount=MARKET_PAGE_SIZE;
+    document.querySelectorAll('[data-market-category]').forEach(button=>{
+      button.classList.toggle('active',button.dataset.marketCategory===category);
+    });
+    document.querySelector('#market .market-body').scrollTop=0;
+    renderMarketAgents();
+  }
+
+  function setMarketQuery(query){
+    marketState.query=query;
+    marketState.visibleCount=MARKET_PAGE_SIZE;
+    renderMarketAgents();
+  }
+
+  function loadMoreMarketAgents(){
+    const total=filterMarketAgents().length;
+    if(marketState.visibleCount>=total)return;
+    marketState.visibleCount=Math.min(total,marketState.visibleCount+MARKET_PAGE_SIZE);
+    renderMarketAgents();
   }
 
   function syncComposerInsets(){
@@ -717,6 +744,7 @@
     const toggle=event.target.closest('.switch');
     if(toggle){toggle.classList.toggle('off');showToast(toggle.classList.contains('off')?'已关闭':'已开启');return}
     const chip=event.target.closest('.chip');
+    if(chip?.dataset.marketCategory)return;
     if(chip){chip.parentElement.querySelectorAll('.chip').forEach(item=>item.classList.remove('active'));chip.classList.add('active');showToast(`已筛选：${chip.textContent}`);return}
     const actionNode=event.target.closest('[data-action]');
     if(!actionNode) return;
@@ -731,6 +759,12 @@
     if(action==='publish-summary'){publishSummary();return}
     if(action==='save-summary'){showToast('总结已保存到成果库');return}
     if(action==='retry'){showToast('正在重新执行任务');return}
+    if(action==='clear-market-filter'){
+      document.getElementById('marketSearchInput').value='';
+      marketState.query='';
+      setMarketCategory('推荐');
+      return;
+    }
     if(action==='attach'){genericSheet('attach');return}
     if(action==='mode-help'||action==='search'||action==='new-menu'||action==='usage'||action==='permissions'||action==='memory'||action==='notifications'){genericSheet(action);return}
     if(action==='voice-input'){showToast('按住说话 · 松开发送');return}
@@ -756,6 +790,17 @@
       event.currentTarget.textContent='';
       showToast('消息已发送');
     }
+  });
+  document.getElementById('marketSearchInput').addEventListener('input',event=>{
+    setMarketQuery(event.currentTarget.value);
+  });
+  document.getElementById('marketCategories').addEventListener('click',event=>{
+    const button=event.target.closest('[data-market-category]');
+    if(button)setMarketCategory(button.dataset.marketCategory);
+  });
+  document.querySelector('#market .market-body').addEventListener('scroll',event=>{
+    const body=event.currentTarget;
+    if(body.scrollTop+body.clientHeight>=body.scrollHeight-80)loadMoreMarketAgents();
   });
 
   if('ResizeObserver' in window){

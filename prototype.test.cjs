@@ -207,3 +207,20 @@ test('AI market defines exactly 50 varied experts', () => {
     'market models'
   );
 });
+
+test('AI market supports filtering, search, and ten-item incremental loading', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'const MARKET_PAGE_SIZE=10',
+      'function setMarketCategory(category)',
+      'function setMarketQuery(query)',
+      'function loadMoreMarketAgents()',
+      'id="marketSearchInput"',
+      'id="marketAgentList"',
+      'id="marketLoadState"'
+    ],
+    'market behavior'
+  );
+});
