@@ -192,9 +192,9 @@ Expected: zero failures and zero whitespace errors.
 
 - [ ] **Step 2: Serve the prototype locally**
 
-Run: `python3 -m http.server 8765 --directory IOS-IM`
+Run: `python3 -m http.server 4173 --directory IOS-IM`
 
-Open: `http://127.0.0.1:8765/prototype.html`
+Open: `http://127.0.0.1:4173/prototype.html`
 
 - [ ] **Step 3: Visually inspect desktop**
 

@@ -4,11 +4,17 @@
 
 ## 当前目录
 
-- `PRODUCT-DESIGN.md`：已经确认的产品定位、信息架构、交互规则、数据模型与技术边界。
+- `BRAINSTORM-2026-07-27.md`：最初的产品头脑风暴原文。
+- `PRODUCT-DESIGN.md`：已经确认的产品定位、信息架构、交互规则与产品边界。
+- `DEVELOPMENT-GUIDE.md`：演示范围、演示路径、开发阶段、验收和正式 MVP 差异。
+- `TECHNICAL-DESIGN.md`：iOS、服务端、模型编排、语音视频、数据、安全和接口技术方案。
 - `PROTOTYPE-PLAN.md`：HTML 原型的页面清单、mock 数据覆盖和验收标准。
 - `prototype.html`：可点击的高保真 HTML 原型。
 - `prototype.test.cjs`：原型页面、群聊模式、mock 数据与品牌边界的自动化契约测试。
 - `IMPLEMENTATION-PLAN.md`：原型实现与验证计划。
+- `AI市场与设置升级设计.md`：50 位专家市场和设置资料卡的增量设计。
+- `AI市场与设置升级实施计划.md`：AI 市场与设置升级的实现计划。
+- `design-qa.md`：浏览器视觉与交互验收记录。
 
 ## 当前结论
 
@@ -26,10 +32,10 @@
 可以直接双击 `prototype.html`，也可以在仓库根目录运行：
 
 ```bash
-python3 -m http.server 8765 --directory IOS-IM
+python3 -m http.server 4173 --directory IOS-IM
 ```
 
-然后访问 `http://127.0.0.1:8765/prototype.html`。
+然后访问 `http://127.0.0.1:4173/prototype.html`。
 
 ## 运行检查
 
