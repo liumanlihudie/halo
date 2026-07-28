@@ -953,7 +953,7 @@
     const password=document.getElementById('loginPassword').value;
     let valid=true;
     if(!account){setAuthError('loginAccount','请输入手机号、邮箱或 Halo ID');valid=false}
-    if(!validPassword(password)){setAuthError('loginPassword','密码至少 8 位，并包含字母和数字');valid=false}
+    if(!password){setAuthError('loginPassword','请输入密码');valid=false}
     if(!valid)return;
     finishLogin('登录成功');
   }
@@ -962,7 +962,7 @@
     clearAuthErrors();
     const input=document.getElementById('verificationContact');
     const contact=input.value.trim();
-    if(contact.length<6){setAuthError('verificationContact','请输入正确的手机号或邮箱');return}
+    if(!contact){setAuthError('verificationContact','请输入手机号或邮箱');return}
     authState.verificationSent=true;
     authState.verificationSeconds=60;
     const button=document.getElementById('sendCodeButton');
@@ -975,7 +975,7 @@
     };
     tick();
     verificationTimer=setInterval(tick,1000);
-    showToast('验证码已发送 · 演示码 246810');
+    showToast('验证码已发送 · 输入任意六位数字');
   }
 
   function readCode(containerId){
@@ -986,7 +986,7 @@
     clearAuthErrors();
     const contact=document.getElementById('verificationContact').value.trim();
     const code=readCode('verificationCode');
-    if(contact.length<6){setAuthError('verificationContact','请输入正确的手机号或邮箱');return}
+    if(!contact){setAuthError('verificationContact','请输入手机号或邮箱');return}
     if(!authState.verificationSent){setAuthError('verificationCode','请先获取验证码');return}
     if(code.length!==6){setAuthError('verificationCode','请输入完整的六位验证码');return}
     finishLogin('验证码登录成功');
@@ -1001,10 +1001,10 @@
     clearAuthErrors();
     if(authState.resetStep===1){
       const contact=document.getElementById('resetContact').value.trim();
-      if(contact.length<6){setAuthError('resetContact','请输入正确的手机号或邮箱');return}
+      if(!contact){setAuthError('resetContact','请输入手机号或邮箱');return}
       document.getElementById('resetMaskedContact').textContent=contact.includes('@')?contact.replace(/^(.{2}).*(@.*)$/,'$1••••$2'):`${contact.slice(0,3)}••••${contact.slice(-4)}`;
       authState.resetStep=2;
-      showToast('验证码已发送 · 演示码 246810');
+      showToast('验证码已发送 · 输入任意六位数字');
     }else if(authState.resetStep===2){
       if(readCode('resetCode').length!==6){setAuthError('resetCode','请输入完整的六位验证码');return}
       authState.resetStep=3;

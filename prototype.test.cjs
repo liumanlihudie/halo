@@ -431,6 +431,25 @@ test('authentication screens cover password code and reset flows', () => {
   );
 });
 
+test('prototype login accepts any non-empty demo credentials', () => {
+  const html = readPrototype();
+  const passwordLogin = html.match(/function submitPasswordLogin\(\)\{([\s\S]*?)\n  \}/);
+  const sendCode = html.match(/function sendVerificationCode\(\)\{([\s\S]*?)\n  \}/);
+  const verificationLogin = html.match(/function submitVerificationLogin\(\)\{([\s\S]*?)\n  \}/);
+
+  assert.ok(passwordLogin, 'password login handler should exist');
+  assert.match(passwordLogin[1], /if\(!account\)/);
+  assert.match(passwordLogin[1], /if\(!password\)/);
+  assert.doesNotMatch(passwordLogin[1], /validPassword/);
+
+  assert.ok(sendCode, 'send-code handler should exist');
+  assert.match(sendCode[1], /if\(!contact\)/);
+
+  assert.ok(verificationLogin, 'verification login handler should exist');
+  assert.match(verificationLogin[1], /if\(!contact\)/);
+  assert.match(verificationLogin[1], /code\.length!==6/);
+});
+
 test('account switching and logout update visible account state', () => {
   const html = readPrototype();
   expectAll(
