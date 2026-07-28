@@ -123,6 +123,30 @@ test('single conversation sends and scenario actions update visible state', () =
   );
 });
 
+test('compact titles stay centered and one-to-one calls live in the plus menu', () => {
+  const html = readPrototype();
+  assert.match(
+    html,
+    /\.navbar\.compact h2\{[^}]*position:absolute[^}]*left:50%[^}]*transform:translateX\(-50%\)/
+  );
+  const chatHeader = html.match(
+    /<section class="page" id="chat">([\s\S]*?)<div class="chat-scroll/
+  );
+  assert.ok(chatHeader, 'single chat header should exist');
+  assert.doesNotMatch(chatHeader[1], /data-go="voice"|data-go="video"|语音通话|视频通话/);
+  expectAll(
+    html,
+    [
+      'function openAttachmentSheet()',
+      'data-go="voice"',
+      'data-go="video"',
+      '端到端语音通话',
+      'Vidu 视频通话'
+    ],
+    'plus menu call actions'
+  );
+});
+
 test('group chat exposes all three reply modes and no call controls', () => {
   const html = readPrototype();
   expectAll(

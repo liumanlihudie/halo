@@ -118,4 +118,21 @@ The device frame originally moved from `y=28` to `y=2` after switching pages bec
 
 No remaining P0, P1, or P2 issue was found in the tested conversation states.
 
+## Design QA — 标题与通话入口
+
+- Source reports: `codex-clipboard-fae5f3df-6067-4c69-9d73-479e606e08d7.png`, `codex-clipboard-8edc2716-4e51-4c5f-bb19-6a6aa1dbdf8c.png`
+- Implementation screenshot: `/Users/cofe/office Lady/IOS-IM/qa-call-menu.png`
+- Browser viewport: `1920 × 882` CSS px
+
+### Findings and fixes
+
+- Compact navigation used `space-between`; titles moved when the right side contained two call buttons, one status or no control.
+- Compact titles now use absolute 50% positioning within the phone navbar. Information monitoring, translation and contract review all measured a `0px` center delta.
+- One-to-one voice and video controls were generated in the top navbar. They are now removed from the navbar and generated inside the bottom “＋” sheet according to the current Agent capabilities.
+- Translation expert showed one voice and one video action in “发送与通话”; deep research showed neither action.
+- The call sheet uses the same Phosphor icon family as the rest of the prototype.
+- Phone bounds remained `y=28–854`; browser console contained no errors.
+
+No remaining P0, P1, or P2 issue was found in the reported states.
+
 final result: passed

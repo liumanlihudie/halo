@@ -34,7 +34,7 @@
     .page{position:absolute;inset:0;display:none;flex-direction:column;background:#fff;overflow:hidden}.page.active{display:flex}
     .status{height:48px;flex:0 0 48px;padding:13px 22px 0;display:flex;justify-content:space-between;font-size:12px;font-weight:750;position:relative;z-index:5}
     .navbar{height:53px;flex:0 0 53px;padding:3px 15px 9px;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.96);position:relative;z-index:5}
-    .navbar h2{font-size:22px;margin:0}.navbar.compact h2{font-size:16px}.nav-actions{display:flex;gap:8px}
+    .navbar h2{font-size:22px;margin:0}.navbar.compact h2{font-size:16px;position:absolute;left:50%;transform:translateX(-50%);max-width:235px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}.nav-actions{display:flex;gap:8px}
     .icon{width:34px;height:34px;flex:0 0 34px;padding:0;border:0;border-radius:50%;background:transparent;display:grid;place-items:center;cursor:pointer}
     .icon>i{font-size:18px;line-height:1;font-weight:400}.navbar .icon:hover{background:#f1f2f5}.icon.primary{flex:0 0 34px;background:var(--accent);color:#fff}
     .back{width:34px;height:34px;flex:0 0 34px;border:0;background:none;padding:0;display:grid;place-items:center;cursor:pointer}.back i{font-size:24px;line-height:1}
@@ -83,7 +83,7 @@
     .agent-card{background:#fff;border-radius:15px;padding:12px;margin-bottom:9px;display:flex;gap:11px;box-shadow:0 2px 10px rgba(40,48,71,.05);cursor:pointer}.agent-card .avatar{width:54px;height:54px;flex-basis:54px;border-radius:14px}.agent-card-main{flex:1;min-width:0}.agent-card-head{display:flex;justify-content:space-between;align-items:center}.agent-card-head b{font-size:14px}.rating{font-size:9px;color:#c68126}.agent-card p{font-size:10px;line-height:1.45;color:#828893;margin:5px 0}.mini-tags{display:flex;gap:5px;flex-wrap:wrap}.mini-tags span{font-size:8px;padding:3px 5px;border-radius:5px;background:#f0f1f5;color:#747b89}
     .market-load-state{text-align:center;padding:8px 0 16px;color:#9a9faa;font-size:10px}.market-empty{padding:28px 16px;text-align:center;background:#fff;border-radius:15px;color:#858b96}.market-empty i{display:block;font-size:28px;color:#a6abb5;margin-bottom:8px}.market-empty b{display:block;font-size:13px;color:#454c59;margin-bottom:5px}.market-empty p{font-size:10px;line-height:1.5;margin:0 0 12px}.market-empty button{border:0;border-radius:11px;padding:8px 12px;background:var(--accent);color:#fff;font-size:10px}
     .profile-hero{height:205px;background:linear-gradient(#0000,#0009),url("https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=900&q=80") center/cover;position:relative;color:#fff}.profile-hero .avatar{position:absolute;left:20px;bottom:18px;width:76px;height:76px;border-radius:19px;border:3px solid #fff}.profile-name{position:absolute;left:108px;bottom:23px}.profile-name h2{font-size:20px;margin:0 0 4px}.profile-name small{font-size:10px;color:#ffffffca}
-    .profile-copy{padding:15px 16px;background:#fff}.profile-copy p{font-size:12px;line-height:1.65;color:#5c6471}.ability-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ability{padding:10px;border-radius:10px;background:#f3f4f7;font-size:10px;color:#626977}.ability b{display:block;font-size:11px;color:#293144;margin-bottom:3px}
+    .profile-copy{padding:15px 16px;background:#fff}.profile-copy p{font-size:12px;line-height:1.65;color:#5c6471}.ability-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ability{padding:10px;border-radius:10px;background:#f3f4f7;font-size:10px;color:#626977}.ability>i{display:block;font-size:19px;color:var(--accent-deep);margin-bottom:8px}.ability b{display:block;font-size:11px;color:#293144;margin-bottom:3px}
     .bottom-bar{position:absolute;z-index:28;bottom:0;left:0;right:0;padding:10px 14px 21px;background:#fff;border-top:1px solid var(--line);display:flex;gap:8px}.bottom-bar button{height:44px;border-radius:12px;font-weight:750;cursor:pointer}.bottom-bar .secondary{width:96px;border:1px solid #dfe2e8;background:#fff}.bottom-bar .primary{flex:1;border:0;background:var(--accent);color:#fff}.bottom-bar .primary.done{background:#e5e7ec;color:#777d88}
     .moments{background:#fff}.moments .status,.moments>.navbar{position:absolute;left:0;right:0;background:transparent;color:#fff;text-shadow:0 1px 4px #0009}.moments>.navbar{top:48px}.moments-scroll{flex:1;overflow-y:auto;padding-bottom:80px}
     .moment-cover{height:290px;background:linear-gradient(#0000 42%,#0009),url("https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1000&q=80") center/cover;position:relative}.cover-title{position:absolute;right:95px;bottom:24px;color:#fff;font-size:15px;font-weight:750}.cover-avatar{position:absolute;right:18px;bottom:-27px;width:70px;height:70px;border-radius:11px;border:3px solid #fff;object-fit:cover}.feed-space{height:38px}
@@ -178,7 +178,7 @@
 
       <section class="page" id="chat">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="conversations" aria-label="返回"><i class="ph ph-caret-left"></i></button><h2 id="singleChatTitle">通用助理 <span class="tag green" id="singleChatStatus">可用</span></h2><div class="nav-actions" id="singleCallActions"><button class="icon" data-go="voice" aria-label="语音通话"><i class="ph ph-phone"></i></button><button class="icon" data-go="video" aria-label="视频通话"><i class="ph ph-video-camera"></i></button></div></div>
+        <div class="navbar compact"><button class="back" data-go="conversations" aria-label="返回"><i class="ph ph-caret-left"></i></button><h2 id="singleChatTitle">通用助理 <span class="tag green" id="singleChatStatus">可用</span></h2><span aria-hidden="true"></span></div>
         <div class="chat-scroll ios-scroll" id="singleChat"></div>
         <div class="composer-wrap"><div class="quick-actions ios-scroll" id="singleQuickActions"></div><div class="composer"><button class="icon" data-action="voice-input" aria-label="语音输入"><i class="ph ph-microphone"></i></button><div class="field" id="singleInput" contenteditable="true" data-placeholder="输入消息"></div><button class="icon" data-action="attach" aria-label="添加附件"><i class="ph ph-plus"></i></button><button class="icon primary" data-action="single-send" aria-label="发送"><i class="ph ph-arrow-up"></i></button></div></div>
       </section>
@@ -917,9 +917,6 @@
     currentConversationId=id;
     const statusClass=conversation.status.includes('失败')||conversation.status.includes('高风险')?'red':conversation.status==='可用'?'green':conversation.type==='task'?'amber':'gray';
     document.getElementById('singleChatTitle').innerHTML=`${escapeHtml(conversation.title)} <span class="tag ${statusClass}" id="singleChatStatus">${escapeHtml(conversation.status)}</span>`;
-    const callActions=document.getElementById('singleCallActions');
-    callActions.style.display=conversation.capabilities.voiceCall||conversation.capabilities.videoCall?'flex':'none';
-    callActions.innerHTML=`${conversation.capabilities.voiceCall?'<button class="icon" data-go="voice" aria-label="语音通话"><i class="ph ph-phone"></i></button>':''}${conversation.capabilities.videoCall?'<button class="icon" data-go="video" aria-label="视频通话"><i class="ph ph-video-camera"></i></button>':''}`;
     const log=document.getElementById('singleChat');
     log.innerHTML=conversation.messages.map(renderMessage).join('');
     document.getElementById('singleInput').dataset.placeholder=conversation.composerPlaceholder;
@@ -1006,11 +1003,25 @@
     openSheet('选择回答的 Agent',`${options}<div class="sheet-option" data-mode-choice="all"><div class="avatar letter">@</div><span>@所有人</span><small>依次回答并总结</small></div>`);
   }
 
+  function openAttachmentSheet(){
+    const conversation=conversationMocks[currentConversationId];
+    const calls=conversation?.type==='agent'?`
+      ${conversation.capabilities.voiceCall?'<div class="ability" data-go="voice"><i class="ph ph-phone"></i><b>端到端语音通话</b>与当前 Agent 实时对话</div>':''}
+      ${conversation.capabilities.videoCall?'<div class="ability" data-go="video"><i class="ph ph-video-camera"></i><b>Vidu 视频通话</b>使用当前 Agent 形象</div>':''}`:'';
+    openSheet('发送与通话',`<div class="ability-grid">${calls}
+      <div class="ability" data-sheet-action="mock-upload"><i class="ph ph-camera"></i><b>拍照</b>现场拍摄</div>
+      <div class="ability" data-sheet-action="mock-upload"><i class="ph ph-image"></i><b>图片</b>从相册选择</div>
+      <div class="ability" data-sheet-action="mock-upload"><i class="ph ph-file"></i><b>文件</b>PDF、Office</div>
+      <div class="ability" data-sheet-action="mock-upload"><i class="ph ph-scan"></i><b>扫描</b>识别纸质材料</div>
+      <div class="ability" data-sheet-action="mock-upload"><i class="ph ph-link"></i><b>网页</b>粘贴链接</div>
+      <div class="ability" data-sheet-action="mock-upload"><i class="ph ph-microphone"></i><b>录音</b>总结音频</div>
+    </div>`);
+  }
+
   function genericSheet(action){
     const sheets={
       'search':['全局搜索','<div class="field" contenteditable="true" data-placeholder="搜索消息、文件、来源或 Agent"></div><div class="sheet-option"><span>最近搜索：iOS 原型</span><small>消息 12</small></div><div class="sheet-option"><span>竞品分析.pdf</span><small>文件</small></div>'],
       'new-menu':['新建','<div class="sheet-option" data-go="new-group"><div class="row-icon">群</div><span>创建 AI 群聊</span><small>›</small></div><div class="sheet-option" data-go="market"><div class="row-icon">+</div><span>添加 Agent</span><small>›</small></div><div class="sheet-option" data-action="attach"><div class="row-icon">扫</div><span>扫描或导入文件</span><small>›</small></div>'],
-      'attach':['发送内容','<div class="ability-grid"><div class="ability" data-sheet-action="mock-upload"><b>拍照</b>现场拍摄</div><div class="ability" data-sheet-action="mock-upload"><b>图片</b>从相册选择</div><div class="ability" data-sheet-action="mock-upload"><b>文件</b>PDF、Office</div><div class="ability" data-sheet-action="mock-upload"><b>扫描</b>识别纸质材料</div><div class="ability" data-sheet-action="mock-upload"><b>网页</b>粘贴链接</div><div class="ability" data-sheet-action="mock-upload"><b>录音</b>总结音频</div></div>'],
       'mode-help':['群聊如何选择 Agent','<p style="font-size:12px;line-height:1.7;color:#69717e">普通消息会自动选择 1–2 个合适的 Agent；@成员时只有被点名者回答；@所有人或“让大家讨论”会让所有 Agent 依次发言并生成总结。</p>'],
       'usage':['模型与用量','<div class="sheet-option"><span>文字模型</span><small>¥18.60</small></div><div class="sheet-option"><span>端到端语音 · 24 分钟</span><small>¥9.20</small></div><div class="sheet-option"><span>Vidu 视频 · 3 分钟</span><small>¥8.40</small></div><div class="bar"><i style="width:58%"></i></div><p style="font-size:10px;color:#9297a0">本月预算 ¥80，已使用 45%</p>'],
       'permissions':['数据与权限','<div class="sheet-option"><span>相册</span><small>选择的照片</small></div><div class="sheet-option"><span>相机</span><small>允许</small></div><div class="sheet-option"><span>麦克风</span><small>允许</small></div><div class="sheet-option"><span>文件</span><small>按次授权</small></div>'],
@@ -1063,7 +1074,7 @@
       setMarketCategory('推荐');
       return;
     }
-    if(action==='attach'){genericSheet('attach');return}
+    if(action==='attach'){openAttachmentSheet();return}
     if(action==='mode-help'||action==='search'||action==='new-menu'||action==='usage'||action==='permissions'||action==='memory'||action==='notifications'){genericSheet(action);return}
     if(action==='voice-input'){showToast('按住说话 · 松开发送');return}
     if(action==='trial-chat'){showToast('已创建临时试聊');showPage('chat');return}
