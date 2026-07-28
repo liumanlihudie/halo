@@ -1,14 +1,14 @@
 # IOS-IM 技术设计文档
 
-版本：0.1
+版本：1.0
 
 日期：2026-07-28
 
-目标：个人 AI 通讯 iOS MVP
+目标：个人 AI 通讯 iOS / Android MVP
 
 ## 1. 技术目标
 
-构建一个以 Agent 为联系人的个人 iOS 即时通讯应用。系统需要同时支持稳定的一对一消息、多模型文字群聊、端到端双工语音、视频 Agent、长期记忆、附件和可追溯的 AI 朋友圈。
+构建一个以 Agent 为联系人的个人移动即时通讯应用，同时交付 iOS 与 Android。系统需要支持稳定的一对一消息、多模型文字群聊、端到端双工语音、视频 Agent、长期记忆、附件和可追溯的 AI 朋友圈。
 
 首要技术原则：
 
@@ -23,8 +23,8 @@
 
 ```mermaid
 flowchart LR
-    IOS["iOS App / SwiftUI"] --> API["API Gateway"]
-    IOS <--> WS["Message WebSocket"]
+    MOBILE["Flutter App / iOS + Android"] --> API["API Gateway"]
+    MOBILE <--> WS["Message WebSocket"]
     API --> AUTH["Identity Service"]
     API --> AGENT["Agent & Market Service"]
     API --> FILE["File Service"]
@@ -39,28 +39,41 @@ flowchart LR
     ORCH --> DB
     MEMORY --> VECTOR["Vector / Retrieval Store"]
     MOMENT --> DB
-    IOS <--> VOICE["Doubao Duplex Voice"]
-    IOS <--> VIDEO["Vidu Video API"]
+    MOBILE <--> VOICE["Doubao Duplex Voice / Native Plugin"]
+    MOBILE <--> VIDEO["Vidu Video API / Native Plugin"]
 ```
 
-## 3. iOS 客户端
+### 2.1 已确认的技术决策
+
+- 多 Agent 编排运行在服务端，使用 LangGraph 表达确定性路由、发言队列、交叉评论、总结、停止和恢复。
+- LangChain 只用于 Provider、Tool、Structured Output 等适配，不拥有消息、账户、Agent 或账务状态。
+- Hermes Agent 不作为产品总控；需要复杂 Shell、浏览器或长任务时，可以通过标准 `AgentRunner` 接口作为某个专家的可替换执行器。
+- OpenMinis 只用于研究移动 Agent Runtime、流式交互、设备工具和权限体验；不复制其 GPLv3 代码。
+- 首版采用模块化单体 API + 独立 Orchestrator，不提前拆分大量微服务。
+
+具体决策依据见：
+
+- [多 Agent 编排方案](02-agent-orchestration-langgraph.md)
+- [技术选型决策](03-technology-selection.md)
+
+## 3. Flutter 移动客户端
 
 ### 3.1 技术栈
 
-- UI：SwiftUI。
-- 状态：Observation，页面状态按 Feature 隔离。
-- 并发：Swift Concurrency。
-- 网络：URLSession + WebSocket。
-- 本地数据：SwiftData 或 SQLite 封装。
-- 媒体：PhotosUI、AVFoundation、VisionKit、QuickLook。
-- 推送：APNs。
-- 安全存储：Keychain。
-- 日志：OSLog，生产环境脱敏。
+- UI：Flutter Material 3 基础组件 + 自有跨平台 Design System。
+- 状态：Riverpod，页面状态按 Feature 隔离。
+- 并发：Dart async/await、Stream 和 Isolate；禁止在 UI Isolate 执行重型解析。
+- 网络：Dio + WebSocket。
+- 本地数据：Drift / SQLite，通过 Repository 隔离数据库 Row。
+- 媒体：Flutter 插件统一抽象；iOS 使用 PhotosUI、AVFoundation、VisionKit、QuickLook，Android 使用 Photo Picker、Media3、CameraX 和系统文件预览。
+- 推送：APNs 与 FCM，由统一 Push Service 归一化。
+- 安全存储：iOS Keychain 与 Android Keystore。
+- 日志：统一结构化日志，生产环境脱敏；原生桥接层分别接入 OSLog 和 Logcat。
 
 ### 3.2 模块
 
 ```text
-App
+lib
 ├── Foundation
 │   ├── Networking
 │   ├── Persistence
@@ -79,7 +92,7 @@ App
 └── Settings
 ```
 
-模块之间只共享领域协议和稳定 ID，不直接访问彼此的 ViewModel。
+模块之间只共享领域协议和稳定 ID，不直接访问彼此的 Controller、Notifier 或 Widget。平台专属能力必须放入 `ios/`、`android/` 或 Platform Plugin，不得散落在 Feature UI。
 
 ### 3.3 客户端状态
 
@@ -119,6 +132,7 @@ App
 ### 4.4 Orchestrator
 
 - 判断单 Agent、自动选择、指定回答和全员讨论。
+- 使用 LangGraph 保存 Run State 和 Checkpoint。
 - 构建共享上下文与私有上下文。
 - 调用模型网关和工具运行时。
 - 维护生成状态、发言顺序、超时、停止和重试。
@@ -392,7 +406,7 @@ speaking -> listening
 - 服务端签发短期任务或会话凭证。
 - 超时或失败回退到文字对话，不自动改走另一付费服务。
 
-正式开发前需验证 Vidu 当前 API 是否支持目标实时延迟、并发与 iOS 场景。
+正式开发前需验证 Vidu 当前 API 是否支持目标实时延迟、并发与 iOS / Android 场景。
 
 ## 11. 文件与附件
 
@@ -487,7 +501,7 @@ Moment 展示“AI 生成”、来源、参与 Agent 和时间。用户可回到
 
 - Local：本地 Mock 与开发服务。
 - Development：共享开发环境，使用测试 Provider 额度。
-- Staging：接近生产配置，只对内部 TestFlight。
+- Staging：接近生产配置，只对内部 TestFlight 与 Google Play 内测。
 - Production：正式数据、正式计费和独立密钥。
 
 发布使用 Feature Flag 控制：
@@ -505,7 +519,7 @@ Moment 展示“AI 生成”、来源、参与 Agent 和时间。用户可回到
 1. 用户身份采用匿名设备账户、Apple 登录，还是两者并存。
 2. 消息服务自建 WebSocket 还是使用托管实时服务。
 3. 长期记忆采用 PostgreSQL + pgvector，还是独立检索服务。
-4. 豆包端到端双工的正式 iOS 接入方式、角色字段和并发限制。
+4. 豆包端到端双工在 iOS 与 Android 的正式接入方式、角色字段和并发限制。
 5. Vidu 实时视频能力、首帧延迟、价格和内容审核要求。
 6. 国内上架所需的生成式 AI、深度合成和算法备案边界。
 7. 是否需要端到端加密；若需要，服务端模型处理与 E2EE 的边界如何定义。

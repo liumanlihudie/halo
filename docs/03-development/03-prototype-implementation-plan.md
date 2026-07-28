@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a realistic, single-file, clickable HTML prototype for the personal AI-only iOS IM defined in `PRODUCT-DESIGN.md`.
+**Goal:** Build a realistic, single-file, clickable HTML prototype for the personal AI-only iOS IM defined in `../01-product/02-product-design.md`.
 
 **Architecture:** Copy the approved V4 prototype into `IOS-IM/prototype.html`, then extend its page-based state machine with group-chat screens, modal sheets, mutable mock state, and richer datasets. Keep the artifact build-free and self-contained except for remote mock images, while providing a Node test that verifies required screens, controls, and content contracts.
 
@@ -25,8 +25,8 @@
 
 **Files:**
 - Create: `IOS-IM/prototype.test.cjs`
-- Read: `IOS-IM/PRODUCT-DESIGN.md`
-- Read: `IOS-IM/PROTOTYPE-PLAN.md`
+- Read: `IOS-IM/docs/01-product/02-product-design.md`
+- Read: `IOS-IM/docs/01-product/03-prototype-spec.md`
 
 **Interfaces:**
 - Consumes: the page and interaction requirements in the two specification files.
@@ -47,7 +47,7 @@ Expected: FAIL because `IOS-IM/prototype.html` does not exist.
 Run:
 
 ```bash
-git add IOS-IM/prototype.test.cjs IOS-IM/IMPLEMENTATION-PLAN.md
+git add IOS-IM/prototype.test.cjs IOS-IM/docs/03-development/03-prototype-implementation-plan.md
 git commit -m "test: define IOS-IM prototype contract"
 ```
 

@@ -1,8 +1,8 @@
 # Design QA — 群聊底部安全区
 
-- Source visual truth: `/Users/cofe/office Lady/IOS-IM/qa-reference-bottom-clipping.png`
-- Implementation screenshot: `/Users/cofe/office Lady/IOS-IM/qa-group-chat.png`
-- Combined focused comparison: `/Users/cofe/office Lady/IOS-IM/qa-bottom-comparison.png`
+- Source visual truth: [qa-reference-bottom-clipping.png](assets/qa-reference-bottom-clipping.png)
+- Implementation screenshot: [qa-group-chat.png](assets/qa-group-chat.png)
+- Combined focused comparison: [qa-bottom-comparison.png](assets/qa-bottom-comparison.png)
 - Browser viewport: `1920 × 882` CSS px, device scale factor 1
 - Source pixels: `816 × 394`
 - Implementation pixels: `1920 × 882`; rendered phone frame `381 × 826` after responsive scale
@@ -14,7 +14,7 @@ The browser-rendered phone frame fits entirely inside the available viewport. It
 
 ## Focused comparison evidence
 
-`qa-bottom-comparison.png` places the reported bottom crop beside the revised implementation crop. The revised composer, input field, @ button, send button, rounded screen corners, and bottom bezel are all visible. No persistent control is clipped.
+[qa-bottom-comparison.png](assets/qa-bottom-comparison.png) places the reported bottom crop beside the revised implementation crop. The revised composer, input field, @ button, send button, rounded screen corners, and bottom bezel are all visible. No persistent control is clipped.
 
 ## Fidelity surfaces
 
@@ -46,9 +46,9 @@ No remaining P0, P1, or P2 issue was found in the reported state. Desktop scalin
 
 ## Design QA — AI 市场与设置页升级
 
-- Source visual truth: `/Users/cofe/office Lady/IOS-IM/qa-reference-settings-profile.png`
+- Source visual truth: [qa-reference-settings-profile.png](assets/qa-reference-settings-profile.png)
 - AI 市场截图: `/Users/cofe/office Lady/IOS-IM/qa-market-50-agents.png`
-- 设置页截图: `/Users/cofe/office Lady/IOS-IM/qa-settings-profile.png`
+- 设置页截图: [qa-settings-profile.png](assets/qa-settings-profile.png)
 - Browser viewport: `1041 × 806` CSS px
 - Rendered phone frame: `346 × 750` CSS px
 - Measured phone bounds: `y=28` through `y=778`
@@ -85,7 +85,7 @@ No remaining P0, P1, or P2 issue was found in the tested market and settings sta
 
 ## Design QA — 全会话 Mock 数据
 
-- Implementation screenshot: `/Users/cofe/office Lady/IOS-IM/qa-rich-conversations.png`
+- Implementation screenshot: [qa-rich-conversations.png](assets/qa-rich-conversations.png)
 - Browser viewport: `1920 × 882` CSS px
 - Tested phone bounds after page navigation: `y=28` through `y=854`
 - Conversation list: 12 rows, including 3 groups and 9 Agent/task/system conversations
@@ -121,7 +121,7 @@ No remaining P0, P1, or P2 issue was found in the tested conversation states.
 ## Design QA — 标题与通话入口
 
 - Source reports: `codex-clipboard-fae5f3df-6067-4c69-9d73-479e606e08d7.png`, `codex-clipboard-8edc2716-4e51-4c5f-bb19-6a6aa1dbdf8c.png`
-- Implementation screenshot: `/Users/cofe/office Lady/IOS-IM/qa-call-menu.png`
+- Implementation screenshot: [qa-call-menu.png](assets/qa-call-menu.png)
 - Browser viewport: `1920 × 882` CSS px
 
 ### Findings and fixes

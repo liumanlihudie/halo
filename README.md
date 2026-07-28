@@ -1,43 +1,42 @@
 # IOS-IM
 
-面向个人用户的 AI 原生 iOS 即时通讯产品。产品采用熟悉的通讯录与对话结构，但通讯录中只有 AI Agent，不包含真人社交。
+面向个人用户的 AI 原生移动通讯产品，同时支持 iOS 和 Android。通讯录中只有 AI Agent，不包含真人社交；四个主页面为对话、通讯录、AI 朋友圈和设置。
 
-## 当前目录
+## 快速入口
 
-- `BRAINSTORM-2026-07-27.md`：最初的产品头脑风暴原文。
-- `PRODUCT-DESIGN.md`：已经确认的产品定位、信息架构、交互规则与产品边界。
-- `DEVELOPMENT-GUIDE.md`：演示范围、演示路径、开发阶段、验收和正式 MVP 差异。
-- `TECHNICAL-DESIGN.md`：iOS、服务端、模型编排、语音视频、数据、安全和接口技术方案。
-- `PROTOTYPE-PLAN.md`：HTML 原型的页面清单、mock 数据覆盖和验收标准。
-- `prototype.html`：可点击的高保真 HTML 原型。
-- `prototype.test.cjs`：原型页面、群聊模式、mock 数据与品牌边界的自动化契约测试。
-- `IMPLEMENTATION-PLAN.md`：原型实现与验证计划。
-- `AI市场与设置升级设计.md`：50 位专家市场和设置资料卡的增量设计。
-- `AI市场与设置升级实施计划.md`：AI 市场与设置升级的实现计划。
-- `账户与认证原型设计.md`：登录、账号、安全和 Token 充值闭环设计。
-- `账户与认证原型实施计划.md`：账户、认证和充值原型的可验证实施步骤。
-- `design-qa.md`：浏览器视觉与交互验收记录。
+- [文档总索引](docs/README.md)
+- [产品与交互设计](docs/01-product/02-product-design.md)
+- [总体技术方案](docs/02-architecture/01-system-technical-design.md)
+- [多 Agent 编排方案](docs/02-architecture/02-agent-orchestration-langgraph.md)
+- [技术选型决策](docs/02-architecture/03-technology-selection.md)
+- [开发总指南](docs/03-development/01-development-guide.md)
+- [工程开发规范](docs/03-development/02-engineering-guide.md)
+- [MVP 开发计划](docs/03-development/04-mvp-implementation-plan.md)
 
-## 当前结论
+## 静态演示放在哪里
 
-- 首发面向个人，不做企业组织与管理员体系。
-- 四个主页面为：对话、通讯录、AI 朋友圈、设置。
-- 支持一对一文字、文件、图片、拍照、语音与视频对话。
-- 支持多 Agent 文字群聊；暂不做语音群聊。
-- AI 朋友圈由 Agent 根据真实对话、任务和监控结果自动总结发布，用户可关闭。
-- AI 市场用于发现 Agent，并添加到通讯录或群聊。
+当前只有一套静态演示，刻意保留在项目根目录，避免改变现有浏览器地址和自动化测试：
 
-原始头脑风暴中“不做群聊”的结论已被后续讨论更新：当前版本只增加可控的文字群聊，不增加语音群聊。
+```text
+IOS-IM/
+├── prototype.html       # 可点击的单文件 HTML 演示
+├── prototype.test.cjs   # 原型契约测试
+└── docs/
+    └── 06-quality/
+        └── assets/      # 原型视觉验收截图
+```
 
-## 打开原型
-
-可以直接双击 `prototype.html`，也可以在仓库根目录运行：
+直接打开 [prototype.html](prototype.html)，或者从工作区根目录启动服务：
 
 ```bash
 python3 -m http.server 4173 --directory IOS-IM
 ```
 
-然后访问 `http://127.0.0.1:4173/prototype.html`。
+浏览器访问：
+
+```text
+http://127.0.0.1:4173/prototype.html
+```
 
 ## 运行检查
 
@@ -45,4 +44,13 @@ python3 -m http.server 4173 --directory IOS-IM
 node --test IOS-IM/prototype.test.cjs
 ```
 
-原型的推荐路径是：进入“iOS 产品小组” → 切换三种发言模式 → 运行“让大家讨论” → 发布群聊总结到 AI 朋友圈 → 进入群资料管理成员与共享上下文。
+推荐演示路径：进入“iOS 产品小组” → 切换三种发言模式 → 运行“让大家讨论” → 发布群聊总结到 AI 朋友圈 → 进入群资料管理成员与共享上下文。
+
+## 当前技术结论
+
+- 移动端使用 Flutter，共享 iOS 与 Android 的交互、缓存、媒体采集和实时状态代码。
+- 多 Agent 编排运行在服务端，首选 LangGraph；不把权威编排逻辑塞进客户端。
+- Agent 身份与模型解耦，同一个专家可以独立配置模型、提示词、工具、记忆、声音和视频形象。
+- Hermes Agent 可作为重型工具执行器或实现参考，不作为产品总控。
+- OpenMinis 只作为移动 Agent Runtime 和设备工具设计参考，不直接复制其 GPLv3 代码。
+- 首版只做文字群聊；语音和视频通话只支持一对一 Agent。
