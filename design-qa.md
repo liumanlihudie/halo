@@ -83,4 +83,39 @@ No remaining P0, P1, or P2 issue was found in the reported state. Desktop scalin
 
 No remaining P0, P1, or P2 issue was found in the tested market and settings states.
 
+## Design QA — 全会话 Mock 数据
+
+- Implementation screenshot: `/Users/cofe/office Lady/IOS-IM/qa-rich-conversations.png`
+- Browser viewport: `1920 × 882` CSS px
+- Tested phone bounds after page navigation: `y=28` through `y=854`
+- Conversation list: 12 rows, including 3 groups and 9 Agent/task/system conversations
+
+### Interaction evidence
+
+- Opened all 9 data-driven conversations; each displayed a different title, message count and format combination.
+- Opened all 3 groups; product, research and content groups displayed independent histories and no call buttons.
+- Verified Agent conversations expose call controls while task and system conversations hide them.
+- Sent “把结论压成三条” in the general assistant conversation; the message and list preview both updated to the new text and “刚刚”.
+- Continued the failed spreadsheet upload from 74%, stopped the research task and confirmed the calendar event.
+- Opened both “数据与权限” and “模型与用量” sheets from the system conversation.
+- All 9 shared conversations measured `scrollWidth = clientWidth = 375px`; no horizontal overflow was found.
+- Browser console contained no errors.
+
+### Format coverage
+
+- Text, long text and quoted replies.
+- Single image and image gallery.
+- PDF, DOCX, XLSX and ZIP files.
+- Voice message and transcript.
+- Web source and citation cards.
+- Data tables, metrics and bar charts.
+- Progress, checklist and calendar cards.
+- Risk, conflict, failure, permission, quota, degradation and recovery states.
+
+### Layout correction
+
+The device frame originally moved from `y=28` to `y=2` after switching pages because transformed device dimensions interacted with an oversized Grid/Flex layout item. The stage now positions the single phone frame absolutely from its 28px safe inset while preserving top-centered scaling. Post-fix navigation keeps the phone at `y=28–854`.
+
+No remaining P0, P1, or P2 issue was found in the tested conversation states.
+
 final result: passed

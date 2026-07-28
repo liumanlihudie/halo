@@ -28,8 +28,8 @@
     .rail button{width:100%;border:0;background:transparent;border-radius:12px;padding:10px 11px;margin:2px 0;display:flex;align-items:center;gap:10px;text-align:left;color:#596172;cursor:pointer}
     .rail button:hover{background:#f1f2f6}.rail button.active{background:var(--accent-soft);color:var(--accent-deep);font-weight:750}
     .rail-icon{width:30px;height:30px;flex:0 0 30px;display:grid;place-items:center;color:#737b8c}.rail-icon i{font-size:16px;line-height:1;font-weight:400}.active .rail-icon{color:var(--accent-deep)}
-    .stage{height:100vh;min-height:0;overflow:hidden;display:grid;place-items:start center;padding:28px}
-    .phone{width:393px;height:852px;border:9px solid #161a23;border-radius:52px;background:#fff;position:relative;overflow:hidden;box-shadow:var(--shadow);transform-origin:top center;will-change:transform}
+    .stage{height:100vh;min-height:0;overflow:hidden;position:relative;padding:28px}
+    .phone{width:393px;height:852px;border:9px solid #161a23;border-radius:52px;background:#fff;position:absolute;top:28px;left:50%;margin-left:-196.5px;overflow:hidden;box-shadow:var(--shadow);transform-origin:top center;will-change:transform}
     .island{position:absolute;z-index:120;top:9px;left:50%;transform:translateX(-50%);width:118px;height:30px;border-radius:18px;background:#0e1118}
     .page{position:absolute;inset:0;display:none;flex-direction:column;background:#fff;overflow:hidden}.page.active{display:flex}
     .status{height:48px;flex:0 0 48px;padding:13px 22px 0;display:flex;justify-content:space-between;font-size:12px;font-weight:750;position:relative;z-index:5}
@@ -100,7 +100,7 @@
     [data-go],[data-action],.switch,.chip,.post,.conversation,.contact,.agent-card,.setting-row,.result-link{cursor:pointer}
     button:active,[data-go]:active,[data-action]:active,.conversation:active,.contact:active,.agent-card:active{transform:scale(.98)}
     @media(max-width:980px){.workspace{grid-template-columns:220px 1fr}.guide{display:none}}
-    @media(max-width:690px){body{background:#11151e}.workspace{display:block}.rail,.guide{display:none}.stage{padding:0;min-height:100dvh}.phone{width:100%;height:100dvh;border:0;border-radius:0;box-shadow:none}.island{top:8px}}
+    @media(max-width:690px){body{background:#11151e}.workspace{display:block}.rail,.guide{display:none}.stage{padding:0;min-height:100dvh}.phone{position:relative;top:auto;left:auto;margin-left:0;width:100%;height:100dvh;border:0;border-radius:0;box-shadow:none}.island{top:8px}}
   </style>
 </head>
 <body>
@@ -371,11 +371,11 @@
   </main>
 
   <aside class="guide">
-    <h2>文字群聊原型</h2>
-    <p>普通消息自动选人，@ 指定成员只由被点名者回答，“大家讨论”让所有 Agent 按顺序发言并生成总结。</p>
-    <div class="guide-card"><h3>推荐体验</h3><ul><li>打开 iOS 产品小组</li><li>切换自动、@成员和全员模式</li><li>点击“让大家讨论”观察三个阶段</li><li>进入群资料调整成员与上下文</li><li>把总结发布到 AI 朋友圈</li></ul></div>
-    <div class="guide-card"><h3>页面数据</h3><div class="legend"><span>文字</span><span>图片</span><span>文件</span><span>任务进度</span><span>失败状态</span><span>数据卡</span><span>权限</span><span>用量</span></div></div>
-    <div class="hint">尽量点击所有看起来可操作的区域。没有真实后端的动作也会通过页面、底部弹层、状态变化或提示反馈。</div>
+    <h2>全会话演示原型</h2>
+    <p>对话频道包含 12 条可进入会话：普通 Agent、三类群聊、长期任务、文件管线、信息监控和系统通知。</p>
+    <div class="guide-card"><h3>推荐体验</h3><ul><li>打开数据分析师查看表格与图表</li><li>打开合同助手查看风险与修订文件</li><li>在文件处理中继续断点上传</li><li>在研究任务中停止生成</li><li>切换三个群聊比较独立历史</li></ul></div>
+    <div class="guide-card"><h3>消息格式</h3><div class="legend"><span>文字</span><span>引用</span><span>图片</span><span>文件</span><span>语音</span><span>网页</span><span>表格</span><span>图表</span><span>日历</span><span>风险</span><span>失败</span><span>系统通知</span></div></div>
+    <div class="hint">所有列表会话都可以进入。可点击的卡片会通过页面变化、底部弹层、状态变化或提示反馈。</div>
   </aside>
 </div>
 
@@ -961,6 +961,7 @@
     const conversationId=id||currentConversationId;
     const conversation=conversationMocks[conversationId];
     if(action==='retry-upload'){
+      conversation.status='解析中';
       conversation.messages.push({type:'progress',title:'断点续传完成',value:100,detail:'2026-Q3-预算表.xlsx 已上传并开始解析'});
       updateConversationPreview(conversationId,'预算表.xlsx 已续传完成');
       renderConversation(conversationId);

@@ -260,8 +260,8 @@ test('phone and chat composers stay clear of rounded corners and overlays', () =
   assert.match(html, /--phone-safe-bottom:\s*30px/);
   assert.match(html, /\.workspace\{[^}]*height:100vh[^}]*min-height:0[^}]*overflow:hidden/);
   assert.match(html, /\.stage\{[^}]*height:100vh[^}]*min-height:0[^}]*overflow:hidden/);
-  assert.match(html, /\.stage\{[^}]*place-items:start center/);
-  assert.match(html, /\.phone\{[^}]*transform-origin:top center/);
+  assert.match(html, /\.stage\{[^}]*position:relative/);
+  assert.match(html, /\.phone\{[^}]*position:absolute[^}]*top:28px[^}]*left:50%[^}]*margin-left:-196\.5px[^}]*transform-origin:top center/);
   assert.match(
     html,
     /\.chat-scroll\{[^}]*padding:12px 12px var\(--composer-offset,\s*128px\)/
