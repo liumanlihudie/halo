@@ -125,3 +125,30 @@ test('prototype uses a single accent and avoids WeChat brand assets', () => {
   assert.match(html, /--accent:/);
   assert.doesNotMatch(html, /微信|WeChat|#07c160|wechat/i);
 });
+
+test('compact icon buttons cannot inherit full-width primary CTA layout', () => {
+  const html = readPrototype();
+  assert.doesNotMatch(
+    html,
+    /(?:^|})\s*\.primary\s*\{[^}]*flex\s*:\s*1/,
+    'primary CTA layout must be scoped to its owning component'
+  );
+  assert.match(
+    html,
+    /\.icon\.primary\s*\{[^}]*flex\s*:\s*0 0 34px/,
+    'icon primary buttons must keep a fixed 34px hit area'
+  );
+  assert.match(
+    html,
+    /\.bottom-bar \.primary\s*\{/,
+    'bottom-bar CTA should own its flexible width'
+  );
+});
+
+test('navigation controls use one real icon family with explicit glyph sizing', () => {
+  const html = readPrototype();
+  assert.match(html, /remixicon@4\.6\.0/);
+  assert.match(html, /\.icon>i\s*\{[^}]*font-size\s*:\s*18px/);
+  assert.match(html, /\.rail-icon i\s*\{[^}]*font-size\s*:\s*16px/);
+  assert.match(html, /\.tabs button i\s*\{[^}]*font-size\s*:\s*21px/);
+});

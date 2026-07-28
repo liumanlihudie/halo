@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Halo · 个人 AI 通讯</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/remixicon@4.6.0/fonts/remixicon.css">
   <style>
     :root{
       --ink:#171923;--muted:#8b909a;--line:#e9ebef;--soft:#f4f5f7;--paper:#fff;
@@ -25,7 +26,7 @@
     .rail-label{font-size:10px;font-weight:800;letter-spacing:.1em;color:#a0a5ae;margin:18px 10px 7px}
     .rail button{width:100%;border:0;background:transparent;border-radius:12px;padding:10px 11px;margin:2px 0;display:flex;align-items:center;gap:10px;text-align:left;color:#596172;cursor:pointer}
     .rail button:hover{background:#f1f2f6}.rail button.active{background:var(--accent-soft);color:var(--accent-deep);font-weight:750}
-    .rail-icon{width:28px;height:28px;border-radius:9px;background:#eef0f4;display:grid;place-items:center;font-size:13px}.active .rail-icon{background:#fff}
+    .rail-icon{width:30px;height:30px;flex:0 0 30px;border-radius:9px;background:#eef0f4;display:grid;place-items:center}.rail-icon i{font-size:16px;line-height:1;font-weight:400}.active .rail-icon{background:#fff}
     .stage{min-height:100vh;display:grid;place-items:center;padding:28px}
     .phone{width:393px;height:852px;border:9px solid #161a23;border-radius:52px;background:#fff;position:relative;overflow:hidden;box-shadow:var(--shadow)}
     .island{position:absolute;z-index:120;top:9px;left:50%;transform:translateX(-50%);width:118px;height:30px;border-radius:18px;background:#0e1118}
@@ -33,12 +34,14 @@
     .status{height:48px;flex:0 0 48px;padding:13px 22px 0;display:flex;justify-content:space-between;font-size:12px;font-weight:750;position:relative;z-index:5}
     .navbar{height:53px;flex:0 0 53px;padding:3px 15px 9px;display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.96);position:relative;z-index:5}
     .navbar h2{font-size:22px;margin:0}.navbar.compact h2{font-size:16px}.nav-actions{display:flex;gap:8px}
-    .icon{width:35px;height:35px;border:0;border-radius:11px;background:#f1f2f5;display:grid;place-items:center;cursor:pointer;font-size:17px}
-    .icon.primary{background:var(--accent);color:#fff}.back{border:0;background:none;font-size:28px;padding:0 8px 0 0;cursor:pointer}
+    .icon{width:34px;height:34px;flex:0 0 34px;padding:0;border:0;border-radius:10px;background:#f1f2f5;display:grid;place-items:center;cursor:pointer}
+    .icon>i{font-size:18px;line-height:1;font-weight:400}.icon.primary{flex:0 0 34px;background:var(--accent);color:#fff}
+    .back{width:34px;height:34px;flex:0 0 34px;border:0;background:none;padding:0;display:grid;place-items:center;cursor:pointer}.back i{font-size:24px;line-height:1}
+    .nav-text-button{height:34px;padding:0 11px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-size:12px;font-weight:700;cursor:pointer}
     .body{flex:1;overflow-y:auto;padding:5px 15px 92px}.soft-body{background:var(--soft)}
     .search{height:38px;border-radius:10px;background:#f1f2f5;color:#9ca1aa;display:flex;align-items:center;justify-content:center;font-size:13px;margin:2px 0 8px;cursor:pointer}
     .tabs{position:absolute;z-index:25;bottom:0;left:0;right:0;height:80px;padding:7px 5px 20px;border-top:1px solid #e5e7eb;background:rgba(255,255,255,.96);display:grid;grid-template-columns:repeat(4,1fr);backdrop-filter:blur(18px)}
-    .tabs button{border:0;background:none;color:#999da6;font-size:10px;cursor:pointer}.tabs button b{display:block;font-size:21px;line-height:22px;margin-bottom:4px;font-weight:500}.tabs button.active{color:var(--accent-deep);font-weight:750}
+    .tabs button{border:0;background:none;color:#999da6;font-size:10px;cursor:pointer}.tabs button i{display:block;font-size:21px;line-height:22px;margin-bottom:4px;font-weight:400}.tabs button.active{color:var(--accent-deep);font-weight:750}
     .conversation{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid var(--line);cursor:pointer}
     .avatar{width:50px;height:50px;flex:0 0 50px;border-radius:13px;object-fit:cover;background:#e7e9ee}
     .avatar.letter{display:grid;place-items:center;font-weight:800;color:#fff;background:linear-gradient(145deg,#596bd9,#303d89)}
@@ -59,7 +62,7 @@
     .photo-message{width:225px;height:150px;border-radius:14px;object-fit:cover;display:block}
     .composer-wrap{position:absolute;z-index:27;bottom:0;left:0;right:0;background:#f8f8fa;border-top:1px solid #dfe2e8}
     .mode-hint{min-height:29px;padding:7px 11px 4px;display:flex;align-items:center;justify-content:space-between;font-size:10px;color:#6f7684}.mode-hint b{color:var(--accent-deep)}.mode-hint button{border:0;background:none;color:var(--accent-deep);font-size:10px;cursor:pointer}
-    .composer{padding:4px 8px 21px;display:flex;align-items:center;gap:7px}.field{flex:1;min-height:39px;max-height:72px;overflow:auto;background:#fff;border-radius:9px;padding:10px;font-size:13px;color:#444a56;outline:none}.field:empty:before{content:attr(data-placeholder);color:#adb1b9}
+    .composer{padding:4px 9px 21px;display:flex;align-items:center;gap:7px}.composer .icon{align-self:flex-end}.field{flex:1;min-width:0;min-height:39px;max-height:72px;overflow:auto;background:#fff;border-radius:9px;padding:10px;font-size:13px;color:#444a56;outline:none}.field:empty:before{content:attr(data-placeholder);color:#adb1b9}
     .quick-actions{display:flex;gap:6px;padding:0 9px 7px;overflow-x:auto}.quick-actions button{white-space:nowrap;border:0;border-radius:13px;padding:6px 9px;background:#fff;color:#606878;font-size:10px;cursor:pointer}.quick-actions button.active{background:var(--accent);color:#fff}
     .discussion-progress{margin:0 12px 8px;background:#fff;border:1px solid #e2e4ea;border-radius:12px;padding:9px 10px;display:none}.discussion-progress.show{display:block}.discussion-line{display:flex;align-items:center;justify-content:space-between;font-size:10px}.phases{display:flex;gap:4px;margin-top:7px}.phase{height:4px;flex:1;border-radius:3px;background:#e4e6eb}.phase.done,.phase.current{background:var(--accent)}.stop-btn{border:0;background:#ffedef;color:#c9444b;border-radius:9px;padding:5px 8px;font-size:9px}
     .summary-card{width:280px;border-radius:15px;background:#fff;box-shadow:0 4px 18px rgba(30,38,58,.1);overflow:hidden}.summary-head{padding:13px;background:linear-gradient(135deg,#303a65,#6675d1);color:#fff}.summary-head small{font-size:9px;color:#ffffffb8}.summary-head b{display:block;font-size:15px;margin-top:5px}.summary-body{padding:12px;font-size:11px;line-height:1.6;color:#555d6c}.summary-actions{display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line)}.summary-actions button{border:0;background:#fff;padding:10px;color:var(--accent-deep);font-size:10px;cursor:pointer}.summary-actions button+button{border-left:1px solid var(--line)}
@@ -74,7 +77,7 @@
     .agent-card{background:#fff;border-radius:15px;padding:12px;margin-bottom:9px;display:flex;gap:11px;box-shadow:0 2px 10px rgba(40,48,71,.05);cursor:pointer}.agent-card .avatar{width:54px;height:54px;flex-basis:54px;border-radius:14px}.agent-card-main{flex:1;min-width:0}.agent-card-head{display:flex;justify-content:space-between;align-items:center}.agent-card-head b{font-size:14px}.rating{font-size:9px;color:#c68126}.agent-card p{font-size:10px;line-height:1.45;color:#828893;margin:5px 0}.mini-tags{display:flex;gap:5px;flex-wrap:wrap}.mini-tags span{font-size:8px;padding:3px 5px;border-radius:5px;background:#f0f1f5;color:#747b89}
     .profile-hero{height:205px;background:linear-gradient(#0000,#0009),url("https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=900&q=80") center/cover;position:relative;color:#fff}.profile-hero .avatar{position:absolute;left:20px;bottom:18px;width:76px;height:76px;border-radius:19px;border:3px solid #fff}.profile-name{position:absolute;left:108px;bottom:23px}.profile-name h2{font-size:20px;margin:0 0 4px}.profile-name small{font-size:10px;color:#ffffffca}
     .profile-copy{padding:15px 16px;background:#fff}.profile-copy p{font-size:12px;line-height:1.65;color:#5c6471}.ability-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.ability{padding:10px;border-radius:10px;background:#f3f4f7;font-size:10px;color:#626977}.ability b{display:block;font-size:11px;color:#293144;margin-bottom:3px}
-    .bottom-bar{position:absolute;z-index:28;bottom:0;left:0;right:0;padding:10px 14px 21px;background:#fff;border-top:1px solid var(--line);display:flex;gap:8px}.bottom-bar button{height:44px;border-radius:12px;font-weight:750;cursor:pointer}.secondary{width:96px;border:1px solid #dfe2e8;background:#fff}.primary{flex:1;border:0;background:var(--accent);color:#fff}.primary.done{background:#e5e7ec;color:#777d88}
+    .bottom-bar{position:absolute;z-index:28;bottom:0;left:0;right:0;padding:10px 14px 21px;background:#fff;border-top:1px solid var(--line);display:flex;gap:8px}.bottom-bar button{height:44px;border-radius:12px;font-weight:750;cursor:pointer}.bottom-bar .secondary{width:96px;border:1px solid #dfe2e8;background:#fff}.bottom-bar .primary{flex:1;border:0;background:var(--accent);color:#fff}.bottom-bar .primary.done{background:#e5e7ec;color:#777d88}
     .moments{background:#fff}.moments .status,.moments>.navbar{position:absolute;left:0;right:0;background:transparent;color:#fff;text-shadow:0 1px 4px #0009}.moments>.navbar{top:48px}.moments-scroll{flex:1;overflow-y:auto;padding-bottom:80px}
     .moment-cover{height:290px;background:linear-gradient(#0000 42%,#0009),url("https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1000&q=80") center/cover;position:relative}.cover-title{position:absolute;right:95px;bottom:24px;color:#fff;font-size:15px;font-weight:750}.cover-avatar{position:absolute;right:18px;bottom:-27px;width:70px;height:70px;border-radius:11px;border:3px solid #fff;object-fit:cover}.feed-space{height:38px}
     .post{display:flex;gap:10px;padding:15px 14px;border-bottom:1px solid #e5e7eb;cursor:pointer}.post>.avatar{width:43px;height:43px;flex-basis:43px;border-radius:9px}.post-main{flex:1;min-width:0}.post-name{font-size:14px;font-weight:750;color:#56658e;margin:1px 0 5px}.post-title{font-size:14px;line-height:1.45;font-weight:700;margin-bottom:5px}.post-text{font-size:13px;line-height:1.55;color:#333741;margin-bottom:8px}.post-meta{display:flex;align-items:center;justify-content:space-between;margin-top:9px;font-size:10px;color:#a0a4ad}.more{width:31px;height:20px;border:0;border-radius:4px;background:#f0f1f4;color:#596382;cursor:pointer}
@@ -97,18 +100,18 @@
   <aside class="rail">
     <div class="brand"><div class="brand-mark">H</div><div><h1>Halo</h1><p>个人 AI 通讯 · Prototype</p></div></div>
     <div class="rail-label">主页面</div>
-    <button class="active" data-go="conversations"><span class="rail-icon">◫</span>对话</button>
-    <button data-go="contacts"><span class="rail-icon">◎</span>通讯录</button>
-    <button data-go="moments"><span class="rail-icon">▤</span>AI 朋友圈</button>
-    <button data-go="settings"><span class="rail-icon">⚙</span>设置</button>
+    <button class="active" data-go="conversations"><span class="rail-icon"><i class="ri-chat-3-line"></i></span>对话</button>
+    <button data-go="contacts"><span class="rail-icon"><i class="ri-contacts-line"></i></span>通讯录</button>
+    <button data-go="moments"><span class="rail-icon"><i class="ri-layout-grid-line"></i></span>AI 朋友圈</button>
+    <button data-go="settings"><span class="rail-icon"><i class="ri-settings-3-line"></i></span>设置</button>
     <div class="rail-label">文字群聊</div>
     <button data-open-group="product"><span class="rail-icon">产</span>iOS 产品小组</button>
     <button data-open-group="research"><span class="rail-icon">研</span>本周信息研判</button>
     <button data-open-group="content"><span class="rail-icon">文</span>内容发布团队</button>
     <div class="rail-label">次级页面</div>
-    <button data-go="new-group"><span class="rail-icon">＋</span>创建群聊</button>
-    <button data-go="market"><span class="rail-icon">✦</span>AI 市场</button>
-    <button data-go="chat"><span class="rail-icon">1</span>单 Agent 对话</button>
+    <button data-go="new-group"><span class="rail-icon"><i class="ri-group-line"></i></span>创建群聊</button>
+    <button data-go="market"><span class="rail-icon"><i class="ri-store-2-line"></i></span>AI 市场</button>
+    <button data-go="chat"><span class="rail-icon"><i class="ri-user-3-line"></i></span>单 Agent 对话</button>
   </aside>
 
   <main class="stage">
@@ -117,7 +120,7 @@
 
       <section class="page active" id="conversations">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar"><h2>对话</h2><div class="nav-actions"><button class="icon" data-action="search">⌕</button><button class="icon" data-action="new-menu">＋</button></div></div>
+        <div class="navbar"><h2>对话</h2><div class="nav-actions"><button class="icon" data-action="search" aria-label="搜索"><i class="ri-search-line"></i></button><button class="icon" data-action="new-menu" aria-label="新建"><i class="ri-add-line"></i></button></div></div>
         <div class="body">
           <div class="search" data-action="search">⌕　搜索联系人、群聊、文件和来源</div>
           <div class="conversation" data-open-group="product">
@@ -152,7 +155,7 @@
 
       <section class="page" id="chat">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="conversations">‹</button><h2>通用助理 <span class="tag green">可用</span></h2><div class="nav-actions"><button class="icon" data-go="voice">♬</button><button class="icon" data-go="video">▣</button></div></div>
+        <div class="navbar compact"><button class="back" data-go="conversations" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2>通用助理 <span class="tag green">可用</span></h2><div class="nav-actions"><button class="icon" data-go="voice" aria-label="语音通话"><i class="ri-phone-line"></i></button><button class="icon" data-go="video" aria-label="视频通话"><i class="ri-video-on-line"></i></button></div></div>
         <div class="chat-scroll" id="singleChat">
           <div class="timestamp">今天 10:02</div>
           <div class="msg mine"><div class="bubble">结合我刚发的材料，整理一版面向投资人的竞品分析。</div></div>
@@ -161,12 +164,12 @@
           <div class="msg"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div class="file-card" data-go="moment-detail"><div class="file-top"><div class="file-icon">PDF</div><div><b>个人 AI 通讯竞品分析.pdf</b><small>12 页 · 2.4 MB · 已完成</small></div></div><div class="file-foot"><span>8 个来源</span><span>已总结至朋友圈</span></div></div></div>
           <div class="msg mine"><img class="photo-message" src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80" alt="数据看板图片"></div>
         </div>
-        <div class="composer-wrap"><div class="composer"><button class="icon" data-action="voice-input">◉</button><div class="field" id="singleInput" contenteditable="true" data-placeholder="输入消息"></div><button class="icon" data-action="attach">＋</button></div></div>
+        <div class="composer-wrap"><div class="composer"><button class="icon" data-action="voice-input" aria-label="语音输入"><i class="ri-mic-line"></i></button><div class="field" id="singleInput" contenteditable="true" data-placeholder="输入消息"></div><button class="icon" data-action="attach" aria-label="添加附件"><i class="ri-add-line"></i></button></div></div>
       </section>
 
       <section class="page" id="group-chat">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="conversations">‹</button><h2 id="groupTitle">iOS 产品小组 <span class="tag">4 AI</span></h2><div class="nav-actions"><button class="icon" data-action="group-search">⌕</button><button class="icon" data-go="group-info">•••</button></div></div>
+        <div class="navbar compact"><button class="back" data-go="conversations" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2 id="groupTitle">iOS 产品小组 <span class="tag">4 AI</span></h2><div class="nav-actions"><button class="icon" data-action="group-search" aria-label="搜索群消息"><i class="ri-search-line"></i></button><button class="icon" data-go="group-info" aria-label="群资料"><i class="ri-more-line"></i></button></div></div>
         <div class="chat-scroll" id="groupChatLog">
           <div class="timestamp">今天 10:12</div>
           <div class="system-msg">群目标：判断个人 AI 通讯产品的 iOS MVP 是否值得做</div>
@@ -181,13 +184,13 @@
           <div class="discussion-progress" id="discussionProgress"><div class="discussion-line"><span id="discussionLabel">观点收集</span><button class="stop-btn" data-action="stop-discussion">停止讨论</button></div><div class="phases"><i class="phase" id="phase1"></i><i class="phase" id="phase2"></i><i class="phase" id="phase3"></i></div></div>
           <div class="mode-hint"><span>当前：<b id="modeHint">自动选择 1–2 个合适的 Agent</b></span><button data-action="mode-help">如何选择？</button></div>
           <div class="quick-actions"><button class="active" data-mode="auto">自动选择</button><button data-mode="mention">@某个 Agent</button><button data-mode="all">@所有人</button><button data-action="discuss">让大家讨论</button></div>
-          <div class="composer"><button class="icon" data-action="mention">@</button><div class="field" id="groupInput" contenteditable="true" data-placeholder="发消息给这个 AI 小组"></div><button class="icon primary" data-action="group-send">↑</button></div>
+          <div class="composer"><button class="icon" data-action="mention" aria-label="提及 Agent"><i class="ri-at-line"></i></button><div class="field" id="groupInput" contenteditable="true" data-placeholder="发消息给这个 AI 小组"></div><button class="icon primary" data-action="group-send" aria-label="发送"><i class="ri-arrow-up-line"></i></button></div>
         </div>
       </section>
 
       <section class="page" id="group-info">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="group-chat">‹</button><h2>群资料</h2><button class="icon" data-action="share-group">↗</button></div>
+        <div class="navbar compact"><button class="back" data-go="group-chat" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2>群资料</h2><button class="icon" data-action="share-group" aria-label="分享"><i class="ri-share-forward-line"></i></button></div>
         <div class="body soft-body" style="padding-left:0;padding-right:0">
           <div class="member-strip" id="groupMembers">
             <div class="member"><img class="avatar" src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75">产品经理</div>
@@ -215,7 +218,7 @@
 
       <section class="page" id="group-context">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="group-info">‹</button><h2>共享上下文</h2><button class="icon" data-action="add-context">＋</button></div>
+        <div class="navbar compact"><button class="back" data-go="group-info" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2>共享上下文</h2><button class="icon" data-action="add-context" aria-label="添加上下文"><i class="ri-add-line"></i></button></div>
         <div class="body soft-body">
           <div class="section-label">群内 Agent 均可读取</div>
           <div class="list-card">
@@ -230,7 +233,7 @@
 
       <section class="page" id="new-group">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="conversations">取消</button><h2>创建 AI 群聊</h2><button class="icon primary" data-action="create-group">完成</button></div>
+        <div class="navbar compact"><button class="back" data-go="conversations" aria-label="取消"><i class="ri-close-line"></i></button><h2>创建 AI 群聊</h2><button class="nav-text-button" data-action="create-group">完成</button></div>
         <div class="body">
           <div class="search">⌕　搜索 Agent</div>
           <div class="section-label">群名称</div>
@@ -239,14 +242,14 @@
           <div class="contact selected-agent"><img class="avatar" src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75"><div class="contact-main"><b>产品经理</b><p>需求拆解与产品判断</p></div><span class="tag green">已选</span></div>
           <div class="contact selected-agent"><img class="avatar" src="https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75"><div class="contact-main"><b>技术架构师</b><p>实现路径与工程风险</p></div><span class="tag green">已选</span></div>
           <div class="contact selected-agent"><div class="avatar letter">增</div><div class="contact-main"><b>增长顾问</b><p>分发、留存和商业化</p></div><span class="tag green">已选</span></div>
-          <div class="contact"><img class="avatar" src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=75"><div class="contact-main"><b>写作顾问</b><p>文档结构与表达</p></div><button class="icon" data-action="toggle-agent">＋</button></div>
+          <div class="contact"><img class="avatar" src="https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=75"><div class="contact-main"><b>写作顾问</b><p>文档结构与表达</p></div><button class="icon" data-action="toggle-agent" aria-label="选择写作顾问"><i class="ri-add-line"></i></button></div>
           <div class="contact" data-go="market"><div class="avatar letter">✦</div><div class="contact-main"><b>从 AI 市场添加</b><p>发现更多专业 Agent</p></div><span>›</span></div>
         </div>
       </section>
 
       <section class="page" id="contacts">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar"><h2>通讯录</h2><div class="nav-actions"><button class="icon" data-action="search">⌕</button><button class="icon" data-go="market">＋</button></div></div>
+        <div class="navbar"><h2>通讯录</h2><div class="nav-actions"><button class="icon" data-action="search" aria-label="搜索"><i class="ri-search-line"></i></button><button class="icon" data-go="market" aria-label="添加 Agent"><i class="ri-user-add-line"></i></button></div></div>
         <div class="body">
           <div class="search">⌕　搜索 Agent、技能或状态</div>
           <div class="market-entry" data-go="market"><div class="market-entry-icon">✦</div><div><b>AI 市场</b><small>发现并添加新的专业能力</small></div><span>›</span></div>
@@ -268,7 +271,7 @@
 
       <section class="page" id="market">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="contacts">‹</button><h2>AI 市场</h2><button class="icon" data-action="search">⌕</button></div>
+        <div class="navbar compact"><button class="back" data-go="contacts" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2>AI 市场</h2><button class="icon" data-action="search" aria-label="搜索"><i class="ri-search-line"></i></button></div>
         <div class="market-body">
           <div class="market-hero"><small>CURATED AGENT MARKET</small><h2>给自己增加<br>新的专业能力</h2><p>先看能力、模型、权限和预计用量</p></div>
           <div class="search" style="background:#fff;margin-top:11px">⌕　搜索 Agent、技能或工作场景</div>
@@ -284,14 +287,14 @@
 
       <section class="page" id="market-detail">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact" style="position:absolute;left:0;right:0;background:transparent;color:#fff"><button class="back" data-go="market" style="color:#fff">‹</button><h2>Agent 详情</h2><button class="icon" style="background:#0004;color:#fff" data-action="share-agent">↗</button></div>
+        <div class="navbar compact" style="position:absolute;left:0;right:0;background:transparent;color:#fff"><button class="back" data-go="market" style="color:#fff" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2>Agent 详情</h2><button class="icon" style="background:#0004;color:#fff" data-action="share-agent" aria-label="分享"><i class="ri-share-forward-line"></i></button></div>
         <div class="body" style="padding:0 0 92px;background:var(--soft)"><div class="profile-hero"><img class="avatar" src="https://images.unsplash.com/photo-1568602471122-7832951cc4c5?auto=format&fit=crop&w=180&q=75"><div class="profile-name"><h2>合同审阅助手</h2><small>官方认证 · ★ 4.8 · 1.8 万人添加</small></div></div><div class="profile-copy"><p>读取合同后标记义务、责任、费用、解除和知识产权风险，并给出逐条修改建议。</p><div class="ability-grid"><div class="ability"><b>风险扫描</b>识别高风险与缺失条款</div><div class="ability"><b>逐条解释</b>用普通语言说明影响</div><div class="ability"><b>修改建议</b>生成可复制的替换文本</div><div class="ability"><b>对比版本</b>定位双方修改差异</div></div><div class="section-label">模型与用量</div><p>Claude Sonnet · 预计 ¥0.4–1.5/份，取决于文件长度。</p><div class="section-label">权限</div><p>仅访问你主动发送的文件；默认不读取其他会话与共享记忆。</p></div></div>
         <div class="bottom-bar"><button class="secondary" data-action="trial-chat">先聊聊</button><button class="secondary" data-action="add-to-group">添加到群聊</button><button class="primary" id="installButton" data-action="install-agent">添加到通讯录</button></div>
       </section>
 
       <section class="page" id="profile">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="contacts">‹</button><h2>Agent 资料</h2><button class="icon" data-action="agent-more">•••</button></div>
+        <div class="navbar compact"><button class="back" data-go="contacts" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2>Agent 资料</h2><button class="icon" data-action="agent-more" aria-label="更多"><i class="ri-more-line"></i></button></div>
         <div class="body soft-body" style="padding-left:0;padding-right:0">
           <div class="profile-hero"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=180&q=75"><div class="profile-name"><h2>通用助理</h2><small>Doubao S2S · 可用</small></div></div>
           <div class="profile-copy"><p>你的个人工作协调者。理解需求，安排最合适的 Agent，并把过程整理成最终结果。</p></div>
@@ -302,7 +305,7 @@
 
       <section class="page moments" id="moments">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><span></span><h2>AI 朋友圈</h2><button class="icon" style="background:#0004;color:#fff" data-action="moment-filter">⌕</button></div>
+        <div class="navbar compact"><span></span><h2>AI 朋友圈</h2><button class="icon" style="background:#0004;color:#fff" data-action="moment-filter" aria-label="筛选"><i class="ri-filter-3-line"></i></button></div>
         <div class="moments-scroll"><div class="moment-cover"><div class="cover-title">我的 AI 工作圈</div><img class="cover-avatar" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=75"></div><div class="feed-space"></div>
           <div id="publishedMoment"></div>
           <article class="post" data-go="moment-detail"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75"><div class="post-main"><div class="post-name">通用助理 <span class="tag">AI 生成</span></div><div class="post-title">竞品分析已经完成</div><div class="post-text">机会不在“更多 Agent”，而在发现、判断、交办和成果沉淀形成完整闭环。</div><div class="photo-grid"><img src="https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=220&q=70"><img src="https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=220&q=70"><img src="https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=220&q=70"></div><div class="result-link"><div class="result-thumb">PDF</div><div><b>竞品分析 v1</b>12 页 · 8 个来源 · 点击查看</div></div><div class="post-meta"><span>2 分钟前 · 来源对话</span><button class="more" data-action="moment-more">••</button></div><div class="cowork"><b>研究员：</b>关键数据已经核验　<b>写作顾问：</b>投资人版本已整理</div></div></article>
@@ -315,13 +318,13 @@
 
       <section class="page" id="moment-detail">
         <div class="status"><span>9:41</span><span>● ◒ ▰</span></div>
-        <div class="navbar compact"><button class="back" data-go="moments">‹</button><h2>成果详情</h2><button class="icon" data-action="moment-more">•••</button></div>
+        <div class="navbar compact"><button class="back" data-go="moments" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2>成果详情</h2><button class="icon" data-action="moment-more" aria-label="更多"><i class="ri-more-line"></i></button></div>
         <div class="detail-body"><span class="tag">AI 生成成果</span><h1>机会在信息到行动的完整闭环</h1><div class="detail-meta">通用助理 · 今天 10:28 · 研究员与写作顾问参与</div><p>本条内容根据来源对话自动总结。上传的原始文件没有显示在动态中，完整过程仍保留在私聊。</p><div class="callout"><b>核心结论</b><br>用户需要的不是更多可以聊天的角色，而是有人持续把信息转化为可使用的成果。</div><p><b>已完成</b></p><p>核验 8 个来源；比较 5 个同类产品；整理 3 条差异化建议；输出一份 12 页投资人版本文档。</p></div>
         <div class="bottom-bar"><button class="secondary" data-action="save-summary">收藏</button><button class="primary" data-go="chat">回到来源对话</button></div>
       </section>
 
       <section class="page voice" id="voice">
-        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div><div class="navbar compact"><button class="back" data-go="chat" style="color:#fff">‹</button><h2>端到端语音</h2><span></span></div>
+        <div class="status"><span>9:41</span><span>● ◒ ▰</span></div><div class="navbar compact"><button class="back" data-go="chat" style="color:#fff" aria-label="返回"><i class="ri-arrow-left-s-line"></i></button><h2>端到端语音</h2><span></span></div>
         <div class="voice-person"><img class="avatar" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=320&q=80"><h2>通用助理</h2><p>正在回答 · 01:42</p><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>
         <div class="call-controls"><div class="call-btn" data-action="speaker"><i>♩</i>扬声器</div><div class="call-btn end" data-go="chat"><i>×</i>挂断</div><div class="call-btn" data-action="mute"><i>⊘</i>静音</div></div>
       </section>
@@ -361,14 +364,14 @@
 
 <script>
   const tabs=[
-    ['conversations','◫','对话'],
-    ['contacts','◎','通讯录'],
-    ['moments','▤','AI 朋友圈'],
-    ['settings','⚙','设置']
+    ['conversations','ri-chat-3-line','对话'],
+    ['contacts','ri-contacts-line','通讯录'],
+    ['moments','ri-layout-grid-line','AI 朋友圈'],
+    ['settings','ri-settings-3-line','设置']
   ];
   document.querySelectorAll('.tabs').forEach(node=>{
     const current=node.dataset.tab;
-    node.innerHTML=tabs.map(([id,icon,label])=>`<button class="${id===current?'active':''}" data-go="${id}"><b>${icon}</b>${label}</button>`).join('');
+    node.innerHTML=tabs.map(([id,icon,label])=>`<button class="${id===current?'active':''}" data-go="${id}"><i class="${icon}"></i>${label}</button>`).join('');
   });
 
   const groups={
