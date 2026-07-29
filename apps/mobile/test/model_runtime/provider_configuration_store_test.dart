@@ -11,6 +11,249 @@ import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.da
 import 'package:sqlite3/sqlite3.dart';
 
 void main() {
+  test('persists a provider model catalog across database reopen', () async {
+    final fixture = _DatabaseFixture.create();
+    final discoveredAt = DateTime.utc(2026, 7, 29, 8, 30);
+    final store = SqliteProviderConfigurationStore.open(fixture.path);
+    final created = await store.replaceProviderConfiguration(
+      expectedRevision: null,
+      replacement: ProviderConfigurationReplacement(
+        config: ProviderConfig.deepSeek(),
+        modelCatalog: _deepSeekCatalog(discoveredAt),
+      ),
+    );
+    await store.finalizeProviderMutation(created);
+    await store.close();
+
+    final reopened = SqliteProviderConfigurationStore.open(fixture.path);
+    try {
+      final catalog = await reopened.loadProviderModelCatalog('deepseek');
+      expect(catalog!.models.map((model) => model.ref.modelId), [
+        'deepseek-chat',
+        'deepseek-reasoner',
+      ]);
+      expect(catalog.providerId, 'deepseek');
+      expect(catalog.discoveredAt, discoveredAt);
+      expect(catalog.models.last.displayName, 'DeepSeek Reasoner');
+      expect(catalog.models.last.capabilities.systemMessages, isFalse);
+      expect(catalog.models.last.capabilities.maxOutputTokens, 65536);
+      expect(catalog.models.last.capabilities.supportsTemperature, isFalse);
+      final allCatalogs = await reopened.loadAllProviderModelCatalogs();
+      expect(allCatalogs, hasLength(1));
+      expect(allCatalogs.single.providerId, 'deepseek');
+      expect(allCatalogs.single.models.map((model) => model.ref.modelId), [
+        'deepseek-chat',
+        'deepseek-reasoner',
+      ]);
+    } finally {
+      await reopened.close();
+      fixture.delete();
+    }
+  });
+
+  test(
+    'schema v3 migrates configs and bindings without inventing models',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      _createV3Database(fixture.path);
+
+      final migrated = SqliteProviderConfigurationStore.open(fixture.path);
+      try {
+        final provider = await migrated.loadProvider('deepseek');
+        expect(provider!.config, isA<ProviderConfig>());
+        expect(provider.config.providerId, 'deepseek');
+        expect(provider.revision.value, 7);
+        expect(
+          await migrated.loadGlobalDefaultModel(),
+          ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+        );
+        expect(
+          await migrated.loadAgentModelOverride('agent.writer'),
+          ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+        );
+        expect(await migrated.loadProviderModelCatalog('deepseek'), isNull);
+        expect(await migrated.loadAllProviderModelCatalogs(), isEmpty);
+      } finally {
+        await migrated.close();
+      }
+
+      final raw = sqlite3.open(fixture.path);
+      expect(raw.select('PRAGMA user_version').single.values.single, 4);
+      raw.close();
+      fixture.delete();
+    },
+  );
+
+  test(
+    'pending replacement rollback restores the exact prior catalog',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final originalDiscoveredAt = DateTime.utc(2026, 7, 28, 9);
+      final store = SqliteProviderConfigurationStore.open(fixture.path);
+      try {
+        final created = await store.replaceProviderConfiguration(
+          expectedRevision: null,
+          replacement: ProviderConfigurationReplacement(
+            config: ProviderConfig.deepSeek(),
+            modelCatalog: _deepSeekCatalog(originalDiscoveredAt),
+          ),
+        );
+        await store.finalizeProviderMutation(created);
+        final before = (await store.loadProvider('deepseek'))!;
+
+        final replacement = await store.replaceProviderConfiguration(
+          expectedRevision: before.revision,
+          replacement: ProviderConfigurationReplacement(
+            config: ProviderConfig.deepSeek(enabled: false),
+            modelCatalog: PersistedProviderModelCatalog(
+              providerId: 'deepseek',
+              models: [
+                ModelDescriptor(
+                  ref: ModelRef(
+                    providerId: 'deepseek',
+                    modelId: 'deepseek-reasoner',
+                  ),
+                  displayName: 'Reasoner v2',
+                  capabilities: const ModelCapabilities.text(
+                    systemMessages: false,
+                    maxOutputTokens: 32768,
+                    supportsTemperature: false,
+                  ),
+                ),
+              ],
+              discoveredAt: DateTime.utc(2026, 7, 29, 9),
+            ),
+          ),
+        );
+        expect(
+          (await store.loadProviderModelCatalog(
+            'deepseek',
+          ))!.models.single.displayName,
+          'Reasoner v2',
+        );
+
+        await store.rollbackProviderMutation(replacement);
+
+        final restored = await store.loadProviderModelCatalog('deepseek');
+        expect(restored!.discoveredAt, originalDiscoveredAt);
+        expect(restored.models.map((model) => model.ref.modelId), [
+          'deepseek-chat',
+          'deepseek-reasoner',
+        ]);
+        expect(restored.models.last.displayName, 'DeepSeek Reasoner');
+        expect(restored.models.last.capabilities.maxOutputTokens, 65536);
+      } finally {
+        await store.close();
+        fixture.delete();
+      }
+    },
+  );
+
+  test('removal restore restores the provider model catalog', () async {
+    final fixture = _DatabaseFixture.create();
+    final discoveredAt = DateTime.utc(2026, 7, 28, 10);
+    final store = SqliteProviderConfigurationStore.open(fixture.path);
+    try {
+      final created = await store.replaceProviderConfiguration(
+        expectedRevision: null,
+        replacement: ProviderConfigurationReplacement(
+          config: ProviderConfig.deepSeek(),
+          modelCatalog: _deepSeekCatalog(discoveredAt),
+        ),
+      );
+      await store.finalizeProviderMutation(created);
+      final before = (await store.loadProvider('deepseek'))!;
+
+      final removal = await store.removeProviderAtomically(
+        providerId: 'deepseek',
+        expectedRevision: before.revision,
+      );
+      expect(await store.loadProviderModelCatalog('deepseek'), isNull);
+
+      await store.restoreRemovedProvider(removal);
+
+      final restored = await store.loadProviderModelCatalog('deepseek');
+      expect(restored!.discoveredAt, discoveredAt);
+      expect(restored.models.map((model) => model.ref.modelId), [
+        'deepseek-chat',
+        'deepseek-reasoner',
+      ]);
+    } finally {
+      await store.close();
+      fixture.delete();
+    }
+  });
+
+  test(
+    'catalog replacement clears only bindings for removed provider models',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final store = SqliteProviderConfigurationStore.open(fixture.path);
+      try {
+        final created = await store.replaceProviderConfiguration(
+          expectedRevision: null,
+          replacement: ProviderConfigurationReplacement(
+            config: ProviderConfig.deepSeek(),
+            modelCatalog: _deepSeekCatalog(DateTime.utc(2026, 7, 28, 11)),
+          ),
+        );
+        await store.finalizeProviderMutation(created);
+        await store.upsert(ProviderConfig.openAI());
+        await store.setGlobalDefaultModel(
+          ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+        );
+        await store.setAgentModelOverride(
+          'agent.keep',
+          ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+        );
+        await store.setAgentModelOverride(
+          'agent.other',
+          ModelRef(providerId: 'openai', modelId: 'gpt-5'),
+        );
+        final before = (await store.loadProvider('deepseek'))!;
+
+        final replacement = await store.replaceProviderConfiguration(
+          expectedRevision: before.revision,
+          replacement: ProviderConfigurationReplacement(
+            config: ProviderConfig.deepSeek(),
+            modelCatalog: PersistedProviderModelCatalog(
+              providerId: 'deepseek',
+              models: [
+                ModelDescriptor(
+                  ref: ModelRef(
+                    providerId: 'deepseek',
+                    modelId: 'deepseek-reasoner',
+                  ),
+                  displayName: 'DeepSeek Reasoner',
+                  capabilities: const ModelCapabilities.text(
+                    systemMessages: false,
+                    maxOutputTokens: 65536,
+                    supportsTemperature: false,
+                  ),
+                ),
+              ],
+              discoveredAt: DateTime.utc(2026, 7, 29, 11),
+            ),
+          ),
+        );
+
+        expect(await store.loadGlobalDefaultModel(), isNull);
+        expect(
+          await store.loadAgentModelOverride('agent.keep'),
+          ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+        );
+        expect(
+          await store.loadAgentModelOverride('agent.other'),
+          ModelRef(providerId: 'openai', modelId: 'gpt-5'),
+        );
+        await store.finalizeProviderMutation(replacement);
+      } finally {
+        await store.close();
+        fixture.delete();
+      }
+    },
+  );
+
   test(
     'persists only secret references and round-trips enabled configs',
     () async {
@@ -588,7 +831,7 @@ void main() {
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();
     final raw = sqlite3.open(fixture.path);
-    raw.execute('PRAGMA user_version = 4');
+    raw.execute('PRAGMA user_version = 5');
     raw.close();
 
     expect(
@@ -597,7 +840,7 @@ void main() {
     );
 
     final reopened = sqlite3.open(fixture.path);
-    expect(reopened.select('PRAGMA user_version').single.values.first, 4);
+    expect(reopened.select('PRAGMA user_version').single.values.first, 5);
     reopened.close();
     fixture.delete();
   });
@@ -647,6 +890,7 @@ void main() {
           expectedRevision: null,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: ref),
+            modelCatalog: null,
             modelBindings: ProviderModelBindingMutation(
               replaceGlobalDefault: true,
               globalDefault: model,
@@ -663,6 +907,7 @@ void main() {
           expectedRevision: null,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: ref),
+            modelCatalog: null,
             modelBindings: ProviderModelBindingMutation(
               replaceGlobalDefault: true,
               globalDefault: model,
@@ -697,6 +942,7 @@ void main() {
           expectedRevision: null,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: ref),
+            modelCatalog: null,
           ),
         );
         await store.finalizeProviderMutation(recreated);
@@ -730,6 +976,7 @@ void main() {
       newRef: newRef,
       replacement: ProviderConfigurationReplacement(
         config: ProviderConfig.openAI(secretRef: newRef),
+        modelCatalog: null,
       ),
     );
     await first.close();
@@ -760,6 +1007,7 @@ void main() {
           expectedRevision: null,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: ref),
+            modelCatalog: null,
             modelBindings: ProviderModelBindingMutation(
               replaceGlobalDefault: true,
               globalDefault: ModelRef(providerId: 'openai', modelId: 'gpt-5'),
@@ -837,6 +1085,7 @@ void main() {
           newRef: newRef,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: newRef),
+            modelCatalog: null,
           ),
         );
         operationIdValue = staged.operationId.value;
@@ -899,6 +1148,7 @@ void main() {
         expectedRevision: before.revision,
         replacement: ProviderConfigurationReplacement(
           config: ProviderConfig.openAI(enabled: false),
+          modelCatalog: null,
         ),
       );
       operationId = staged.operationId;
@@ -1021,6 +1271,7 @@ void main() {
         expectedRevision: null,
         replacement: ProviderConfigurationReplacement(
           config: ProviderConfig.openAI(),
+          modelCatalog: null,
         ),
       );
       final operationId = staged.operationId;
@@ -1075,6 +1326,7 @@ void main() {
           expectedRevision: null,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(),
+            modelCatalog: null,
           ),
         )).operationId.value;
         await staging.close();
@@ -1114,6 +1366,7 @@ void main() {
           expectedRevision: current.revision,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(enabled: false),
+            modelCatalog: null,
           ),
         );
         await first.finalizeProviderMutation(next);
@@ -1151,6 +1404,7 @@ void main() {
           newRef: newRef,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(enabled: false, secretRef: newRef),
+            modelCatalog: null,
             modelBindings: ProviderModelBindingMutation(
               replaceGlobalDefault: true,
               agentOverrides: {'agent.writer': null},
@@ -1223,6 +1477,7 @@ void main() {
           newRef: newRef,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: newRef),
+            modelCatalog: null,
           ),
         );
         final retry = await store.rotateCredential(
@@ -1233,6 +1488,7 @@ void main() {
           newRef: newRef,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: newRef),
+            modelCatalog: null,
           ),
         );
         expect(retry.newRevision, first.newRevision);
@@ -1246,6 +1502,7 @@ void main() {
             newRef: foreignRef,
             replacement: ProviderConfigurationReplacement(
               config: ProviderConfig.openAI(secretRef: foreignRef),
+              modelCatalog: null,
             ),
           ),
           throwsA(isA<ProviderConfigurationMutationException>()),
@@ -1261,6 +1518,7 @@ void main() {
               config: ProviderConfig.openAI(
                 secretRef: newRef,
               ).copyWith(headerSecretRefs: {'x-api-key': oldRef}),
+              modelCatalog: null,
             ),
           ),
           throwsA(isA<ProviderConfigurationMutationException>()),
@@ -1297,6 +1555,7 @@ void main() {
         newRef: newRef,
         replacement: ProviderConfigurationReplacement(
           config: ProviderConfig.openAI(secretRef: newRef),
+          modelCatalog: null,
         ),
       );
 
@@ -1305,6 +1564,7 @@ void main() {
           expectedRevision: before.revision,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: newRef),
+            modelCatalog: null,
           ),
         ),
         throwsA(
@@ -1337,6 +1597,7 @@ void main() {
         expectedRevision: before.revision,
         replacement: ProviderConfigurationReplacement(
           config: ProviderConfig.openAI(enabled: false, secretRef: oldRef),
+          modelCatalog: null,
         ),
       );
 
@@ -1349,6 +1610,7 @@ void main() {
           newRef: newRef,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(enabled: false, secretRef: newRef),
+            modelCatalog: null,
           ),
         ),
         throwsA(
@@ -1376,6 +1638,7 @@ void main() {
     try {
       final createPayload = ProviderConfigurationReplacement(
         config: ProviderConfig.openAI(),
+        modelCatalog: null,
       );
       final create = await store.replaceProviderConfiguration(
         expectedRevision: null,
@@ -1403,6 +1666,7 @@ void main() {
       final before = (await store.loadProvider('openai'))!;
       final replacePayload = ProviderConfigurationReplacement(
         config: ProviderConfig.openAI(enabled: false),
+        modelCatalog: null,
       );
       final replace = await store.replaceProviderConfiguration(
         expectedRevision: before.revision,
@@ -1453,6 +1717,7 @@ void main() {
           newRef: newRef,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: newRef),
+            modelCatalog: null,
           ),
         );
 
@@ -1490,6 +1755,7 @@ void main() {
           newRef: newRef,
           replacement: ProviderConfigurationReplacement(
             config: ProviderConfig.openAI(secretRef: newRef),
+            modelCatalog: null,
           ),
         );
         await store.finalizeProviderMutation(next);
@@ -1696,6 +1962,154 @@ final class _DatabaseFixture {
   final String path;
 
   void delete() => directory.deleteSync(recursive: true);
+}
+
+PersistedProviderModelCatalog _deepSeekCatalog(DateTime discoveredAt) =>
+    PersistedProviderModelCatalog(
+      providerId: 'deepseek',
+      models: [
+        ModelDescriptor(
+          ref: ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+          displayName: 'DeepSeek Chat',
+          capabilities: const ModelCapabilities.text(maxOutputTokens: 8192),
+        ),
+        ModelDescriptor(
+          ref: ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+          displayName: 'DeepSeek Reasoner',
+          capabilities: const ModelCapabilities.text(
+            systemMessages: false,
+            maxOutputTokens: 65536,
+            supportsTemperature: false,
+          ),
+        ),
+      ],
+      discoveredAt: discoveredAt,
+    );
+
+void _createV3Database(String path) {
+  final raw = sqlite3.open(path);
+  raw.execute('PRAGMA foreign_keys = ON');
+  raw.execute('''
+    CREATE TABLE provider_configs (
+      provider_id TEXT PRIMARY KEY,
+      kind TEXT NOT NULL,
+      protocol TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      base_uri TEXT NOT NULL,
+      enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+      secret_ref TEXT,
+      allow_insecure_http INTEGER NOT NULL
+        CHECK (allow_insecure_http IN (0, 1)),
+      revision INTEGER NOT NULL CHECK (revision > 0)
+    ) STRICT
+  ''');
+  raw.execute('''
+    CREATE TABLE provider_header_secret_refs (
+      provider_id TEXT NOT NULL
+        REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+      header_name TEXT NOT NULL,
+      secret_ref TEXT NOT NULL,
+      PRIMARY KEY (provider_id, header_name)
+    ) STRICT
+  ''');
+  raw.execute('''
+    CREATE TABLE model_bindings (
+      scope TEXT NOT NULL CHECK (scope IN ('global', 'agent')),
+      scope_id TEXT NOT NULL,
+      provider_id TEXT NOT NULL
+        REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+      model_id TEXT NOT NULL,
+      PRIMARY KEY (scope, scope_id),
+      CHECK (
+        (scope = 'global' AND scope_id = '') OR
+        (scope = 'agent' AND length(scope_id) > 0)
+      )
+    ) STRICT
+  ''');
+  raw.execute('''
+    CREATE TABLE credential_bindings (
+      secret_ref TEXT PRIMARY KEY,
+      provider_id TEXT NOT NULL,
+      credential_slot TEXT NOT NULL,
+      state TEXT NOT NULL CHECK (state IN ('active', 'retired')),
+      retired_revision INTEGER,
+      CHECK (
+        credential_slot = 'primary' OR
+        (
+          substr(credential_slot, 1, 7) = 'header:' AND
+          length(credential_slot) > 7 AND
+          substr(credential_slot, 8)
+            NOT GLOB '*[^!#\$%&''*+.^_`|~0-9a-z-]*'
+        )
+      ),
+      CHECK (
+        (state = 'active' AND retired_revision IS NULL) OR
+        (
+          state = 'retired' AND
+          retired_revision IS NOT NULL AND
+          retired_revision > 0
+        )
+      )
+    ) STRICT
+  ''');
+  raw.execute('''
+    CREATE UNIQUE INDEX credential_bindings_active_owner
+    ON credential_bindings(provider_id, credential_slot)
+    WHERE state = 'active'
+  ''');
+  raw.execute('''
+    CREATE TABLE provider_removal_leases (
+      lease_id TEXT PRIMARY KEY
+        CHECK (length(lease_id) = 64 AND lease_id NOT GLOB '*[^0-9a-f]*'),
+      operation_id TEXT NOT NULL UNIQUE
+        CHECK (
+          length(operation_id) = 64 AND
+          operation_id NOT GLOB '*[^0-9a-f]*'
+        ),
+      provider_id TEXT NOT NULL UNIQUE,
+      removed_revision INTEGER NOT NULL CHECK (removed_revision > 0),
+      created_at_ms INTEGER NOT NULL CHECK (created_at_ms > 0),
+      snapshot_json TEXT NOT NULL
+    ) STRICT
+  ''');
+  raw.execute('''
+    CREATE TABLE provider_configuration_mutations (
+      lease_id TEXT PRIMARY KEY
+        CHECK (length(lease_id) = 64 AND lease_id NOT GLOB '*[^0-9a-f]*'),
+      operation_id TEXT NOT NULL UNIQUE
+        CHECK (
+          length(operation_id) = 64 AND
+          operation_id NOT GLOB '*[^0-9a-f]*'
+        ),
+      provider_id TEXT NOT NULL UNIQUE,
+      operation_kind TEXT NOT NULL
+        CHECK (operation_kind IN ('create', 'replace', 'rotate')),
+      new_revision INTEGER NOT NULL CHECK (new_revision > 0),
+      created_at_ms INTEGER NOT NULL CHECK (created_at_ms > 0),
+      previous_snapshot_json TEXT NOT NULL,
+      applied_config_json TEXT NOT NULL,
+      applied_bindings_json TEXT NOT NULL
+    ) STRICT
+  ''');
+  raw.execute('''
+    INSERT INTO provider_configs (
+      provider_id, kind, protocol, display_name, base_uri, enabled,
+      secret_ref, allow_insecure_http, revision
+    ) VALUES (
+      'deepseek', 'deepSeek', 'openAICompatible', 'DeepSeek',
+      'https://api.deepseek.com/v1', 1, NULL, 0, 7
+    )
+  ''');
+  raw.execute('''
+    INSERT INTO model_bindings (scope, scope_id, provider_id, model_id)
+    VALUES ('global', '', 'deepseek', 'deepseek-chat')
+  ''');
+  raw.execute('''
+    INSERT INTO model_bindings (scope, scope_id, provider_id, model_id)
+    VALUES ('agent', 'agent.writer', 'deepseek', 'deepseek-reasoner')
+  ''');
+  raw.execute('PRAGMA user_version = 3');
+  raw.close();
 }
 
 Future<void> _legacyWriteWorker(List<Object?> arguments) async {

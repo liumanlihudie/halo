@@ -13,9 +13,138 @@ import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
 import 'package:halo_mobile/model_runtime/provider_registry.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
+import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/unary_http_transport.dart';
 
 void main() {
+  test(
+    'loads every runtime model from the opened SQLite catalog only',
+    () async {
+      final fixture = _SqliteFactoryFixture.create();
+      final seed = SqliteProviderConfigurationStore.open(fixture.path);
+      final created = await seed.replaceProviderConfiguration(
+        expectedRevision: null,
+        replacement: ProviderConfigurationReplacement(
+          config: ProviderConfig.deepSeek(),
+          modelCatalog: PersistedProviderModelCatalog(
+            providerId: 'deepseek',
+            models: [
+              _model('deepseek', 'deepseek-chat'),
+              _model('deepseek', 'deepseek-reasoner'),
+            ],
+            discoveredAt: DateTime.utc(2026, 7, 29, 12),
+          ),
+        ),
+      );
+      await seed.finalizeProviderMutation(created);
+      await seed.close();
+      var fallbackCalls = 0;
+
+      final runtime = await ProductionModelRuntimeFactory(
+        openConfigurationStore: () =>
+            SqliteProviderConfigurationStore.open(fixture.path),
+        credentialStore: _MemoryCredentialStore(),
+        loadModelCatalog: (providerId, cancellationToken) async {
+          fallbackCalls++;
+          return [_model(providerId, 'gpt-5-mini')];
+        },
+        inspectionTransport: _NoNetworkInspectionTransport(),
+        unaryHttpAdapter: _ProviderResponseAdapter(),
+        endpointPolicy: const _AllowTestEndpointPolicy(),
+      ).create();
+      try {
+        expect(
+          runtime.registry
+              .resolveModel(
+                ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+              )
+              .ref
+              .modelId,
+          'deepseek-chat',
+        );
+        expect(
+          runtime.registry
+              .resolveModel(
+                ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+              )
+              .ref
+              .modelId,
+          'deepseek-reasoner',
+        );
+        expect(
+          () => runtime.registry.resolveModel(
+            ModelRef(providerId: 'deepseek', modelId: 'gpt-5-mini'),
+          ),
+          throwsA(
+            isA<ModelRuntimeException>().having(
+              (error) => error.code,
+              'code',
+              ModelRuntimeErrorCode.modelNotFound,
+            ),
+          ),
+        );
+        expect(fallbackCalls, 0);
+      } finally {
+        await runtime.close();
+        fixture.delete();
+      }
+    },
+  );
+
+  test(
+    'rejects enabled SQLite providers with absent or empty catalogs',
+    () async {
+      for (final persistEmptyCatalog in [false, true]) {
+        final fixture = _SqliteFactoryFixture.create();
+        final seed = SqliteProviderConfigurationStore.open(fixture.path);
+        if (persistEmptyCatalog) {
+          final created = await seed.replaceProviderConfiguration(
+            expectedRevision: null,
+            replacement: ProviderConfigurationReplacement(
+              config: ProviderConfig.deepSeek(),
+              modelCatalog: PersistedProviderModelCatalog(
+                providerId: 'deepseek',
+                models: const [],
+                discoveredAt: DateTime.utc(2026, 7, 29, 13),
+              ),
+            ),
+          );
+          await seed.finalizeProviderMutation(created);
+        } else {
+          await seed.upsert(ProviderConfig.deepSeek());
+        }
+        await seed.close();
+        var fallbackCalls = 0;
+        final factory = ProductionModelRuntimeFactory(
+          openConfigurationStore: () =>
+              SqliteProviderConfigurationStore.open(fixture.path),
+          credentialStore: _MemoryCredentialStore(),
+          loadModelCatalog: (providerId, cancellationToken) async {
+            fallbackCalls++;
+            return [_model(providerId, 'deepseek-chat')];
+          },
+          inspectionTransport: _NoNetworkInspectionTransport(),
+          unaryHttpAdapter: _ProviderResponseAdapter(),
+          endpointPolicy: const _AllowTestEndpointPolicy(),
+        );
+
+        await expectLater(
+          factory.create(),
+          throwsA(
+            isA<ModelRuntimeException>().having(
+              (error) => error.code,
+              'code',
+              ModelRuntimeErrorCode.invalidConfiguration,
+            ),
+          ),
+          reason: persistEmptyCatalog ? 'empty catalog' : 'absent catalog',
+        );
+        expect(fallbackCalls, 0);
+        fixture.delete();
+      }
+    },
+  );
+
   test(
     'builds compatible and native providers through secure unary transports',
     () async {
@@ -1287,4 +1416,23 @@ final class _AllowTestEndpointPolicy implements EndpointPolicy {
 
   @override
   void validateAfterConnect(Uri endpoint, InternetAddress remoteAddress) {}
+}
+
+final class _SqliteFactoryFixture {
+  _SqliteFactoryFixture._(this.directory, this.path);
+
+  factory _SqliteFactoryFixture.create() {
+    final directory = Directory.systemTemp.createTempSync(
+      'halo-runtime-factory-',
+    );
+    return _SqliteFactoryFixture._(
+      directory,
+      '${directory.path}/provider_configuration.sqlite',
+    );
+  }
+
+  final Directory directory;
+  final String path;
+
+  void delete() => directory.deleteSync(recursive: true);
 }

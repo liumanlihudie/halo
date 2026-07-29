@@ -168,6 +168,40 @@ final class VersionedProviderConfiguration {
 }
 
 @immutable
+class PersistedProviderModelCatalog {
+  PersistedProviderModelCatalog({
+    required this.providerId,
+    required List<ModelDescriptor> models,
+    required this.discoveredAt,
+  }) : models = List.unmodifiable(models) {
+    final modelIds = <String>{};
+    if (!isCanonicalRuntimeId(providerId) ||
+        !discoveredAt.isUtc ||
+        discoveredAt.millisecondsSinceEpoch <= 0 ||
+        this.models.any(
+          (model) =>
+              model.ref.providerId != providerId ||
+              model.capabilities.maxOutputTokens >
+                  ChatRequest.maximumOutputTokens ||
+              !modelIds.add(model.ref.modelId),
+        )) {
+      throw ArgumentError('Invalid persisted provider model catalog');
+    }
+  }
+
+  final String providerId;
+  final List<ModelDescriptor> models;
+  final DateTime discoveredAt;
+}
+
+abstract interface class ProviderModelCatalogStore {
+  Future<PersistedProviderModelCatalog?> loadProviderModelCatalog(
+    String providerId,
+  );
+  Future<List<PersistedProviderModelCatalog>> loadAllProviderModelCatalogs();
+}
+
+@immutable
 final class ProviderCredentialSlot {
   const ProviderCredentialSlot._(this.value);
 
@@ -228,10 +262,12 @@ final class ProviderModelBindingMutation {
 final class ProviderConfigurationReplacement {
   ProviderConfigurationReplacement({
     required this.config,
+    required this.modelCatalog,
     ProviderModelBindingMutation? modelBindings,
   }) : modelBindings = modelBindings ?? ProviderModelBindingMutation();
 
   final ProviderConfig config;
+  final PersistedProviderModelCatalog? modelCatalog;
   final ProviderModelBindingMutation modelBindings;
 }
 

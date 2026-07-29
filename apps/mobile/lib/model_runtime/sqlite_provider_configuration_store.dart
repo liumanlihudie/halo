@@ -8,7 +8,7 @@ import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 final class SqliteProviderConfigurationStore
-    implements ProviderConfigurationStore {
+    implements ProviderConfigurationStore, ProviderModelCatalogStore {
   SqliteProviderConfigurationStore._(this._database) {
     _initialize();
   }
@@ -27,7 +27,7 @@ final class SqliteProviderConfigurationStore
     }
   }
 
-  static const schemaVersion = 3;
+  static const schemaVersion = 4;
   static const _providerConfigsSql = '''
       CREATE TABLE provider_configs (
         provider_id TEXT PRIMARY KEY,
@@ -63,6 +63,24 @@ final class SqliteProviderConfigurationStore
           (scope = 'global' AND scope_id = '') OR
           (scope = 'agent' AND length(scope_id) > 0)
         )
+      ) STRICT
+    ''';
+  static const _providerModelsSql = '''
+      CREATE TABLE provider_models (
+        provider_id TEXT NOT NULL
+          REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+        model_id TEXT NOT NULL CHECK (length(model_id) > 0),
+        display_name TEXT NOT NULL CHECK (length(display_name) > 0),
+        text_generation INTEGER NOT NULL
+          CHECK (text_generation IN (0, 1)),
+        system_messages INTEGER NOT NULL
+          CHECK (system_messages IN (0, 1)),
+        max_output_tokens INTEGER NOT NULL
+          CHECK (max_output_tokens > 0 AND max_output_tokens <= 1000000),
+        supports_temperature INTEGER NOT NULL
+          CHECK (supports_temperature IN (0, 1)),
+        discovered_at_ms INTEGER NOT NULL CHECK (discovered_at_ms > 0),
+        PRIMARY KEY (provider_id, model_id)
       ) STRICT
     ''';
   static const _credentialBindingsSql = '''
@@ -150,6 +168,9 @@ final class SqliteProviderConfigurationStore
         }
         _createSchema();
         _database.execute('PRAGMA user_version = $schemaVersion');
+      } else if (version == 3) {
+        _migrateV3ToV4();
+        _database.execute('PRAGMA user_version = $schemaVersion');
       } else if (version != schemaVersion) {
         if (version == 1 || version == 2) {
           throw StateError(
@@ -178,10 +199,53 @@ final class SqliteProviderConfigurationStore
     _database.execute(_providerConfigsSql);
     _database.execute(_headerRefsSql);
     _database.execute(_modelBindingsSql);
+    _database.execute(_providerModelsSql);
     _database.execute(_credentialBindingsSql);
     _database.execute(_activeCredentialOwnerIndexSql);
     _database.execute(_removalLeasesSql);
     _database.execute(_mutationLeasesSql);
+  }
+
+  void _migrateV3ToV4() {
+    _database.execute(_providerModelsSql);
+    final mutationRows = _database.select('''
+      SELECT lease_id, previous_snapshot_json, applied_config_json
+      FROM provider_configuration_mutations
+    ''');
+    for (final row in mutationRows) {
+      final previous =
+          jsonDecode(row['previous_snapshot_json']! as String)
+              as Map<String, Object?>;
+      previous['modelCatalog'] = null;
+      final appliedConfig =
+          jsonDecode(row['applied_config_json']! as String)
+              as Map<String, Object?>;
+      _database.execute(
+        '''
+          UPDATE provider_configuration_mutations
+          SET previous_snapshot_json = ?, applied_config_json = ?
+          WHERE lease_id = ?
+        ''',
+        [
+          jsonEncode(previous),
+          jsonEncode({'config': appliedConfig, 'modelCatalog': null}),
+          row['lease_id'],
+        ],
+      );
+    }
+    final removalRows = _database.select('''
+      SELECT lease_id, snapshot_json FROM provider_removal_leases
+    ''');
+    for (final row in removalRows) {
+      final snapshot =
+          jsonDecode(row['snapshot_json']! as String) as Map<String, Object?>;
+      snapshot['modelCatalog'] = null;
+      _database.execute(
+        'UPDATE provider_removal_leases SET snapshot_json = ? '
+        'WHERE lease_id = ?',
+        [jsonEncode(snapshot), row['lease_id']],
+      );
+    }
   }
 
   void _validateSchema() {
@@ -189,6 +253,7 @@ final class SqliteProviderConfigurationStore
       'provider_configs',
       'provider_header_secret_refs',
       'model_bindings',
+      'provider_models',
       'credential_bindings',
       'credential_bindings_active_owner',
       'provider_removal_leases',
@@ -242,6 +307,16 @@ final class SqliteProviderConfigurationStore
         ('provider_id', 'TEXT', 1, 0),
         ('model_id', 'TEXT', 1, 0),
       ],
+      'provider_models': [
+        ('provider_id', 'TEXT', 1, 1),
+        ('model_id', 'TEXT', 1, 2),
+        ('display_name', 'TEXT', 1, 0),
+        ('text_generation', 'INTEGER', 1, 0),
+        ('system_messages', 'INTEGER', 1, 0),
+        ('max_output_tokens', 'INTEGER', 1, 0),
+        ('supports_temperature', 'INTEGER', 1, 0),
+        ('discovered_at_ms', 'INTEGER', 1, 0),
+      ],
       'credential_bindings': [
         ('secret_ref', 'TEXT', 1, 1),
         ('provider_id', 'TEXT', 1, 0),
@@ -287,7 +362,11 @@ final class SqliteProviderConfigurationStore
         }
       }
     }
-    for (final table in ['provider_header_secret_refs', 'model_bindings']) {
+    for (final table in [
+      'provider_header_secret_refs',
+      'model_bindings',
+      'provider_models',
+    ]) {
       final foreignKeys = _database.select('PRAGMA foreign_key_list($table)');
       if (foreignKeys.length != 1 ||
           foreignKeys.single['table'] != 'provider_configs' ||
@@ -306,6 +385,7 @@ final class SqliteProviderConfigurationStore
       'provider_configs': ['pk'],
       'provider_header_secret_refs': ['pk'],
       'model_bindings': ['pk'],
+      'provider_models': ['pk'],
       'credential_bindings': ['c', 'pk'],
       'provider_removal_leases': ['pk', 'u', 'u'],
       'provider_configuration_mutations': ['pk', 'u', 'u'],
@@ -327,6 +407,7 @@ final class SqliteProviderConfigurationStore
       'provider_configs': {'provider_id'},
       'provider_header_secret_refs': {'provider_id,header_name'},
       'model_bindings': {'scope,scope_id'},
+      'provider_models': {'provider_id,model_id'},
       'credential_bindings': {'secret_ref', 'provider_id,credential_slot'},
       'provider_removal_leases': {'lease_id', 'operation_id', 'provider_id'},
       'provider_configuration_mutations': {
@@ -393,6 +474,41 @@ final class SqliteProviderConfigurationStore
         ) VALUES ('probe', 'toApis', 'openAICompatible', 'Probe',
                   'https://example.invalid/v1', 1, NULL, 0, 1)
       ''');
+      _expectConstraintSuccess('''
+        INSERT INTO provider_models (
+          provider_id, model_id, display_name, text_generation,
+          system_messages, max_output_tokens, supports_temperature,
+          discovered_at_ms
+        ) VALUES ('probe', 'model', 'Model', 1, 1, 16384, 1, 1)
+      ''');
+      for (final (index, values) in <List<Object?>>[
+        ['probe', '', 'Model', 1, 1, 16384, 1, 1],
+        ['probe', 'empty-name', '', 1, 1, 16384, 1, 1],
+        ['probe', 'bad-text', 'Model', 2, 1, 16384, 1, 1],
+        ['probe', 'bad-system', 'Model', 1, -1, 16384, 1, 1],
+        ['probe', 'bad-tokens-low', 'Model', 1, 1, 0, 1, 1],
+        ['probe', 'bad-tokens-high', 'Model', 1, 1, 1000001, 1, 1],
+        ['probe', 'bad-temperature', 'Model', 1, 1, 16384, 2, 1],
+        ['probe', 'bad-time', 'Model', 1, 1, 16384, 1, 0],
+        ['missing-provider', 'model', 'Model', 1, 1, 16384, 1, 1],
+      ].indexed) {
+        _expectConstraintFailure('''
+            INSERT INTO provider_models (
+              provider_id, model_id, display_name, text_generation,
+              system_messages, max_output_tokens, supports_temperature,
+              discovered_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ''', values);
+        if (index == 0) {
+          _expectConstraintFailure('''
+            INSERT INTO provider_models (
+              provider_id, model_id, display_name, text_generation,
+              system_messages, max_output_tokens, supports_temperature,
+              discovered_at_ms
+            ) VALUES ('probe', 'model', 'Duplicate', 1, 1, 16384, 1, 1)
+          ''');
+        }
+      }
       _expectConstraintFailure('''
         INSERT INTO model_bindings (scope, scope_id, provider_id, model_id)
         VALUES ('GLOBAL', '', 'probe', 'model')
@@ -695,6 +811,89 @@ final class SqliteProviderConfigurationStore
   Future<List<ProviderConfig>> loadAll() => _loadConfigs(enabledOnly: false);
 
   @override
+  Future<PersistedProviderModelCatalog?> loadProviderModelCatalog(
+    String providerId,
+  ) => Future.sync(() {
+    _requireOpen();
+    return _loadProviderModelCatalogSync(
+      _requiredIdentifier(providerId, 'providerId'),
+    );
+  });
+
+  @override
+  Future<List<PersistedProviderModelCatalog>> loadAllProviderModelCatalogs() =>
+      Future.sync(() {
+        _requireOpen();
+        final providerIds = _database.select('''
+      SELECT DISTINCT provider_id FROM provider_models ORDER BY provider_id
+    ''');
+        return List.unmodifiable([
+          for (final row in providerIds)
+            _loadProviderModelCatalogSync(row['provider_id']! as String)!,
+        ]);
+      });
+
+  PersistedProviderModelCatalog? _loadProviderModelCatalogSync(
+    String providerId,
+  ) {
+    final rows = _database.select(
+      '''
+        SELECT provider_id, model_id, display_name, text_generation,
+               system_messages, max_output_tokens, supports_temperature,
+               discovered_at_ms
+        FROM provider_models
+        WHERE provider_id = ?
+        ORDER BY model_id
+      ''',
+      [providerId],
+    );
+    if (rows.isEmpty) return null;
+    try {
+      final discoveredAtMs = rows.first['discovered_at_ms']! as int;
+      if (rows.any(
+        (row) =>
+            row['provider_id'] != providerId ||
+            row['discovered_at_ms'] != discoveredAtMs,
+      )) {
+        throw const FormatException();
+      }
+      return PersistedProviderModelCatalog(
+        providerId: providerId,
+        models: [
+          for (final row in rows)
+            ModelDescriptor(
+              ref: ModelRef(
+                providerId: providerId,
+                modelId: row['model_id']! as String,
+              ),
+              displayName: row['display_name']! as String,
+              capabilities: ModelCapabilities(
+                textGeneration: _decodeSqliteBoolean(row['text_generation']),
+                systemMessages: _decodeSqliteBoolean(row['system_messages']),
+                maxOutputTokens: row['max_output_tokens']! as int,
+                supportsTemperature: _decodeSqliteBoolean(
+                  row['supports_temperature'],
+                ),
+              ),
+            ),
+        ],
+        discoveredAt: DateTime.fromMillisecondsSinceEpoch(
+          discoveredAtMs,
+          isUtc: true,
+        ),
+      );
+    } on Object {
+      throw StateError('Invalid persisted provider model catalog');
+    }
+  }
+
+  bool _decodeSqliteBoolean(Object? value) {
+    if (value == 0) return false;
+    if (value == 1) return true;
+    throw const FormatException();
+  }
+
+  @override
   Future<VersionedProviderConfiguration?> loadProvider(String providerId) =>
       Future.sync(() {
         _requireOpen();
@@ -722,6 +921,12 @@ final class SqliteProviderConfigurationStore
   }) => Future.sync(() {
     _requireOpen();
     final config = replacement.config;
+    final modelCatalog = replacement.modelCatalog;
+    if (modelCatalog != null && modelCatalog.providerId != config.providerId) {
+      throw const ProviderConfigurationMutationException(
+        ProviderConfigurationMutationErrorCode.conflict,
+      );
+    }
     for (final ref in providerCredentialBindings(config).values) {
       ProviderSecretRefPolicy.validate(ref);
     }
@@ -739,6 +944,7 @@ final class SqliteProviderConfigurationStore
       final previousConfig = existing.isEmpty
           ? null
           : _decodeConfig(existing.single);
+      final previousCatalog = _loadProviderModelCatalogSync(config.providerId);
       final previousRevision = existing.isEmpty
           ? null
           : ProviderConfigurationRevision(existing.single['revision']! as int);
@@ -748,6 +954,7 @@ final class SqliteProviderConfigurationStore
         currentConfig: previousConfig,
         currentRevision: previousRevision,
         modelBindings: replacement.modelBindings,
+        modelCatalog: modelCatalog,
       );
       if (retryIdentity != null) {
         _database.execute('COMMIT');
@@ -817,6 +1024,7 @@ final class SqliteProviderConfigurationStore
           nextRevision: nextRevision,
         );
       }
+      _replaceProviderModelCatalog(config.providerId, modelCatalog);
       _applyModelBindingMutation(replacement.modelBindings);
       final identity = _insertProviderMutationLease(
         providerId: config.providerId,
@@ -828,8 +1036,9 @@ final class SqliteProviderConfigurationStore
           previousConfig,
           previousRevision,
           previousBindings,
+          previousCatalog,
         ),
-        appliedConfig: jsonEncode(_configToJson(config)),
+        appliedConfig: _encodeAppliedMutationSnapshot(config, modelCatalog),
         appliedBindings: _encodeAllModelBindings(),
       );
       _database.execute('COMMIT');
@@ -1010,6 +1219,8 @@ final class SqliteProviderConfigurationStore
     ProviderSecretRefPolicy.validate(expectedOldRef);
     ProviderSecretRefPolicy.validate(newRef);
     if (replacement.config.providerId != normalizedProvider ||
+        replacement.modelCatalog?.providerId != normalizedProvider &&
+            replacement.modelCatalog != null ||
         providerCredentialBindings(replacement.config)[slot.value] != newRef) {
       throw const ProviderConfigurationMutationException(
         ProviderConfigurationMutationErrorCode.conflict,
@@ -1040,6 +1251,7 @@ final class SqliteProviderConfigurationStore
       }
       final currentRevision = providerRows.single['revision']! as int;
       final currentConfig = _decodeConfig(providerRows.single);
+      final currentCatalog = _loadProviderModelCatalogSync(normalizedProvider);
       final previousBindings = _encodeAllModelBindings();
       final currentRef = _readCredentialSlot(normalizedProvider, slot);
       _requireUnchangedCredentialSlots(currentConfig, replacement.config, slot);
@@ -1053,6 +1265,10 @@ final class SqliteProviderConfigurationStore
         currentRef: currentRef,
       )) {
         if (!_sameProviderConfig(currentConfig, replacement.config) ||
+            !_sameProviderModelCatalog(
+              currentCatalog,
+              replacement.modelCatalog,
+            ) ||
             !_modelMutationMatches(replacement.modelBindings)) {
           throw const ProviderConfigurationMutationException(
             ProviderConfigurationMutationErrorCode.conflict,
@@ -1094,6 +1310,10 @@ final class SqliteProviderConfigurationStore
         expectedRevision: currentRevision,
         nextRevision: nextRevision,
       );
+      _replaceProviderModelCatalog(
+        normalizedProvider,
+        replacement.modelCatalog,
+      );
       _applyModelBindingMutation(replacement.modelBindings);
       final identity = _insertProviderMutationLease(
         providerId: normalizedProvider,
@@ -1103,8 +1323,12 @@ final class SqliteProviderConfigurationStore
           currentConfig,
           ProviderConfigurationRevision(currentRevision),
           previousBindings,
+          currentCatalog,
         ),
-        appliedConfig: jsonEncode(_configToJson(replacement.config)),
+        appliedConfig: _encodeAppliedMutationSnapshot(
+          replacement.config,
+          replacement.modelCatalog,
+        ),
         appliedBindings: _encodeAllModelBindings(),
       );
       _database.execute('COMMIT');
@@ -1181,6 +1405,7 @@ final class SqliteProviderConfigurationStore
         config,
         expectedRevision,
         bindings,
+        _loadProviderModelCatalogSync(normalizedProvider),
       );
       final identity = _newPendingIdentity();
       _database.execute(
@@ -1341,6 +1566,18 @@ final class SqliteProviderConfigurationStore
         );
       }
       final currentConfig = _decodeConfig(currentRows.single);
+      final applied = _decodeAppliedMutationSnapshot(
+        row['applied_config_json']! as String,
+      );
+      if (!_sameProviderConfig(currentConfig, applied.config) ||
+          !_sameProviderModelCatalog(
+            _loadProviderModelCatalogSync(lease.providerId),
+            applied.modelCatalog,
+          )) {
+        throw const ProviderConfigurationMutationException(
+          ProviderConfigurationMutationErrorCode.conflict,
+        );
+      }
       final previous = _decodeMutationSnapshot(
         row['previous_snapshot_json']! as String,
       );
@@ -1358,6 +1595,7 @@ final class SqliteProviderConfigurationStore
             previous.config!,
             previous.revision!,
             const [],
+            previous.modelCatalog,
           ),
         );
       }
@@ -1403,12 +1641,28 @@ final class SqliteProviderConfigurationStore
     try {
       final row = _requireProviderMutationLease(lease);
       final current = _database.select(
-        'SELECT revision FROM provider_configs WHERE provider_id = ?',
+        '''
+          SELECT provider_id, kind, protocol, display_name, base_uri, enabled,
+                 secret_ref, allow_insecure_http, revision
+          FROM provider_configs WHERE provider_id = ?
+        ''',
         [lease.providerId],
       );
       if (current.length != 1 ||
           current.single['revision'] != lease.newRevision.value ||
           _encodeAllModelBindings() != row['applied_bindings_json']) {
+        throw const ProviderConfigurationMutationException(
+          ProviderConfigurationMutationErrorCode.conflict,
+        );
+      }
+      final applied = _decodeAppliedMutationSnapshot(
+        row['applied_config_json']! as String,
+      );
+      if (!_sameProviderConfig(_decodeConfig(current.single), applied.config) ||
+          !_sameProviderModelCatalog(
+            _loadProviderModelCatalogSync(lease.providerId),
+            applied.modelCatalog,
+          )) {
         throw const ProviderConfigurationMutationException(
           ProviderConfigurationMutationErrorCode.conflict,
         );
@@ -1946,6 +2200,151 @@ final class SqliteProviderConfigurationStore
     }
   }
 
+  void _replaceProviderModelCatalog(
+    String providerId,
+    PersistedProviderModelCatalog? catalog,
+  ) {
+    if (catalog != null && catalog.providerId != providerId) {
+      throw const ProviderConfigurationMutationException(
+        ProviderConfigurationMutationErrorCode.conflict,
+      );
+    }
+    _database.execute('DELETE FROM provider_models WHERE provider_id = ?', [
+      providerId,
+    ]);
+    if (catalog != null) {
+      final models = [...catalog.models]
+        ..sort((left, right) => left.ref.modelId.compareTo(right.ref.modelId));
+      for (final model in models) {
+        final capabilities = model.capabilities;
+        _database.execute(
+          '''
+            INSERT INTO provider_models (
+              provider_id, model_id, display_name, text_generation,
+              system_messages, max_output_tokens, supports_temperature,
+              discovered_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ''',
+          [
+            providerId,
+            model.ref.modelId,
+            model.displayName,
+            capabilities.textGeneration ? 1 : 0,
+            capabilities.systemMessages ? 1 : 0,
+            capabilities.maxOutputTokens,
+            capabilities.supportsTemperature ? 1 : 0,
+            catalog.discoveredAt.millisecondsSinceEpoch,
+          ],
+        );
+      }
+    }
+    _database.execute(
+      '''
+        DELETE FROM model_bindings
+        WHERE provider_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM provider_models
+            WHERE provider_models.provider_id = model_bindings.provider_id
+              AND provider_models.model_id = model_bindings.model_id
+          )
+      ''',
+      [providerId],
+    );
+  }
+
+  bool _sameProviderModelCatalog(
+    PersistedProviderModelCatalog? left,
+    PersistedProviderModelCatalog? right,
+  ) {
+    if ((left == null || left.models.isEmpty) &&
+        (right == null || right.models.isEmpty)) {
+      return true;
+    }
+    if (left == null || right == null) return left == right;
+    if (left.providerId != right.providerId ||
+        left.discoveredAt != right.discoveredAt ||
+        left.models.length != right.models.length) {
+      return false;
+    }
+    final rightById = {
+      for (final model in right.models) model.ref.modelId: model,
+    };
+    for (final model in left.models) {
+      final other = rightById[model.ref.modelId];
+      final capabilities = model.capabilities;
+      final otherCapabilities = other?.capabilities;
+      if (other == null ||
+          model.ref.providerId != other.ref.providerId ||
+          model.displayName != other.displayName ||
+          capabilities.textGeneration != otherCapabilities!.textGeneration ||
+          capabilities.systemMessages != otherCapabilities.systemMessages ||
+          capabilities.maxOutputTokens != otherCapabilities.maxOutputTokens ||
+          capabilities.supportsTemperature !=
+              otherCapabilities.supportsTemperature) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  Object? _modelCatalogToJson(PersistedProviderModelCatalog? catalog) {
+    if (catalog == null) return null;
+    final models = [...catalog.models]
+      ..sort((left, right) => left.ref.modelId.compareTo(right.ref.modelId));
+    return {
+      'providerId': catalog.providerId,
+      'discoveredAtMs': catalog.discoveredAt.millisecondsSinceEpoch,
+      'models': [
+        for (final model in models)
+          {
+            'modelId': model.ref.modelId,
+            'displayName': model.displayName,
+            'textGeneration': model.capabilities.textGeneration,
+            'systemMessages': model.capabilities.systemMessages,
+            'maxOutputTokens': model.capabilities.maxOutputTokens,
+            'supportsTemperature': model.capabilities.supportsTemperature,
+          },
+      ],
+    };
+  }
+
+  PersistedProviderModelCatalog? _modelCatalogFromJson(Object? raw) {
+    if (raw == null) return null;
+    final json = raw as Map<String, Object?>;
+    final providerId = json['providerId']! as String;
+    return PersistedProviderModelCatalog(
+      providerId: providerId,
+      models: [
+        for (final rawModel in json['models']! as List<Object?>)
+          _modelDescriptorFromJson(
+            providerId,
+            rawModel! as Map<String, Object?>,
+          ),
+      ],
+      discoveredAt: DateTime.fromMillisecondsSinceEpoch(
+        json['discoveredAtMs']! as int,
+        isUtc: true,
+      ),
+    );
+  }
+
+  ModelDescriptor _modelDescriptorFromJson(
+    String providerId,
+    Map<String, Object?> rawModel,
+  ) => ModelDescriptor(
+    ref: ModelRef(
+      providerId: providerId,
+      modelId: rawModel['modelId']! as String,
+    ),
+    displayName: rawModel['displayName']! as String,
+    capabilities: ModelCapabilities(
+      textGeneration: rawModel['textGeneration']! as bool,
+      systemMessages: rawModel['systemMessages']! as bool,
+      maxOutputTokens: rawModel['maxOutputTokens']! as int,
+      supportsTemperature: rawModel['supportsTemperature']! as bool,
+    ),
+  );
+
   ModelRef? _loadBindingSync(String scope, String scopeId) {
     final rows = _database.select(
       '''
@@ -1985,6 +2384,7 @@ final class SqliteProviderConfigurationStore
     ProviderConfig config,
     ProviderConfigurationRevision revision,
     ResultSet bindings,
+    PersistedProviderModelCatalog? modelCatalog,
   ) => jsonEncode({
     'config': {
       'providerId': config.providerId,
@@ -2001,6 +2401,7 @@ final class SqliteProviderConfigurationStore
       'allowInsecureHttp': config.allowInsecureHttp,
     },
     'revision': revision.value,
+    'modelCatalog': _modelCatalogToJson(modelCatalog),
     'modelBindings': [
       for (final row in bindings)
         {
@@ -2041,6 +2442,7 @@ final class SqliteProviderConfigurationStore
       config,
       ProviderConfigurationRevision(root['revision']! as int),
       bindings,
+      _modelCatalogFromJson(root['modelCatalog']),
     );
   }
 
@@ -2078,6 +2480,7 @@ final class SqliteProviderConfigurationStore
         [config.providerId, entry.key, entry.value.locator.toString()],
       );
     }
+    _replaceProviderModelCatalog(config.providerId, snapshot.modelCatalog);
     for (final binding in snapshot.bindings) {
       _database.execute(
         '''
@@ -2127,10 +2530,20 @@ final class SqliteProviderConfigurationStore
     ProviderConfig? config,
     ProviderConfigurationRevision? revision,
     String modelBindingsJson,
+    PersistedProviderModelCatalog? modelCatalog,
   ) => jsonEncode({
     'config': config == null ? null : _configToJson(config),
     'revision': revision?.value,
+    'modelCatalog': _modelCatalogToJson(modelCatalog),
     'modelBindings': jsonDecode(modelBindingsJson),
+  });
+
+  String _encodeAppliedMutationSnapshot(
+    ProviderConfig config,
+    PersistedProviderModelCatalog? modelCatalog,
+  ) => jsonEncode({
+    'config': _configToJson(config),
+    'modelCatalog': _modelCatalogToJson(modelCatalog),
   });
 
   Map<String, Object?> _configToJson(ProviderConfig config) => {
@@ -2158,6 +2571,17 @@ final class SqliteProviderConfigurationStore
           ? null
           : ProviderConfigurationRevision(root['revision']! as int),
       _decodeAllBindings(root['modelBindings']! as List<Object?>),
+      _modelCatalogFromJson(root['modelCatalog']),
+    );
+  }
+
+  _AppliedProviderMutationSnapshot _decodeAppliedMutationSnapshot(
+    String encoded,
+  ) {
+    final root = jsonDecode(encoded) as Map<String, Object?>;
+    return _AppliedProviderMutationSnapshot(
+      _configFromJson(root['config']! as Map<String, Object?>),
+      _modelCatalogFromJson(root['modelCatalog']),
     );
   }
 
@@ -2166,10 +2590,10 @@ final class SqliteProviderConfigurationStore
       final previous = _decodeMutationSnapshot(
         row['previous_snapshot_json']! as String,
       );
-      final nextConfig = _configFromJson(
-        jsonDecode(row['applied_config_json']! as String)
-            as Map<String, Object?>,
+      final applied = _decodeAppliedMutationSnapshot(
+        row['applied_config_json']! as String,
       );
+      final nextConfig = applied.config;
       final nextBindings = _decodeAllBindings(
         jsonDecode(row['applied_bindings_json']! as String) as List<Object?>,
       );
@@ -2370,6 +2794,7 @@ final class SqliteProviderConfigurationStore
     required ProviderConfig? currentConfig,
     required ProviderConfigurationRevision? currentRevision,
     required ProviderModelBindingMutation modelBindings,
+    required PersistedProviderModelCatalog? modelCatalog,
   }) {
     final intendedRevision = (expectedRevision?.value ?? 0) + 1;
     final expectedKind = expectedRevision == null
@@ -2378,6 +2803,10 @@ final class SqliteProviderConfigurationStore
     if (currentConfig == null ||
         currentRevision?.value != intendedRevision ||
         !_sameProviderConfig(currentConfig, config) ||
+        !_sameProviderModelCatalog(
+          _loadProviderModelCatalogSync(config.providerId),
+          modelCatalog,
+        ) ||
         !_modelMutationMatches(modelBindings)) {
       return null;
     }
@@ -2660,11 +3089,17 @@ final class _SqlitePendingProviderOperationRecovery
 }
 
 final class _ProviderRemovalSnapshot {
-  const _ProviderRemovalSnapshot(this.config, this.revision, this.bindings);
+  const _ProviderRemovalSnapshot(
+    this.config,
+    this.revision,
+    this.bindings,
+    this.modelCatalog,
+  );
 
   final ProviderConfig config;
   final ProviderConfigurationRevision revision;
   final List<_RemovalModelBinding> bindings;
+  final PersistedProviderModelCatalog? modelCatalog;
 }
 
 final class _RemovalModelBinding {
@@ -2683,11 +3118,24 @@ final class _RemovalModelBinding {
 }
 
 final class _ProviderMutationSnapshot {
-  const _ProviderMutationSnapshot(this.config, this.revision, this.bindings);
+  const _ProviderMutationSnapshot(
+    this.config,
+    this.revision,
+    this.bindings,
+    this.modelCatalog,
+  );
 
   final ProviderConfig? config;
   final ProviderConfigurationRevision? revision;
   final List<_AllModelBinding> bindings;
+  final PersistedProviderModelCatalog? modelCatalog;
+}
+
+final class _AppliedProviderMutationSnapshot {
+  const _AppliedProviderMutationSnapshot(this.config, this.modelCatalog);
+
+  final ProviderConfig config;
+  final PersistedProviderModelCatalog? modelCatalog;
 }
 
 final class _AllModelBinding {

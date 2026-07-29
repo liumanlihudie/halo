@@ -1,4 +1,5 @@
-/// Model-runtime contracts, safe fakes, and production unary HTTP transport.
+/// Model-runtime contracts, persisted provider catalogs, safe fakes, and
+/// production unary HTTP transport.
 ///
 /// Streaming HTTP, provider SDKs, and tool-calling remain separate contracts.
 library;

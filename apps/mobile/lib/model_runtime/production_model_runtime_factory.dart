@@ -71,6 +71,9 @@ final class ProductionModelRuntimeFactory {
       final configs = List<ProviderConfig>.unmodifiable(
         allConfigs.where((config) => config.enabled),
       );
+      final catalogStore = store is ProviderModelCatalogStore
+          ? store as ProviderModelCatalogStore
+          : null;
       final secretResolver = KeychainSecretResolver(
         store: credentialStore,
         now: _now,
@@ -92,10 +95,28 @@ final class ProductionModelRuntimeFactory {
       );
       final providers = <ModelProvider>[];
       for (final config in configs) {
-        final catalog = await _awaitCreation(
-          loadModelCatalog(config.providerId, creationToken),
-          creationToken,
-        );
+        late final List<ModelDescriptor> catalog;
+        if (catalogStore != null) {
+          final persistedCatalog = await _awaitCreation(
+            catalogStore.loadProviderModelCatalog(config.providerId),
+            creationToken,
+          );
+          if (persistedCatalog == null ||
+              persistedCatalog.models.isEmpty ||
+              persistedCatalog.providerId != config.providerId) {
+            throw const ModelRuntimeException(
+              code: ModelRuntimeErrorCode.invalidConfiguration,
+              safeMessage: '模型服务目录缺失',
+              retryable: false,
+            );
+          }
+          catalog = persistedCatalog.models;
+        } else {
+          catalog = await _awaitCreation(
+            loadModelCatalog(config.providerId, creationToken),
+            creationToken,
+          );
+        }
         providers.add(
           buildProductionModelProvider(
             config: config,
