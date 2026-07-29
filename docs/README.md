@@ -52,8 +52,13 @@
 - [本地优先与 BYOK 实施计划](05-implementation-plans/03-local-first-byok-plan.md)
 - [专家团与圈层实施计划](05-implementation-plans/04-expert-team-circle-plan.md)
 - [聊天详情与专家资料完整交互实施计划](05-implementation-plans/05-chat-details-expert-profile-plan.md)
+- [聊天记录搜索与卡片模式实施计划](05-implementation-plans/06-chat-history-search-card-plan.md)
+- [基础文字对话编排实施计划](05-implementation-plans/07-basic-conversation-orchestration-plan.md)
+- [真实 Agent 单聊与群聊实施计划](05-implementation-plans/08-real-agent-chat-and-group-chat-plan.md)
 
-这些文档记录 HTML 演示的实现过程。正式 MVP 开发以 `03-development/04-mvp-implementation-plan.md` 为准。
+01–06 记录 HTML 演示的实现过程；07 记录已完成的本地确定性 durable
+编排阶段；08 记录已接通的真实 Provider durable 单聊，以及生产群聊待接线工作。
+总体 MVP 顺序继续参考 `03-development/04-mvp-implementation-plan.md`。
 
 ## 06 质量
 
