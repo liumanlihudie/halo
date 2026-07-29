@@ -211,15 +211,29 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
       final text = data?.text;
-      if (!mounted || text == null || text.isEmpty) return;
+      if (!mounted) return;
+      if (text == null || text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              '剪贴板没有可粘贴文字；请开启模拟器“Automatically Sync Pasteboard”',
+            ),
+          ),
+        );
+        return;
+      }
       _apiKeyController.value = TextEditingValue(
         text: text,
         selection: TextSelection.collapsed(offset: text.length),
       );
       setState(() {});
     } on PlatformException {
-      // iOS may deny clipboard access. Keep the field unchanged and never
-      // surface clipboard contents or platform details.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('系统未允许读取剪贴板，请在系统设置中允许粘贴'),
+        ),
+      );
     }
   }
 

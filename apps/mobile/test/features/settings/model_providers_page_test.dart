@@ -56,6 +56,64 @@ void main() {
     );
   });
 
+  testWidgets('empty clipboard explains why the API Key paste did nothing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.getData') return null;
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(home: ProviderDetailPage(providerId: 'toapis')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('粘贴 API Key'));
+    await tester.pump();
+
+    expect(
+      find.text('剪贴板没有可粘贴文字；请开启模拟器“Automatically Sync Pasteboard”'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('denied clipboard access shows a safe API Key paste error', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.getData') {
+            throw PlatformException(code: 'denied', message: 'secret details');
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    await tester.pumpWidget(
+      const MaterialApp(home: ProviderDetailPage(providerId: 'toapis')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('粘贴 API Key'));
+    await tester.pump();
+
+    expect(find.text('系统未允许读取剪贴板，请在系统设置中允许粘贴'), findsOneWidget);
+    expect(find.textContaining('secret details'), findsNothing);
+  });
+
   testWidgets(
     'renders persisted supported state and disables every unsupported provider',
     (tester) async {
