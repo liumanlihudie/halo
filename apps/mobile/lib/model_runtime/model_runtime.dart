@@ -4,10 +4,16 @@
 /// provider SDK, credential storage, or tool-calling contract.
 library;
 
+export 'anthropic_model_provider.dart';
+export 'anthropic_transport.dart';
+export 'gemini_model_provider.dart';
+export 'gemini_transport.dart';
 export 'model_runtime_errors.dart';
 export 'model_runtime_models.dart';
 export 'openai_compatible_model_provider.dart';
 export 'openai_compatible_transport.dart';
+export 'openai_native_model_provider.dart';
+export 'openai_native_transport.dart';
 export 'provider_config.dart';
 export 'provider_registry.dart';
 export 'secret_ref.dart';

@@ -89,16 +89,19 @@ class ModelCapabilities {
     required this.textGeneration,
     required this.systemMessages,
     required this.maxOutputTokens,
+    this.supportsTemperature = true,
   });
 
   const ModelCapabilities.text({
     this.systemMessages = true,
     this.maxOutputTokens = 16384,
+    this.supportsTemperature = true,
   }) : textGeneration = true;
 
   final bool textGeneration;
   final bool systemMessages;
   final int maxOutputTokens;
+  final bool supportsTemperature;
 }
 
 @immutable

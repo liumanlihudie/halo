@@ -134,6 +134,48 @@ void main() {
     expect(provider.callCount, 0);
   });
 
+  test(
+    'registry rejects temperature when the model does not support it',
+    () async {
+      final provider = _EchoProvider(
+        ProviderConfig.deepSeek(),
+        prefix: 'deepseek',
+        models: [
+          _model(
+            'deepseek',
+            'fixed-temperature',
+            capabilities: const ModelCapabilities.text(
+              supportsTemperature: false,
+            ),
+          ),
+        ],
+      );
+      final registry = ProviderRegistry()..register(provider);
+
+      await expectLater(
+        registry.chat(
+          ChatRequest(
+            requestId: 'temperature-not-supported',
+            model: ModelRef(
+              providerId: 'deepseek',
+              modelId: 'fixed-temperature',
+            ),
+            messages: [ChatMessage(role: ChatRole.user, content: 'hello')],
+            temperature: 0.5,
+          ),
+        ),
+        throwsA(
+          isA<ModelRuntimeException>().having(
+            (error) => error.code,
+            'code',
+            ModelRuntimeErrorCode.unsupportedCapability,
+          ),
+        ),
+      );
+      expect(provider.callCount, 0);
+    },
+  );
+
   test('registry rejects unknown disabled and duplicate providers', () async {
     final disabled = _EchoProvider(
       ProviderConfig.deepSeek(enabled: false),

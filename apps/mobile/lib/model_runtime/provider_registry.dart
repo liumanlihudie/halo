@@ -86,6 +86,7 @@ class ProviderRegistry implements ChatModelRuntime {
         request.maxOutputTokens! > capabilities.maxOutputTokens;
     if (!capabilities.textGeneration ||
         (usesSystemMessage && !capabilities.systemMessages) ||
+        (request.temperature != null && !capabilities.supportsTemperature) ||
         exceedsOutputLimit) {
       throw const ModelRuntimeException(
         code: ModelRuntimeErrorCode.unsupportedCapability,
