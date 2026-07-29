@@ -4,300 +4,614 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
+import 'package:halo_mobile/features/group_chat/group_chat_history_repository.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_page.dart';
-import 'package:halo_mobile/orchestration/orchestration_kernel.dart';
+import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
 import 'package:halo_mobile/orchestration/orchestration_models.dart';
 
 void main() {
-  testWidgets('auto mode renders selected agents and streamed replies', (
-    tester,
-  ) async {
-    final kernel = _FakeOrchestrationKernel();
-    await _pumpGroupChat(tester, kernel);
+  group('GroupChatController', () {
+    test('separate controllers do not reuse a command ID', () async {
+      final firstPort = _FakeGroupChatRunPort();
+      final secondPort = _FakeGroupChatRunPort();
+      final first = _controller(port: firstPort);
+      final second = _controller(port: secondPort);
+      await Future.wait([first.initialize(), second.initialize()]);
 
-    await tester.enterText(find.byType(TextField).last, '判断这个 MVP 是否值得做');
-    await tester.tap(find.bySemanticsLabel('发送'));
-    await tester.pumpAndSettle();
+      await first.submit(input: '第一个页面的问题', mode: ConversationReplyMode.auto);
+      await second.submit(
+        input: '重进同群后的不同问题',
+        mode: ConversationReplyMode.auto,
+      );
 
-    expect(kernel.lastCommand?.conversationId, 'group-product');
-    expect(kernel.lastCommand?.input, '判断这个 MVP 是否值得做');
-    expect(kernel.lastCommand?.replyMode, ConversationReplyMode.auto);
-    expect(kernel.lastCommand?.memberAgentIds, const [
-      'product-manager',
-      'interaction-designer',
-      'technical-architect',
-      'growth-advisor',
-    ]);
-    expect(kernel.lastCommand?.mentionedAgentIds, isEmpty);
+      expect(
+        secondPort.lastCommand?.clientCommandId,
+        isNot(firstPort.lastCommand?.clientCommandId),
+      );
+      first.dispose();
+      second.dispose();
+    });
 
-    kernel.emit(
-      _event(
-        1,
-        OrchestrationEventType.agentsSelected,
-        ConversationStage.responding,
-        selectedAgentIds: const ['product-manager', 'technical-architect'],
-      ),
-    );
-    kernel.emit(
-      _event(
-        2,
-        OrchestrationEventType.agentMessageStarted,
-        ConversationStage.responding,
-        agentId: 'product-manager',
-      ),
-    );
-    kernel.emit(
-      _event(
-        3,
-        OrchestrationEventType.agentMessageCompleted,
-        ConversationStage.responding,
-        agentId: 'product-manager',
-        text: '建议先验证高频工作场景。',
-      ),
-    );
-    kernel.emit(
-      _event(
-        4,
-        OrchestrationEventType.agentMessageCompleted,
-        ConversationStage.responding,
-        agentId: 'technical-architect',
-        text: '工程可行，先控制长期记忆边界。',
-      ),
-    );
-    kernel.emit(
-      _event(
-        5,
-        OrchestrationEventType.runCompleted,
-        ConversationStage.completed,
-      ),
-    );
-    await tester.pumpAndSettle();
+    test('concurrent reentry of one submit starts exactly one run', () async {
+      final startGate = Completer<RunHandle>();
+      final port = _FakeGroupChatRunPort(startGate: startGate);
+      final controller = _controller(port: port);
+      await controller.initialize();
 
-    expect(find.text('已选择 产品经理、技术架构师'), findsOneWidget);
-    expect(find.text('建议先验证高频工作场景。'), findsOneWidget);
-    expect(find.text('工程可行，先控制长期记忆边界。'), findsOneWidget);
-    expect(find.text('已完成'), findsOneWidget);
+      final first = controller.submit(
+        input: '同一次用户提交',
+        mode: ConversationReplyMode.auto,
+      );
+      final reentered = controller.submit(
+        input: '同一次用户提交',
+        mode: ConversationReplyMode.auto,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(port.startCount, 1);
+      startGate.complete(
+        const RunHandle(runId: 'run-1', status: OrchestrationRunStatus.running),
+      );
+      await Future.wait([first, reentered]);
+      expect(port.commands, hasLength(1));
+      controller.dispose();
+    });
+
+    test('immediate dispose fences submit before startRun', () async {
+      final port = _FakeGroupChatRunPort();
+      final controller = _controller(port: port);
+      await controller.initialize();
+
+      final submission = controller.submit(
+        input: '销毁后不得启动',
+        mode: ConversationReplyMode.auto,
+      );
+      controller.dispose();
+      await submission;
+
+      expect(port.startCount, 0);
+    });
+
+    test(
+      'dispose while watcher cancellation is blocked fences startRun',
+      () async {
+        final cancelGate = Completer<void>();
+        final port = _FakeGroupChatRunPort(cancelGate: cancelGate);
+        final controller = _controller(port: port);
+        await controller.initialize();
+        await controller.submit(input: '第一轮', mode: ConversationReplyMode.auto);
+        port.emit(
+          _event(
+            seq: 1,
+            type: OrchestrationEventType.runCompleted,
+            stage: ConversationStage.completed,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final submission = controller.submit(
+          input: '销毁期间的第二轮',
+          mode: ConversationReplyMode.auto,
+        );
+        controller.dispose();
+        cancelGate.complete();
+        await submission;
+
+        expect(port.startCount, 1);
+      },
+    );
+
+    test('concurrent initialize shares one resume and one watcher', () async {
+      final port = _FakeGroupChatRunPort();
+      final history = _CountingHistoryRepository(
+        GroupChatHistoryProjection(
+          items: const [],
+          activeRun: GroupChatRunProjection(
+            runId: 'run-restored',
+            input: '恢复中的问题',
+            replyMode: ConversationReplyMode.auto,
+            status: OrchestrationRunStatus.running,
+            lastSeq: 1,
+            events: [
+              _event(
+                runId: 'run-restored',
+                seq: 1,
+                type: OrchestrationEventType.runCreated,
+                stage: ConversationStage.preparing,
+              ),
+            ],
+          ),
+        ),
+      );
+      final controller = _controller(port: port, history: history);
+
+      await Future.wait([controller.initialize(), controller.initialize()]);
+
+      expect(history.loadCount, 1);
+      expect(port.resumedRunIds, const ['run-restored']);
+      expect(port.watchRequests, const [(runId: 'run-restored', afterSeq: 1)]);
+      controller.dispose();
+      await Future<void>.delayed(Duration.zero);
+      expect(port.cancelledWatchCount, 1);
+    });
+
+    test(
+      'dispose fences a pending initialize before resume and watch',
+      () async {
+        final port = _FakeGroupChatRunPort();
+        final history = _DeferredHistoryRepository();
+        final controller = _controller(port: port, history: history);
+
+        final initialization = controller.initialize();
+        controller.dispose();
+        history.complete(
+          GroupChatHistoryProjection(
+            items: const [],
+            activeRun: GroupChatRunProjection(
+              runId: 'run-after-dispose',
+              input: '不应恢复',
+              replyMode: ConversationReplyMode.auto,
+              status: OrchestrationRunStatus.running,
+              lastSeq: 0,
+              events: const [],
+            ),
+          ),
+        );
+
+        await initialization;
+        expect(port.resumedRunIds, isEmpty);
+        expect(port.watchRequests, isEmpty);
+      },
+    );
+
+    test(
+      'submit resolves canonical member IDs from the injected repository',
+      () async {
+        final port = _FakeGroupChatRunPort();
+        final controller = _controller(port: port);
+
+        await controller.initialize();
+        await controller.submit(
+          input: '判断这个 MVP 是否值得做',
+          mode: ConversationReplyMode.auto,
+        );
+
+        expect(port.lastCommand?.memberAgentIds, const [
+          'expert.product',
+          'expert.ux',
+          'expert.architecture',
+          'expert.growth',
+          'expert.qa',
+        ]);
+        expect(port.lastCommand?.hostAgentId, 'expert.product');
+        controller.dispose();
+      },
+    );
+
+    test(
+      'initialize replays only a continuous prefix before watching a gap',
+      () async {
+        final port = _FakeGroupChatRunPort();
+        final history = _FakeHistoryRepository(
+          GroupChatHistoryProjection(
+            items: const [
+              GroupChatHistoryItem(
+                type: GroupChatHistoryItemType.notice,
+                text: '更早的持久消息',
+              ),
+            ],
+            activeRun: GroupChatRunProjection(
+              runId: 'run-restored',
+              input: '恢复之前的问题',
+              replyMode: ConversationReplyMode.mentioned,
+              mentionedExpertIds: const ['expert.architecture'],
+              status: OrchestrationRunStatus.running,
+              lastSeq: 4,
+              events: [
+                _event(
+                  runId: 'run-restored',
+                  seq: 1,
+                  type: OrchestrationEventType.agentsSelected,
+                  stage: ConversationStage.responding,
+                  selectedAgentIds: const ['expert.architecture'],
+                ),
+                _event(
+                  runId: 'run-restored',
+                  seq: 2,
+                  type: OrchestrationEventType.agentMessageStarted,
+                  stage: ConversationStage.responding,
+                  agentId: 'expert.architecture',
+                ),
+                _event(
+                  runId: 'run-restored',
+                  seq: 4,
+                  type: OrchestrationEventType.agentMessageCompleted,
+                  stage: ConversationStage.responding,
+                  agentId: 'expert.architecture',
+                  text: '恢复出的架构回答',
+                ),
+              ],
+            ),
+          ),
+        );
+        final controller = _controller(port: port, history: history);
+
+        await controller.initialize();
+
+        expect(controller.historyItems.single.text, '更早的持久消息');
+        expect(controller.runId, 'run-restored');
+        expect(controller.submittedInput, '恢复之前的问题');
+        expect(controller.lastSeq, 2);
+        expect(
+          controller.messages.single.status,
+          GroupChatMessageStatus.running,
+        );
+        expect(port.resumedRunIds, const ['run-restored']);
+        expect(port.watchRequests, const [
+          (runId: 'run-restored', afterSeq: 2),
+        ]);
+
+        port.emit(
+          _event(
+            runId: 'run-restored',
+            seq: 3,
+            type: OrchestrationEventType.stageChanged,
+            stage: ConversationStage.responding,
+          ),
+        );
+        port.emit(
+          _event(
+            runId: 'run-restored',
+            seq: 4,
+            type: OrchestrationEventType.agentMessageCompleted,
+            stage: ConversationStage.responding,
+            agentId: 'expert.architecture',
+            text: '补拉出的架构回答',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(controller.lastSeq, 4);
+        expect(controller.messages.single.text, '补拉出的架构回答');
+
+        port.emit(
+          _event(
+            runId: 'run-restored',
+            seq: 5,
+            type: OrchestrationEventType.summaryCompleted,
+            stage: ConversationStage.summarizing,
+            text: '恢复后的总结',
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+        expect(controller.summary, '恢复后的总结');
+        expect(controller.lastSeq, 5);
+        controller.dispose();
+      },
+    );
+
+    test('terminal event cancels the run watcher', () async {
+      final port = _FakeGroupChatRunPort();
+      final controller = _controller(port: port);
+      await controller.initialize();
+      await controller.submit(
+        input: '完成后关闭监听',
+        mode: ConversationReplyMode.auto,
+      );
+
+      port.emit(
+        _event(
+          seq: 1,
+          type: OrchestrationEventType.runCompleted,
+          stage: ConversationStage.completed,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.status, OrchestrationRunStatus.completed);
+      expect(port.cancelledWatchCount, 1);
+      controller.dispose();
+    });
+
+    test(
+      'replacement run waits for the old watcher to finish cancelling',
+      () async {
+        final cancelGate = Completer<void>();
+        final port = _FakeGroupChatRunPort(cancelGate: cancelGate);
+        final controller = _controller(port: port);
+        await controller.initialize();
+        await controller.submit(input: '第一轮', mode: ConversationReplyMode.auto);
+        port.emit(
+          _event(
+            seq: 1,
+            type: OrchestrationEventType.runCompleted,
+            stage: ConversationStage.completed,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final replacement = controller.submit(
+          input: '第二轮',
+          mode: ConversationReplyMode.auto,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(port.startCount, 1);
+        cancelGate.complete();
+        await replacement;
+        expect(port.startCount, 2);
+        expect(port.cancelledWatchCount, 1);
+        controller.dispose();
+      },
+    );
+
+    test(
+      'watcher cancellation failure is recorded without poisoning replacement',
+      () async {
+        final port = _FakeGroupChatRunPort(cancelFailuresRemaining: 1);
+        final controller = _controller(port: port);
+        await controller.initialize();
+        await controller.submit(input: '第一轮', mode: ConversationReplyMode.auto);
+        port.emit(
+          _event(
+            seq: 1,
+            type: OrchestrationEventType.runCompleted,
+            stage: ConversationStage.completed,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(controller.errorCode, 'orchestration_watcher_cancel_failed');
+
+        await controller.submit(
+          input: '取消失败后的第二轮',
+          mode: ConversationReplyMode.auto,
+        );
+        expect(port.startCount, 2);
+        expect(port.watchRequests, hasLength(2));
+        controller.dispose();
+      },
+    );
+
+    test(
+      'stream error cleanup consumes watcher cancellation failure',
+      () async {
+        final port = _FakeGroupChatRunPort(cancelFailuresRemaining: 1);
+        final controller = _controller(port: port);
+        await controller.initialize();
+        await controller.submit(
+          input: '等待流错误',
+          mode: ConversationReplyMode.auto,
+        );
+
+        port.emitError(StateError('synthetic stream failure'));
+        await Future<void>.delayed(Duration.zero);
+
+        expect(controller.errorCode, 'orchestration_stream_failed');
+        expect(
+          controller.cleanupErrorCode,
+          'orchestration_watcher_cancel_failed',
+        );
+        controller.dispose();
+      },
+    );
+
+    test('dispose cleanup consumes watcher cancellation failure', () async {
+      final port = _FakeGroupChatRunPort(cancelFailuresRemaining: 1);
+      final controller = _controller(port: port);
+      await controller.initialize();
+      await controller.submit(
+        input: '销毁并触发取消失败',
+        mode: ConversationReplyMode.auto,
+      );
+
+      controller.dispose();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(
+        controller.cleanupErrorCode,
+        'orchestration_watcher_cancel_failed',
+      );
+    });
+
+    test(
+      'mentioned mode rejects zero, more than four, and non-members',
+      () async {
+        final controller = _controller(port: _FakeGroupChatRunPort());
+        await controller.initialize();
+
+        expect(
+          () => controller.submit(
+            input: '没有提及',
+            mode: ConversationReplyMode.mentioned,
+          ),
+          throwsArgumentError,
+        );
+        expect(
+          () => controller.submit(
+            input: '提及太多',
+            mode: ConversationReplyMode.mentioned,
+            mentionedAgentIds: const [
+              'expert.product',
+              'expert.ux',
+              'expert.architecture',
+              'expert.growth',
+              'expert.qa',
+            ],
+          ),
+          throwsArgumentError,
+        );
+        expect(
+          () => controller.submit(
+            input: '提及外部成员',
+            mode: ConversationReplyMode.mentioned,
+            mentionedAgentIds: const ['expert.not-in-group'],
+          ),
+          throwsArgumentError,
+        );
+        controller.dispose();
+      },
+    );
   });
 
-  testWidgets('mention mode sends only the selected agent id', (tester) async {
-    final kernel = _FakeOrchestrationKernel();
-    await _pumpGroupChat(tester, kernel);
+  group('GroupChatPage', () {
+    testWidgets('auto input starts one run without inventing an Agent reply', (
+      tester,
+    ) async {
+      final port = _FakeGroupChatRunPort();
+      await _pumpGroupChat(tester, port);
 
-    await tester.tap(find.text('@某个 Agent'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('技术架构师').last);
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField).last, '只分析技术风险');
-    await tester.tap(find.bySemanticsLabel('发送'));
-    await tester.pumpAndSettle();
+      expect(find.text('当前：自动选择 1–2 位合适成员'), findsOneWidget);
+      expect(find.text('向小组提问，系统将自动选择成员'), findsOneWidget);
 
-    expect(kernel.lastCommand?.replyMode, ConversationReplyMode.mentioned);
-    expect(kernel.lastCommand?.mentionedAgentIds, const [
-      'technical-architect',
-    ]);
-    expect(find.text('当前：仅技术架构师回答'), findsOneWidget);
-  });
+      await tester.enterText(find.byType(TextField).last, '请评估这个 MVP');
+      await tester.tap(find.bySemanticsLabel('发送'));
+      await tester.pumpAndSettle();
 
-  testWidgets('discussion mode follows all-mode stages and summary events', (
-    tester,
-  ) async {
-    final kernel = _FakeOrchestrationKernel();
-    await _pumpGroupChat(tester, kernel);
+      expect(port.startCount, 1);
+      expect(port.lastCommand?.replyMode, ConversationReplyMode.auto);
+      expect(find.text('请评估这个 MVP'), findsOneWidget);
+      expect(find.text('正在思考…'), findsNothing);
+    });
 
-    await tester.tap(find.text('让大家讨论'));
-    await tester.enterText(find.byType(TextField).last, '大家讨论后给出结论');
-    await tester.tap(find.bySemanticsLabel('发送'));
-    await tester.pumpAndSettle();
+    testWidgets('mention picker selects multiple members and sends exact IDs', (
+      tester,
+    ) async {
+      final port = _FakeGroupChatRunPort();
+      await _pumpGroupChat(tester, port);
 
-    expect(kernel.lastCommand?.replyMode, ConversationReplyMode.all);
-    expect(kernel.lastCommand?.mentionedAgentIds, isEmpty);
+      await tester.tap(find.text('@指定成员'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择 1–4 位成员'), findsOneWidget);
 
-    kernel.emit(
-      _event(
-        1,
-        OrchestrationEventType.stageChanged,
-        ConversationStage.collectingOpinions,
-      ),
-    );
-    await tester.pump();
-    expect(find.text('观点收集'), findsOneWidget);
+      await tester.tap(find.text('UX 设计师'));
+      await tester.pump();
+      await tester.tap(find.text('技术架构师'));
+      await tester.pump();
+      await tester.tap(find.text('确定（2）'));
+      await tester.pumpAndSettle();
 
-    kernel.emit(
-      _event(
-        2,
-        OrchestrationEventType.stageChanged,
-        ConversationStage.crossDiscussion,
-      ),
-    );
-    kernel.emit(
-      _event(
-        3,
-        OrchestrationEventType.stageChanged,
-        ConversationStage.summarizing,
-      ),
-    );
-    kernel.emit(
-      _event(
-        4,
-        OrchestrationEventType.summaryCompleted,
-        ConversationStage.summarizing,
-        text: '结论：先做文字群聊编排闭环。',
-      ),
-    );
-    await tester.pumpAndSettle();
+      expect(find.text('当前：仅 UX 设计师、技术架构师回答'), findsOneWidget);
+      expect(find.text('向已选 2 位成员提问'), findsOneWidget);
 
-    expect(find.text('交叉讨论'), findsOneWidget);
-    expect(find.text('群聊总结'), findsWidgets);
-    expect(find.text('结论：先做文字群聊编排闭环。'), findsOneWidget);
-  });
+      await tester.enterText(find.byType(TextField).last, '一起评审交互风险');
+      await tester.tap(find.bySemanticsLabel('发送'));
+      await tester.pumpAndSettle();
 
-  testWidgets('running conversation can request stop and renders stop event', (
-    tester,
-  ) async {
-    final kernel = _FakeOrchestrationKernel();
-    await _pumpGroupChat(tester, kernel);
+      expect(port.lastCommand?.replyMode, ConversationReplyMode.mentioned);
+      expect(port.lastCommand?.mentionedAgentIds, const [
+        'expert.ux',
+        'expert.architecture',
+      ]);
+    });
 
-    await tester.enterText(find.byType(TextField).last, '开始分析');
-    await tester.tap(find.bySemanticsLabel('发送'));
-    await tester.pump();
+    testWidgets('all mode sends every frozen member and projects run events', (
+      tester,
+    ) async {
+      final port = _FakeGroupChatRunPort();
+      await _pumpGroupChat(tester, port);
 
-    kernel.emit(
-      _event(1, OrchestrationEventType.runCreated, ConversationStage.preparing),
-    );
-    await tester.pump();
-    await tester.tap(find.bySemanticsLabel('停止生成'));
-    await tester.pump();
-    expect(kernel.stoppedRunIds, const ['run-1']);
+      await tester.tap(find.text('@所有成员'));
+      await tester.pump();
+      expect(find.text('当前：所有 5 位成员依次回答并总结'), findsOneWidget);
+      expect(find.text('向全部成员提问'), findsOneWidget);
 
-    kernel.emit(
-      _event(2, OrchestrationEventType.runStopped, ConversationStage.stopped),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('已停止'), findsOneWidget);
-  });
+      await tester.enterText(find.byType(TextField).last, '所有人给出结论');
+      await tester.tap(find.bySemanticsLabel('发送'));
+      await tester.pump();
 
-  testWidgets('failed agent reply and failed run remain visible', (
-    tester,
-  ) async {
-    final kernel = _FakeOrchestrationKernel();
-    await _pumpGroupChat(tester, kernel);
+      expect(port.lastCommand?.replyMode, ConversationReplyMode.all);
+      expect(port.lastCommand?.mentionedAgentIds, isEmpty);
 
-    await tester.enterText(find.byType(TextField).last, '分析风险');
-    await tester.tap(find.bySemanticsLabel('发送'));
-    await tester.pump();
+      port.emit(
+        _event(
+          seq: 1,
+          type: OrchestrationEventType.agentsSelected,
+          stage: ConversationStage.collectingOpinions,
+          selectedAgentIds: const [
+            'expert.product',
+            'expert.ux',
+            'expert.architecture',
+            'expert.growth',
+            'expert.qa',
+          ],
+        ),
+      );
+      port.emit(
+        _event(
+          seq: 2,
+          type: OrchestrationEventType.agentMessageStarted,
+          stage: ConversationStage.responding,
+          agentId: 'expert.product',
+        ),
+      );
+      port.emit(
+        _event(
+          seq: 3,
+          type: OrchestrationEventType.agentMessageCompleted,
+          stage: ConversationStage.responding,
+          agentId: 'expert.product',
+          text: '先验证用户价值。',
+        ),
+      );
+      port.emit(
+        _event(
+          seq: 4,
+          type: OrchestrationEventType.stageChanged,
+          stage: ConversationStage.summarizing,
+        ),
+      );
+      port.emit(
+        _event(
+          seq: 5,
+          type: OrchestrationEventType.summaryCompleted,
+          stage: ConversationStage.summarizing,
+          text: '总结：先做受控验证。',
+        ),
+      );
+      port.emit(
+        _event(
+          seq: 6,
+          type: OrchestrationEventType.runCompleted,
+          stage: ConversationStage.completed,
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    kernel.emit(
-      _event(
-        1,
-        OrchestrationEventType.agentMessageFailed,
-        ConversationStage.responding,
-        agentId: 'growth-advisor',
-        errorCode: 'provider_timeout',
-      ),
-    );
-    kernel.emit(
-      _event(
-        2,
-        OrchestrationEventType.runFailed,
-        ConversationStage.failed,
-        errorCode: 'run_incomplete',
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('provider_timeout'), findsOneWidget);
-    expect(find.text('运行失败 · run_incomplete'), findsOneWidget);
-  });
-
-  testWidgets('run failure closes any still-running agent message', (
-    tester,
-  ) async {
-    final kernel = _FakeOrchestrationKernel();
-    await _pumpGroupChat(tester, kernel);
-
-    await tester.enterText(find.byType(TextField).last, '分析风险');
-    await tester.tap(find.bySemanticsLabel('发送'));
-    await tester.pump();
-
-    kernel.emit(
-      _event(
-        1,
-        OrchestrationEventType.agentMessageStarted,
-        ConversationStage.responding,
-        agentId: 'technical-architect',
-      ),
-    );
-    kernel.emit(
-      _event(
-        2,
-        OrchestrationEventType.runFailed,
-        ConversationStage.failed,
-        errorCode: 'orchestration_failed',
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('正在思考…'), findsNothing);
-    expect(find.text('回答中断'), findsOneWidget);
-  });
-
-  testWidgets('@所有人 uses the same all reply mode', (tester) async {
-    final kernel = _FakeOrchestrationKernel();
-    await _pumpGroupChat(tester, kernel);
-
-    await tester.tap(find.text('@所有人'));
-    await tester.enterText(find.byType(TextField).last, '每个人都回答');
-    await tester.tap(find.bySemanticsLabel('发送'));
-    await tester.pump();
-
-    expect(kernel.lastCommand?.replyMode, ConversationReplyMode.all);
-  });
-
-  test('a new submission preserves the completed turn', () async {
-    final kernel = _FakeOrchestrationKernel();
-    final controller = GroupChatController(
-      kernel: kernel,
-      conversationId: 'group-product',
-    );
-    await controller.submit(input: '第一轮问题', mode: ConversationReplyMode.auto);
-    kernel.emit(
-      _event(
-        1,
-        OrchestrationEventType.agentMessageCompleted,
-        ConversationStage.responding,
-        agentId: 'product-manager',
-        text: '第一轮回答',
-      ),
-    );
-    kernel.emit(
-      _event(
-        2,
-        OrchestrationEventType.runCompleted,
-        ConversationStage.completed,
-      ),
-    );
-    await Future<void>.delayed(Duration.zero);
-
-    await controller.submit(input: '第二轮问题', mode: ConversationReplyMode.auto);
-
-    expect(kernel.lastCommand?.input, '第二轮问题');
-    expect(controller.pastTurns.single.input, '第一轮问题');
-    expect(controller.pastTurns.single.messages.single.text, '第一轮回答');
-    expect(controller.submittedInput, '第二轮问题');
-    controller.dispose();
+      expect(find.text('已选择 产品经理、UX 设计师、技术架构师、增长顾问、测试工程师'), findsOneWidget);
+      expect(find.text('先验证用户价值。'), findsOneWidget);
+      expect(find.text('总结：先做受控验证。'), findsOneWidget);
+      expect(find.text('已完成'), findsOneWidget);
+      expect(port.cancelledWatchCount, 1);
+    });
   });
 }
 
+GroupChatController _controller({
+  required _FakeGroupChatRunPort port,
+  GroupChatHistoryRepository? history,
+}) => GroupChatController(
+  runPort: port,
+  conversationId: 'group-product',
+  membersRepository: _FakeMembersRepository(),
+  historyRepository:
+      history ??
+      const _FakeHistoryRepository(GroupChatHistoryProjection(items: [])),
+);
+
 Future<void> _pumpGroupChat(
   WidgetTester tester,
-  _FakeOrchestrationKernel kernel,
+  _FakeGroupChatRunPort port,
 ) async {
   await tester.pumpWidget(
     ProviderScope(
       child: MaterialApp(
         home: GroupChatPage(
           groupId: 'group-product',
-          orchestrationKernel: kernel,
+          runPort: port,
+          membersRepository: _FakeMembersRepository(),
+          historyRepository: const _FakeHistoryRepository(
+            GroupChatHistoryProjection(items: []),
+          ),
         ),
       ),
     ),
@@ -305,49 +619,173 @@ Future<void> _pumpGroupChat(
   await tester.pumpAndSettle();
 }
 
-OrchestrationEvent _event(
-  int seq,
-  OrchestrationEventType type,
-  ConversationStage stage, {
+OrchestrationEvent _event({
+  String runId = 'run-1',
+  required int seq,
+  required OrchestrationEventType type,
+  required ConversationStage stage,
   String? agentId,
   String? text,
   List<String> selectedAgentIds = const [],
   String? errorCode,
-}) {
-  return OrchestrationEvent(
-    eventId: 'event-$seq',
-    runId: 'run-1',
-    seq: seq,
-    type: type,
-    stage: stage,
-    agentId: agentId,
-    text: text == null ? null : PublicEventText.trustedApplication(text),
-    selectedAgentIds: selectedAgentIds,
-    errorCode: errorCode,
-  );
+}) => OrchestrationEvent(
+  eventId: '$runId-event-$seq',
+  runId: runId,
+  seq: seq,
+  type: type,
+  stage: stage,
+  agentId: agentId,
+  text: text == null ? null : PublicEventText.trustedApplication(text),
+  selectedAgentIds: selectedAgentIds,
+  errorCode: errorCode,
+);
+
+class _FakeMembersRepository implements GroupMembersRepository {
+  @override
+  Future<List<GroupChatMember>> loadMembers(String conversationId) async =>
+      _members;
 }
 
-class _FakeOrchestrationKernel implements OrchestrationKernel {
-  final _events = StreamController<OrchestrationEvent>.broadcast();
-  StartConversationRunCommand? lastCommand;
-  final stoppedRunIds = <String>[];
+final _members = [
+  GroupChatMember(
+    expertId: 'expert.product',
+    displayName: '产品经理',
+    role: '产品判断与需求拆解',
+    avatarLetter: '产',
+  ),
+  GroupChatMember(
+    expertId: 'expert.ux',
+    displayName: 'UX 设计师',
+    role: '体验与交互方案',
+    avatarLetter: '设',
+  ),
+  GroupChatMember(
+    expertId: 'expert.architecture',
+    displayName: '技术架构师',
+    role: '架构与工程风险',
+    avatarLetter: '技',
+  ),
+  GroupChatMember(
+    expertId: 'expert.growth',
+    displayName: '增长顾问',
+    role: '增长与验证策略',
+    avatarLetter: '增',
+  ),
+  GroupChatMember(
+    expertId: 'expert.qa',
+    displayName: '测试工程师',
+    role: '质量与验证',
+    avatarLetter: '测',
+  ),
+];
 
-  void emit(OrchestrationEvent event) => _events.add(event);
+class _FakeHistoryRepository implements GroupChatHistoryRepository {
+  const _FakeHistoryRepository(this.projection);
+
+  final GroupChatHistoryProjection projection;
 
   @override
-  Future<RunHandle> startRun(StartConversationRunCommand command) async {
-    lastCommand = command;
-    return const RunHandle(
-      runId: 'run-1',
-      status: OrchestrationRunStatus.running,
-    );
+  Future<GroupChatHistoryProjection> load(String conversationId) async =>
+      projection;
+}
+
+class _CountingHistoryRepository implements GroupChatHistoryRepository {
+  _CountingHistoryRepository(this.projection);
+
+  final GroupChatHistoryProjection projection;
+  int loadCount = 0;
+
+  @override
+  Future<GroupChatHistoryProjection> load(String conversationId) async {
+    loadCount++;
+    await Future<void>.delayed(Duration.zero);
+    return projection;
+  }
+}
+
+class _DeferredHistoryRepository implements GroupChatHistoryRepository {
+  final _completer = Completer<GroupChatHistoryProjection>();
+
+  void complete(GroupChatHistoryProjection projection) =>
+      _completer.complete(projection);
+
+  @override
+  Future<GroupChatHistoryProjection> load(String conversationId) =>
+      _completer.future;
+}
+
+class _FakeGroupChatRunPort implements GroupChatRunPort {
+  _FakeGroupChatRunPort({
+    this.startGate,
+    this.cancelGate,
+    this.cancelFailuresRemaining = 0,
+  });
+
+  final Completer<RunHandle>? startGate;
+  final Completer<void>? cancelGate;
+  int cancelFailuresRemaining;
+  final _watchers =
+      <
+        ({
+          String runId,
+          int afterSeq,
+          StreamController<OrchestrationEvent> controller,
+        })
+      >[];
+  StartConversationRunCommand? lastCommand;
+  final commands = <StartConversationRunCommand>[];
+  int startCount = 0;
+  int cancelledWatchCount = 0;
+  final resumedRunIds = <String>[];
+  final stoppedRunIds = <String>[];
+  final watchRequests = <({String runId, int afterSeq})>[];
+
+  void emit(OrchestrationEvent event) {
+    for (final watcher in List.of(_watchers)) {
+      if (watcher.runId == event.runId && event.seq > watcher.afterSeq) {
+        watcher.controller.add(event);
+      }
+    }
+  }
+
+  void emitError(Object error) {
+    for (final watcher in List.of(_watchers)) {
+      watcher.controller.addError(error);
+    }
   }
 
   @override
-  Stream<OrchestrationEvent> watchRun(String runId, {int afterSeq = 0}) =>
-      _events.stream.where(
-        (event) => event.runId == runId && event.seq > afterSeq,
-      );
+  Future<RunHandle> startRun(StartConversationRunCommand command) async {
+    startCount++;
+    lastCommand = command;
+    commands.add(command);
+    return startGate?.future ??
+        const RunHandle(runId: 'run-1', status: OrchestrationRunStatus.running);
+  }
+
+  @override
+  Stream<OrchestrationEvent> watchRun(String runId, {int afterSeq = 0}) {
+    watchRequests.add((runId: runId, afterSeq: afterSeq));
+    late final StreamController<OrchestrationEvent> watcher;
+    watcher = StreamController<OrchestrationEvent>(
+      onCancel: () async {
+        try {
+          await cancelGate?.future;
+          if (cancelFailuresRemaining > 0) {
+            cancelFailuresRemaining--;
+            throw StateError('synthetic watcher cancellation failure');
+          }
+        } finally {
+          cancelledWatchCount++;
+          _watchers.removeWhere(
+            (candidate) => identical(candidate.controller, watcher),
+          );
+        }
+      },
+    );
+    _watchers.add((runId: runId, afterSeq: afterSeq, controller: watcher));
+    return watcher.stream;
+  }
 
   @override
   Future<void> requestStop(String runId) async {
@@ -355,14 +793,8 @@ class _FakeOrchestrationKernel implements OrchestrationKernel {
   }
 
   @override
-  Future<ResumeResult> resumeRun(String runId) async =>
-      ResumeResult(runId: runId, resumed: false);
-
-  @override
-  Future<RunSnapshot> getRun(String runId) async => RunSnapshot(
-    runId: runId,
-    status: OrchestrationRunStatus.running,
-    lastSeq: 0,
-    executableAgentIds: const [],
-  );
+  Future<ResumeResult> resumeRun(String runId) async {
+    resumedRunIds.add(runId);
+    return ResumeResult(runId: runId, resumed: true);
+  }
 }
