@@ -1,0 +1,13 @@
+/// Contract and fake scaffold for model-runtime integration.
+///
+/// This package intentionally contains no production HTTP client, native
+/// provider SDK, credential storage, or tool-calling contract.
+library;
+
+export 'model_runtime_errors.dart';
+export 'model_runtime_models.dart';
+export 'openai_compatible_model_provider.dart';
+export 'openai_compatible_transport.dart';
+export 'provider_config.dart';
+export 'provider_registry.dart';
+export 'secret_ref.dart';
