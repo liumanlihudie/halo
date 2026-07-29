@@ -12,6 +12,8 @@ import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
+import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
+import 'package:halo_mobile/model_runtime/testing/fake_unary_http_adapter.dart';
 
 void main() {
   test('opens app-support database and closes kernel idempotently', () async {
@@ -241,6 +243,60 @@ void main() {
       expect(settingsStore.closeCount, 1);
     },
   );
+
+  test(
+    'production save discovers every model and runtime reload uses persisted catalog',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-kernel-');
+      addTearDown(() => directory.delete(recursive: true));
+      final credentials = _FakeCredentials();
+      final adapter = FakeUnaryHttpAdapter(retainRequestContentForTesting: true)
+        ..enqueueJson(
+          statusCode: 200,
+          body: {
+            'object': 'list',
+            'data': [
+              {'id': 'catalog-only-a', 'object': 'model'},
+              {'id': 'catalog-only-b', 'object': 'model'},
+            ],
+          },
+        );
+      addTearDown(adapter.dispose);
+      final factory = ProductionAppKernelFactory(
+        applicationSupportDirectory: () async => directory,
+        credentials: credentials,
+        unaryHttpAdapter: adapter,
+      );
+      final kernel = await factory.create();
+
+      await kernel.dependencies.providerSettings!.save(
+        const ProviderSettingsDraft(
+          providerId: 'toapis',
+          apiKey: 'production-catalog-secret',
+          enabled: true,
+        ),
+      );
+      await kernel.close();
+
+      final store = SqliteProviderConfigurationStore.open(
+        '${directory.path}/halo_providers.sqlite',
+      );
+      addTearDown(store.close);
+      final catalog = (await store.loadProviderModelCatalog('toapis'))!;
+      expect(catalog.models.map((model) => model.ref.modelId), [
+        'catalog-only-a',
+        'catalog-only-b',
+      ]);
+      expect(
+        catalog.models.map((model) => model.ref.modelId),
+        isNot(contains('gpt-5-mini')),
+      );
+      expect(adapter.records.single.method, 'GET');
+      expect(adapter.records.single.path, '/v1/models');
+      expect(adapter.records.single.authorizationWasBearer, isTrue);
+      expect(adapter.records.single.toString(), isNot(contains('secret')));
+    },
+  );
 }
 
 final class _TrackingDurableChatRepository
@@ -349,28 +405,40 @@ final class _NonRecoveringPersistence implements ProviderSettingsPersistence {
 }
 
 final class _FakeCredentials implements SecureCredentialStore {
+  final Map<SecretRef, String> values = {};
+
   @override
   Future<bool> delete(
     SecretRef ref, {
     CancellationToken? cancellationToken,
-  }) async => true;
+  }) async => values.remove(ref) != null;
 
   @override
   Future<String?> get(
     SecretRef ref, {
     CancellationToken? cancellationToken,
-  }) async => null;
+  }) async => values[ref];
 
   @override
   Future<List<SecureCredentialMetadata>> listMetadata({
     String? service,
     CancellationToken? cancellationToken,
-  }) async => const [];
+  }) async => [
+    for (final ref in values.keys)
+      SecureCredentialMetadata(
+        service: ref.locator.host,
+        account: ref.locator.pathSegments.single,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+      ),
+  ];
 
   @override
   Future<void> set(
     SecretRef ref,
     String secret, {
     CancellationToken? cancellationToken,
-  }) async {}
+  }) async {
+    values[ref] = secret;
+  }
 }

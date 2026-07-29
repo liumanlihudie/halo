@@ -7,6 +7,7 @@ import 'package:halo_mobile/features/settings/provider_settings_controller.dart'
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
+import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 
@@ -30,6 +31,7 @@ void main() {
     );
     final controller = ProviderSettingsController(
       credentials: _Credentials(),
+      catalogFetcher: _Fetcher(),
       persistence: _Persistence(),
       runtime: _Reloader(),
     );
@@ -124,10 +126,11 @@ void main() {
               'keychain://halo.provider/00000000-0000-4000-8000-000000000001',
             ),
           ),
-          model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+          catalog: _catalog(),
         );
       final controller = ProviderSettingsController(
         credentials: _Credentials(),
+        catalogFetcher: _Fetcher(),
         persistence: persistence,
         runtime: _Reloader(),
       );
@@ -154,6 +157,24 @@ void main() {
     },
   );
 }
+
+final class _Fetcher implements ProviderModelCatalogFetcher {
+  @override
+  Future<PersistedProviderModelCatalog> fetch(ProviderConfig config) async =>
+      _catalog();
+}
+
+PersistedProviderModelCatalog _catalog() => PersistedProviderModelCatalog(
+  providerId: 'toapis',
+  models: [
+    ModelDescriptor(
+      ref: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      displayName: 'GPT-5 mini',
+      capabilities: const ModelCapabilities.text(),
+    ),
+  ],
+  discoveredAt: DateTime.utc(2026, 7, 29, 12),
+);
 
 final class _Persistence implements ProviderSettingsPersistence {
   final values = <String, ProviderSettingsSnapshot?>{};

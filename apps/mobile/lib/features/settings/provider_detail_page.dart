@@ -21,15 +21,11 @@ class ProviderDetailPage extends StatefulWidget {
 
 class _ProviderDetailPageState extends State<ProviderDetailPage> {
   final _apiKeyController = TextEditingController();
-  late final TextEditingController _modelController;
   bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    _modelController = TextEditingController(
-      text: ModelProviderInfo.fromId(widget.providerId).model,
-    );
     final controller = widget.controller;
     if (controller != null) {
       controller.addListener(_refresh);
@@ -41,7 +37,6 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   void dispose() {
     widget.controller?.removeListener(_refresh);
     _apiKeyController.dispose();
-    _modelController.dispose();
     super.dispose();
   }
 
@@ -56,6 +51,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     final supported = const {'toapis', 'deepseek'}.contains(widget.providerId);
     final configured =
         controller?.hasConfigurationFor(widget.providerId) ?? false;
+    final catalog = controller?.snapshotFor(widget.providerId)?.catalog;
     return HaloPageScaffold(
       title: '模型服务',
       compactTitle: true,
@@ -137,12 +133,11 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
               style: TextStyle(fontSize: 9, color: HaloColors.green),
             ),
           ),
-          _Field(
-            label: '默认模型 ID',
-            icon: 'ph ph-cube',
-            hint: provider.model,
-            controller: _modelController,
-          ),
+          if (catalog != null)
+            _CatalogCard(
+              modelCount: catalog.models.length,
+              discoveredAt: catalog.discoveredAt,
+            ),
           _StateCard(
             icon: 'ph ph-info',
             text: _safeStatus(controller?.stateFor(widget.providerId)),
@@ -154,7 +149,9 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
             label: const Text('测试连接（暂不可用）'),
           ),
           OutlinedButton.icon(
-            onPressed: null,
+            onPressed: controller == null || !configured || _busy
+                ? null
+                : _refreshCatalog,
             icon: Icon(
               HaloIcon.requirePrototypeClass('ph ph-arrows-clockwise'),
             ),
@@ -174,7 +171,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                     _apiKeyController.text.isEmpty
                 ? null
                 : _save,
-            child: Text(_busy ? '保存中…' : '保存到本机'),
+            child: Text(_busy ? '正在验证并获取模型…' : '保存到本机'),
           ),
           TextButton(
             onPressed: controller == null || !configured || _busy
@@ -193,7 +190,6 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       await widget.controller!.save(
         ProviderSettingsDraft(
           providerId: widget.providerId,
-          modelId: _modelController.text,
           apiKey: _apiKeyController.text,
           enabled: true,
         ),
@@ -207,6 +203,17 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     }
   }
 
+  Future<void> _refreshCatalog() async {
+    setState(() => _busy = true);
+    try {
+      await widget.controller!.refreshCatalog(widget.providerId);
+    } on ProviderSettingsException {
+      // Only fixed safe controller state is reflected into the page.
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _pasteApiKey() async {
     try {
       final data = await Clipboard.getData(Clipboard.kTextPlain);
@@ -215,9 +222,7 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       if (text == null || text.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              '剪贴板没有可粘贴文字；请开启模拟器“Automatically Sync Pasteboard”',
-            ),
+            content: Text('剪贴板没有可粘贴文字；请开启模拟器“Automatically Sync Pasteboard”'),
           ),
         );
         return;
@@ -229,11 +234,9 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       setState(() {});
     } on PlatformException {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('系统未允许读取剪贴板，请在系统设置中允许粘贴'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('系统未允许读取剪贴板，请在系统设置中允许粘贴')));
     }
   }
 
@@ -249,46 +252,44 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   }
 
   String _safeStatus(ProviderSettingsState? state) => switch (state) {
+    ProviderSettingsState.saving => '正在验证凭证并获取完整模型目录。',
+    ProviderSettingsState.ready => '模型目录已保存在本机，可随时刷新。',
+    ProviderSettingsState.idle => '保存 API Key 后将验证凭证并获取完整模型目录。',
     ProviderSettingsState.cleanupPending => '配置已生效；旧凭证正在等待安全清理。',
     ProviderSettingsState.recoveryPending => '配置恢复中，请稍后重试。',
     ProviderSettingsState.saveFailed => '保存失败；原配置仍然有效。',
     ProviderSettingsState.deleteFailed => '移除失败；原配置已恢复。',
     ProviderSettingsState.orphanedCredential => '安全存储需要清理；请稍后重试。',
-    _ => '生产连接测试与模型目录暂不可用，不会显示虚假连接状态。',
+    _ => '连接测试暂不可用。',
   };
 }
 
 class ModelProviderInfo {
-  const ModelProviderInfo(this.name, this.kind, this.baseUrl, this.model);
+  const ModelProviderInfo(this.name, this.kind, this.baseUrl);
   final String name;
   final String kind;
   final String baseUrl;
-  final String model;
 
   static ModelProviderInfo fromId(String id) => switch (id) {
     'toapis' => const ModelProviderInfo(
       'ToAPIs',
       '推荐聚合 · OpenAI-compatible',
       'https://toapis.com/v1',
-      'gpt-5-mini',
     ),
     'deepseek' => const ModelProviderInfo(
       'DeepSeek',
       '官方 API',
       'https://api.deepseek.com/v1',
-      'deepseek-chat',
     ),
     'anthropic' => const ModelProviderInfo(
       'Anthropic Claude',
       '官方 API',
       'https://api.anthropic.com',
-      'claude-sonnet-4',
     ),
     _ => const ModelProviderInfo(
       'OpenAI-compatible',
       '文字与多模态模型',
       'https://api.example.com/v1',
-      'gpt-5.4',
     ),
   };
 }
@@ -371,4 +372,59 @@ class _StateCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CatalogCard extends StatelessWidget {
+  const _CatalogCard({required this.modelCount, required this.discoveredAt});
+
+  final int modelCount;
+  final DateTime discoveredAt;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            HaloIcon.requirePrototypeClass('ph ph-cube'),
+            size: 17,
+            color: HaloColors.muted,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '已获取 $modelCount 个模型',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  '更新于 ${_formatCatalogTimestamp(discoveredAt)} UTC',
+                  style: HaloTextStyles.caption,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _formatCatalogTimestamp(DateTime value) {
+  final utc = value.toUtc();
+  String twoDigits(int part) => part.toString().padLeft(2, '0');
+  return '${utc.year}-${twoDigits(utc.month)}-${twoDigits(utc.day)} '
+      '${twoDigits(utc.hour)}:${twoDigits(utc.minute)}';
 }

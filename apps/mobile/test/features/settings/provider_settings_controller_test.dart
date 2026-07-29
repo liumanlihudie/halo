@@ -6,23 +6,29 @@ import 'package:halo_mobile/features/settings/provider_settings_controller.dart'
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
+import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 
 void main() {
   late _FakeCredentials credentials;
+  late _FakeCatalogFetcher catalogFetcher;
   late _FakePersistence persistence;
   late _FakeRuntimeReloader runtime;
   late _SequentialSecretRefs refs;
   late ProviderSettingsController controller;
+  late List<String> events;
 
   setUp(() {
-    credentials = _FakeCredentials();
-    persistence = _FakePersistence();
-    runtime = _FakeRuntimeReloader();
+    events = [];
+    credentials = _FakeCredentials(events);
+    catalogFetcher = _FakeCatalogFetcher(events);
+    persistence = _FakePersistence(events);
+    runtime = _FakeRuntimeReloader(events);
     refs = _SequentialSecretRefs();
     controller = ProviderSettingsController(
       credentials: credentials,
+      catalogFetcher: catalogFetcher,
       persistence: persistence,
       runtime: runtime,
       secretRefs: refs,
@@ -30,21 +36,32 @@ void main() {
   });
 
   test(
-    'first save writes Keychain then atomically publishes configuration',
+    'save orders Keychain, discovery, staged publish, reload, finalize, cleanup',
     () async {
+      final oldRef = refs.next();
+      persistence.current = _snapshot('toapis', oldRef);
+
       await controller.save(
         const ProviderSettingsDraft(
           providerId: 'toapis',
-          modelId: 'gpt-5-mini',
           apiKey: 'new-secret',
           enabled: true,
         ),
       );
 
       expect(credentials.setValues.single, 'new-secret');
-      expect(persistence.current!.config.secretRef, refs.issued.single);
+      expect(persistence.current!.config.secretRef, refs.issued.last);
+      expect(persistence.current!.catalog.models, hasLength(2));
       expect(runtime.reloadCount, 1);
       expect(controller.state, ProviderSettingsState.ready);
+      expect(events, [
+        'credential:set',
+        'catalog:fetch',
+        'persistence:replace',
+        'runtime:reload',
+        'persistence:finalizeReplace',
+        'credential:delete:old',
+      ]);
     },
   );
 
@@ -52,21 +69,21 @@ void main() {
     'replacement rotates UUID and never reads old Key into Dart memory',
     () async {
       final oldRef = refs.next();
-      persistence.current = ProviderSettingsSnapshot(
-        config: ProviderConfig.toApis(secretRef: oldRef),
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      );
+      persistence.current = _snapshot('toapis', oldRef);
 
       await controller.save(
         const ProviderSettingsDraft(
           providerId: 'toapis',
-          modelId: 'gpt-5-mini',
           apiKey: 'replacement',
           enabled: true,
         ),
       );
 
       expect(credentials.getCalls, 0);
+      expect(
+        catalogFetcher.configs.single.secretRef,
+        credentials.setRefs.single,
+      );
       expect(credentials.setRefs.single, isNot(oldRef));
       expect(credentials.deletedRefs, [oldRef]);
       expect(persistence.current!.config.secretRef, credentials.setRefs.single);
@@ -74,13 +91,56 @@ void main() {
   );
 
   test(
+    'catalog fetch failure preserves old snapshot and Key and deletes new Key',
+    () async {
+      final oldRef = refs.next();
+      final old = _snapshot('deepseek', oldRef);
+      persistence.current = old;
+      catalogFetcher.error = StateError('fetch failed');
+
+      await expectLater(
+        controller.save(
+          const ProviderSettingsDraft(
+            providerId: 'deepseek',
+            apiKey: 'replacement',
+            enabled: true,
+          ),
+        ),
+        throwsA(isA<ProviderSettingsException>()),
+      );
+
+      expect(persistence.current, same(old));
+      expect(credentials.deletedRefs, [credentials.setRefs.single]);
+      expect(credentials.deletedRefs, isNot(contains(oldRef)));
+      expect(persistence.calls, isEmpty);
+      expect(controller.snapshotFor('deepseek'), same(old));
+      expect(controller.state, ProviderSettingsState.saveFailed);
+    },
+  );
+
+  test('empty catalog fails closed before persistence publish', () async {
+    catalogFetcher.catalog = _catalog('toapis', const []);
+
+    await expectLater(
+      controller.save(
+        const ProviderSettingsDraft(
+          providerId: 'toapis',
+          apiKey: 'replacement',
+          enabled: true,
+        ),
+      ),
+      throwsA(isA<ProviderSettingsException>()),
+    );
+
+    expect(persistence.calls, isEmpty);
+    expect(credentials.deletedRefs, [credentials.setRefs.single]);
+  });
+
+  test(
     'configuration switch failure deletes new ref and preserves old state',
     () async {
       final oldRef = refs.next();
-      final old = ProviderSettingsSnapshot(
-        config: ProviderConfig.deepSeek(secretRef: oldRef),
-        model: ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
-      );
+      final old = _snapshot('deepseek', oldRef);
       persistence
         ..current = old
         ..replaceError = StateError('switch failed');
@@ -89,7 +149,6 @@ void main() {
         controller.save(
           const ProviderSettingsDraft(
             providerId: 'deepseek',
-            modelId: 'deepseek-chat',
             apiKey: 'replacement',
             enabled: true,
           ),
@@ -108,10 +167,7 @@ void main() {
     'runtime reload failure restores old config and deletes new ref',
     () async {
       final oldRef = refs.next();
-      final old = ProviderSettingsSnapshot(
-        config: ProviderConfig.toApis(secretRef: oldRef),
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      );
+      final old = _snapshot('toapis', oldRef);
       persistence.current = old;
       runtime.error = StateError('reload failed');
 
@@ -119,7 +175,6 @@ void main() {
         controller.save(
           const ProviderSettingsDraft(
             providerId: 'toapis',
-            modelId: 'gpt-5-mini',
             apiKey: 'replacement',
             enabled: true,
           ),
@@ -136,10 +191,7 @@ void main() {
     'runtime reload and rollback failure preserves new ref for recovery',
     () async {
       final oldRef = refs.next();
-      persistence.current = ProviderSettingsSnapshot(
-        config: ProviderConfig.toApis(secretRef: oldRef),
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      );
+      persistence.current = _snapshot('toapis', oldRef);
       runtime.error = StateError('reload failed');
       persistence.restoreError = StateError('rollback conflicted');
 
@@ -147,7 +199,6 @@ void main() {
         controller.save(
           const ProviderSettingsDraft(
             providerId: 'toapis',
-            modelId: 'gpt-5-mini',
             apiKey: 'replacement',
             enabled: true,
           ),
@@ -160,20 +211,41 @@ void main() {
     },
   );
 
+  test('finalize failure keeps old Key and reports pending cleanup', () async {
+    final oldRef = refs.next();
+    persistence.current = _snapshot('toapis', oldRef);
+    persistence.finalizeError = StateError('finalize failed');
+
+    await controller.save(
+      const ProviderSettingsDraft(
+        providerId: 'toapis',
+        apiKey: 'replacement',
+        enabled: true,
+      ),
+    );
+
+    expect(persistence.current!.config.secretRef, isNot(oldRef));
+    expect(credentials.deletedRefs, isNot(contains(oldRef)));
+    expect(controller.state, ProviderSettingsState.cleanupPending);
+    expect(events, [
+      'credential:set',
+      'catalog:fetch',
+      'persistence:replace',
+      'runtime:reload',
+      'persistence:finalizeReplace',
+    ]);
+  });
+
   test(
     'old ref cleanup failure keeps new config and reports safe cleanup state',
     () async {
       final oldRef = refs.next();
-      persistence.current = ProviderSettingsSnapshot(
-        config: ProviderConfig.toApis(secretRef: oldRef),
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      );
+      persistence.current = _snapshot('toapis', oldRef);
       credentials.deleteErrors[oldRef] = StateError('keychain unavailable');
 
       await controller.save(
         const ProviderSettingsDraft(
           providerId: 'toapis',
-          modelId: 'gpt-5-mini',
           apiKey: 'replacement',
           enabled: true,
         ),
@@ -185,26 +257,22 @@ void main() {
   );
 
   test(
-    'old ref delete false keeps durable mutation pending for retry',
+    'old ref delete false follows finalize and reports cleanup pending',
     () async {
       final oldRef = refs.next();
-      persistence.current = ProviderSettingsSnapshot(
-        config: ProviderConfig.toApis(secretRef: oldRef),
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      );
+      persistence.current = _snapshot('toapis', oldRef);
       credentials.deleteResults[oldRef] = false;
 
       await controller.save(
         const ProviderSettingsDraft(
           providerId: 'toapis',
-          modelId: 'gpt-5-mini',
           apiKey: 'replacement',
           enabled: true,
         ),
       );
 
       expect(controller.state, ProviderSettingsState.cleanupPending);
-      expect(persistence.calls, isNot(contains('finalizeReplace')));
+      expect(persistence.calls, contains('finalizeReplace'));
     },
   );
 
@@ -212,10 +280,7 @@ void main() {
     'delete removes DB first and restores it when Keychain delete fails',
     () async {
       final oldRef = refs.next();
-      final old = ProviderSettingsSnapshot(
-        config: ProviderConfig.deepSeek(secretRef: oldRef),
-        model: ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
-      );
+      final old = _snapshot('deepseek', oldRef);
       persistence.current = old;
       credentials.deleteErrors[oldRef] = StateError('delete failed');
 
@@ -234,10 +299,7 @@ void main() {
     'delete double failure leaves orphan Key and never reports success',
     () async {
       final oldRef = refs.next();
-      persistence.current = ProviderSettingsSnapshot(
-        config: ProviderConfig.toApis(secretRef: oldRef),
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      );
+      persistence.current = _snapshot('toapis', oldRef);
       credentials.deleteErrors[oldRef] = StateError('delete failed');
       persistence.restoreError = StateError('restore failed');
 
@@ -256,7 +318,6 @@ void main() {
     final operation = controller.save(
       const ProviderSettingsDraft(
         providerId: 'toapis',
-        modelId: 'gpt-5-mini',
         apiKey: 'secret',
         enabled: true,
       ),
@@ -283,10 +344,7 @@ void main() {
     () async {
       final toApisGate = Completer<void>();
       persistence.loadGates['toapis'] = toApisGate;
-      persistence.currents['deepseek'] = ProviderSettingsSnapshot(
-        config: ProviderConfig.deepSeek(secretRef: refs.next()),
-        model: ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
-      );
+      persistence.currents['deepseek'] = _snapshot('deepseek', refs.next());
 
       final lateToApis = controller.load('toapis');
       await controller.load('deepseek');
@@ -314,13 +372,47 @@ void main() {
     expect(controller.stateFor('toapis'), ProviderSettingsState.idle);
   });
 
+  test(
+    'refresh reuses existing credential and atomically replaces full catalog',
+    () async {
+      final oldRef = refs.next();
+      final old = _snapshot('deepseek', oldRef, modelIds: ['deepseek-chat']);
+      persistence.current = old;
+      await controller.load('deepseek');
+      catalogFetcher.catalog = _catalog('deepseek', const [
+        'deepseek-chat',
+        'deepseek-reasoner',
+      ]);
+      events.clear();
+
+      await controller.refreshCatalog('deepseek');
+
+      expect(catalogFetcher.configs.single.secretRef, oldRef);
+      expect(credentials.setRefs, isEmpty);
+      expect(credentials.deletedRefs, isEmpty);
+      expect(
+        controller
+            .snapshotFor('deepseek')!
+            .catalog
+            .models
+            .map((model) => model.ref.modelId),
+        ['deepseek-chat', 'deepseek-reasoner'],
+      );
+      expect(events, [
+        'catalog:fetch',
+        'persistence:replace',
+        'runtime:reload',
+        'persistence:finalizeReplace',
+      ]);
+    },
+  );
+
   test('mutations run FIFO while loads remain provider isolated', () async {
     final toApisGate = Completer<void>();
     persistence.loadGates['toapis'] = toApisGate;
     final firstMutation = controller.save(
       const ProviderSettingsDraft(
         providerId: 'toapis',
-        modelId: 'gpt-5-mini',
         apiKey: 'toapis-key',
         enabled: true,
       ),
@@ -330,7 +422,6 @@ void main() {
     final secondMutation = controller.save(
       const ProviderSettingsDraft(
         providerId: 'deepseek',
-        modelId: 'deepseek-chat',
         apiKey: 'deepseek-key',
         enabled: true,
       ),
@@ -350,7 +441,6 @@ void main() {
     final first = controller.save(
       const ProviderSettingsDraft(
         providerId: 'toapis',
-        modelId: 'gpt-5-mini',
         apiKey: 'first-key',
         enabled: true,
       ),
@@ -358,7 +448,6 @@ void main() {
     final second = controller.save(
       const ProviderSettingsDraft(
         providerId: 'deepseek',
-        modelId: 'deepseek-chat',
         apiKey: 'second-key',
         enabled: true,
       ),
@@ -387,7 +476,6 @@ void main() {
           .save(
             const ProviderSettingsDraft(
               providerId: 'toapis',
-              modelId: 'gpt-5-mini',
               apiKey: 'toapis-key',
               enabled: true,
             ),
@@ -422,7 +510,6 @@ void main() {
           .save(
             const ProviderSettingsDraft(
               providerId: 'toapis',
-              modelId: 'gpt-5-mini',
               apiKey: 'toapis-key',
               enabled: true,
             ),
@@ -451,7 +538,6 @@ void main() {
       await controller.save(
         const ProviderSettingsDraft(
           providerId: 'toapis',
-          modelId: 'gpt-5-mini',
           apiKey: 'toapis-key',
           enabled: true,
         ),
@@ -473,7 +559,6 @@ void main() {
       final first = controller.save(
         const ProviderSettingsDraft(
           providerId: 'toapis',
-          modelId: 'gpt-5-mini',
           apiKey: 'first-key',
           enabled: true,
         ),
@@ -495,6 +580,9 @@ void main() {
 }
 
 final class _FakeCredentials implements SecureCredentialStore {
+  _FakeCredentials(this.events);
+
+  final List<String> events;
   int getCalls = 0;
   final setRefs = <SecretRef>[];
   final setValues = <String>[];
@@ -508,6 +596,7 @@ final class _FakeCredentials implements SecureCredentialStore {
     String secret, {
     CancellationToken? cancellationToken,
   }) async {
+    events.add('credential:set');
     setRefs.add(ref);
     setValues.add(secret);
   }
@@ -526,6 +615,9 @@ final class _FakeCredentials implements SecureCredentialStore {
     SecretRef ref, {
     CancellationToken? cancellationToken,
   }) async {
+    events.add(
+      setRefs.contains(ref) ? 'credential:delete:new' : 'credential:delete:old',
+    );
     deletedRefs.add(ref);
     final error = deleteErrors[ref];
     if (error != null) throw error;
@@ -539,11 +631,33 @@ final class _FakeCredentials implements SecureCredentialStore {
   }) async => const [];
 }
 
+final class _FakeCatalogFetcher implements ProviderModelCatalogFetcher {
+  _FakeCatalogFetcher(this.events);
+
+  final List<String> events;
+  final configs = <ProviderConfig>[];
+  PersistedProviderModelCatalog? catalog;
+  Object? error;
+
+  @override
+  Future<PersistedProviderModelCatalog> fetch(ProviderConfig config) async {
+    events.add('catalog:fetch');
+    configs.add(config);
+    final currentError = error;
+    if (currentError != null) throw currentError;
+    return catalog ?? _catalog(config.providerId);
+  }
+}
+
 final class _FakePersistence implements ProviderSettingsPersistence {
+  _FakePersistence(this.events);
+
+  final List<String> events;
   ProviderSettingsSnapshot? current;
   final currents = <String, ProviderSettingsSnapshot?>{};
   Object? replaceError;
   Object? restoreError;
+  Object? finalizeError;
   Completer<void>? loadGate;
   final loadGates = <String, Completer<void>>{};
   final loadErrors = <String, Object>{};
@@ -562,6 +676,7 @@ final class _FakePersistence implements ProviderSettingsPersistence {
     ProviderSettingsSnapshot? previous,
     ProviderSettingsSnapshot next,
   ) async {
+    events.add('persistence:replace');
     calls.add('replace');
     final error = replaceError;
     if (error != null) throw error;
@@ -573,6 +688,7 @@ final class _FakePersistence implements ProviderSettingsPersistence {
     ProviderSettingsSnapshot? previous,
     ProviderSettingsSnapshot next,
   ) async {
+    events.add('persistence:rollbackReplace');
     calls.add('rollbackReplace');
     final error = restoreError;
     if (error != null) throw error;
@@ -584,7 +700,10 @@ final class _FakePersistence implements ProviderSettingsPersistence {
     ProviderSettingsSnapshot? previous,
     ProviderSettingsSnapshot next,
   ) async {
+    events.add('persistence:finalizeReplace');
     calls.add('finalizeReplace');
+    final error = finalizeError;
+    if (error != null) throw error;
   }
 
   @override
@@ -608,12 +727,16 @@ final class _FakePersistence implements ProviderSettingsPersistence {
 }
 
 final class _FakeRuntimeReloader implements ProviderRuntimeReloader {
+  _FakeRuntimeReloader(this.events);
+
+  final List<String> events;
   int reloadCount = 0;
   Object? error;
   Future<void> Function()? onReload;
 
   @override
   Future<void> reload() async {
+    events.add('runtime:reload');
     reloadCount++;
     await onReload?.call();
     final current = error;
@@ -621,6 +744,39 @@ final class _FakeRuntimeReloader implements ProviderRuntimeReloader {
     if (current != null) throw current;
   }
 }
+
+ProviderSettingsSnapshot _snapshot(
+  String providerId,
+  SecretRef ref, {
+  List<String>? modelIds,
+}) => ProviderSettingsSnapshot(
+  config: switch (providerId) {
+    'toapis' => ProviderConfig.toApis(secretRef: ref),
+    'deepseek' => ProviderConfig.deepSeek(secretRef: ref),
+    _ => throw ArgumentError.value(providerId),
+  },
+  catalog: _catalog(providerId, modelIds),
+);
+
+PersistedProviderModelCatalog _catalog(
+  String providerId, [
+  List<String>? modelIds,
+]) => PersistedProviderModelCatalog(
+  providerId: providerId,
+  models: [
+    for (final modelId
+        in modelIds ??
+            (providerId == 'deepseek'
+                ? const ['deepseek-chat', 'deepseek-reasoner']
+                : const ['gpt-5-mini', 'gpt-5']))
+      ModelDescriptor(
+        ref: ModelRef(providerId: providerId, modelId: modelId),
+        displayName: modelId,
+        capabilities: const ModelCapabilities.text(),
+      ),
+  ],
+  discoveredAt: DateTime.utc(2026, 7, 29, 12),
+);
 
 final class _SequentialSecretRefs implements ProviderSecretRefFactory {
   int _next = 0;

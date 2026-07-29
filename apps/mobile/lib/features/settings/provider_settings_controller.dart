@@ -4,8 +4,8 @@ import 'dart:math';
 // ignore_for_file: prefer_initializing_formals
 
 import 'package:flutter/foundation.dart';
-import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
+import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 
@@ -27,23 +27,25 @@ enum ProviderSettingsState {
 class ProviderSettingsDraft {
   const ProviderSettingsDraft({
     required this.providerId,
-    required this.modelId,
     required this.apiKey,
     required this.enabled,
   });
 
   final String providerId;
-  final String modelId;
   final String apiKey;
   final bool enabled;
 }
 
 @immutable
 class ProviderSettingsSnapshot {
-  const ProviderSettingsSnapshot({required this.config, required this.model});
+  const ProviderSettingsSnapshot({required this.config, required this.catalog});
 
   final ProviderConfig config;
-  final ModelRef model;
+  final PersistedProviderModelCatalog catalog;
+}
+
+abstract interface class ProviderModelCatalogFetcher {
+  Future<PersistedProviderModelCatalog> fetch(ProviderConfig config);
 }
 
 abstract interface class ProviderSettingsPersistence {
@@ -121,15 +123,18 @@ final class ProviderSettingsException implements Exception {
 final class ProviderSettingsController extends ChangeNotifier {
   ProviderSettingsController({
     required SecureCredentialStore credentials,
+    required ProviderModelCatalogFetcher catalogFetcher,
     required ProviderSettingsPersistence persistence,
     required ProviderRuntimeReloader runtime,
     ProviderSecretRefFactory? secretRefs,
   }) : _credentials = credentials,
+       _catalogFetcher = catalogFetcher,
        _persistence = persistence,
        _runtime = runtime,
        _secretRefs = secretRefs ?? SecureUuidProviderSecretRefFactory();
 
   final SecureCredentialStore _credentials;
+  final ProviderModelCatalogFetcher _catalogFetcher;
   final ProviderSettingsPersistence _persistence;
   final ProviderRuntimeReloader _runtime;
   final ProviderSecretRefFactory _secretRefs;
@@ -144,6 +149,9 @@ final class ProviderSettingsController extends ChangeNotifier {
   final Map<String, bool> _configured = {};
   bool hasConfigurationFor(String providerId) =>
       _configured[providerId] ?? false;
+  final Map<String, ProviderSettingsSnapshot> _snapshots = {};
+  ProviderSettingsSnapshot? snapshotFor(String providerId) =>
+      _snapshots[providerId];
   final Set<String> _busyProviders = {};
   final Map<String, Completer<void>> _providerIdleWaiters = {};
   final Set<Object> _activeMutationContextTokens = {};
@@ -157,6 +165,7 @@ final class ProviderSettingsController extends ChangeNotifier {
     _enter(providerId);
     try {
       final snapshot = await _persistence.load(providerId);
+      _setSnapshot(providerId, snapshot);
       _setConfigured(providerId, snapshot != null);
       _setState(
         providerId,
@@ -180,12 +189,15 @@ final class ProviderSettingsController extends ChangeNotifier {
     var preserveNewRefForRecovery = false;
     try {
       previous = await _persistence.load(draft.providerId);
+      _setSnapshot(draft.providerId, previous);
       newRef = _secretRefs.next();
       await _credentials.set(newRef, draft.apiKey);
-      final next = ProviderSettingsSnapshot(
-        config: _buildConfig(draft, newRef),
-        model: ModelRef(providerId: draft.providerId, modelId: draft.modelId),
+      final config = _buildConfig(draft, newRef);
+      final catalog = _requireCompleteCatalog(
+        config,
+        await _catalogFetcher.fetch(config),
       );
+      final next = ProviderSettingsSnapshot(config: config, catalog: catalog);
       try {
         await _persistence.replace(previous, next);
         try {
@@ -220,6 +232,13 @@ final class ProviderSettingsController extends ChangeNotifier {
       }
 
       _setConfigured(draft.providerId, true);
+      _setSnapshot(draft.providerId, next);
+      try {
+        await _persistence.finalizeReplace(previous, next);
+      } catch (_) {
+        _setState(draft.providerId, ProviderSettingsState.cleanupPending);
+        return;
+      }
       final oldRef = previous?.config.secretRef;
       if (oldRef != null && oldRef != newRef) {
         try {
@@ -232,12 +251,6 @@ final class ProviderSettingsController extends ChangeNotifier {
           _setState(draft.providerId, ProviderSettingsState.cleanupPending);
           return;
         }
-      }
-      try {
-        await _persistence.finalizeReplace(previous, next);
-      } catch (_) {
-        _setState(draft.providerId, ProviderSettingsState.cleanupPending);
-        return;
       }
       _setState(draft.providerId, ProviderSettingsState.ready);
     } catch (error) {
@@ -261,6 +274,63 @@ final class ProviderSettingsController extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshCatalog(String providerId) =>
+      _enqueueMutation(providerId, () => _refreshCatalog(providerId));
+
+  Future<void> _refreshCatalog(String providerId) async {
+    _setState(providerId, ProviderSettingsState.saving);
+    final previous = await _persistence.load(providerId);
+    _setSnapshot(providerId, previous);
+    if (previous == null) {
+      _setConfigured(providerId, false);
+      _setState(providerId, ProviderSettingsState.saveFailed);
+      throw const ProviderSettingsException('请先配置模型服务');
+    }
+
+    late final ProviderSettingsSnapshot next;
+    try {
+      final catalog = _requireCompleteCatalog(
+        previous.config,
+        await _catalogFetcher.fetch(previous.config),
+      );
+      next = ProviderSettingsSnapshot(
+        config: previous.config,
+        catalog: catalog,
+      );
+      await _persistence.replace(previous, next);
+      try {
+        await _runtime.reload();
+      } catch (_) {
+        try {
+          await _persistence.rollbackReplace(previous, next);
+        } catch (_) {
+          _setConfigured(providerId, true);
+          _setSnapshot(providerId, next);
+          _setState(providerId, ProviderSettingsState.recoveryPending);
+          throw const ProviderSettingsException('配置恢复中，请稍后重试');
+        }
+        rethrow;
+      }
+    } on ProviderSettingsException {
+      rethrow;
+    } catch (_) {
+      _setConfigured(providerId, true);
+      _setSnapshot(providerId, previous);
+      _setState(providerId, ProviderSettingsState.saveFailed);
+      throw const ProviderSettingsException('刷新失败，原模型目录仍然有效');
+    }
+
+    _setConfigured(providerId, true);
+    _setSnapshot(providerId, next);
+    try {
+      await _persistence.finalizeReplace(previous, next);
+    } catch (_) {
+      _setState(providerId, ProviderSettingsState.cleanupPending);
+      return;
+    }
+    _setState(providerId, ProviderSettingsState.ready);
+  }
+
   Future<void> remove(String providerId) =>
       _enqueueMutation(providerId, () => _remove(providerId));
 
@@ -268,6 +338,7 @@ final class ProviderSettingsController extends ChangeNotifier {
     _setState(providerId, ProviderSettingsState.deleting);
     try {
       final previous = await _persistence.load(providerId);
+      _setSnapshot(providerId, previous);
       if (previous == null) {
         _setConfigured(providerId, false);
         _setState(providerId, ProviderSettingsState.idle);
@@ -275,6 +346,7 @@ final class ProviderSettingsController extends ChangeNotifier {
       }
       await _persistence.remove(previous);
       _setConfigured(providerId, false);
+      _setSnapshot(providerId, null);
       final oldRef = previous.config.secretRef;
       try {
         await _runtime.reload();
@@ -287,6 +359,7 @@ final class ProviderSettingsController extends ChangeNotifier {
           await _persistence.restore(previous);
           await _runtime.reload();
           _setConfigured(providerId, true);
+          _setSnapshot(providerId, previous);
           _setState(providerId, ProviderSettingsState.deleteFailed);
         } catch (_) {
           _setConfigured(providerId, false);
@@ -320,8 +393,18 @@ final class ProviderSettingsController extends ChangeNotifier {
       enabled: draft.enabled,
       secretRef: secretRef,
     ),
-    _ => throw const ProviderSettingsException('当前 Provider 暂不可用'),
+    _ => throw StateError('Provider is not supported'),
   };
+
+  PersistedProviderModelCatalog _requireCompleteCatalog(
+    ProviderConfig config,
+    PersistedProviderModelCatalog catalog,
+  ) {
+    if (catalog.providerId != config.providerId || catalog.models.isEmpty) {
+      throw StateError('Provider model catalog is incomplete');
+    }
+    return catalog;
+  }
 
   Future<bool> _deleteNewRefFailSafe(SecretRef ref) async {
     try {
@@ -418,6 +501,14 @@ final class ProviderSettingsController extends ChangeNotifier {
   void _setConfigured(String providerId, bool value) {
     _configured[providerId] = value;
     _hasConfiguration = value;
+  }
+
+  void _setSnapshot(String providerId, ProviderSettingsSnapshot? snapshot) {
+    if (snapshot == null) {
+      _snapshots.remove(providerId);
+    } else {
+      _snapshots[providerId] = snapshot;
+    }
   }
 
   void _setState(String providerId, ProviderSettingsState value) {

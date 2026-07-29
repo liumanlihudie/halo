@@ -28,7 +28,10 @@ void main() {
       await persistence.finalizeReplace(null, first);
       final loaded = await persistence.load('toapis');
       expect(loaded?.config.secretRef, first.config.secretRef);
-      expect(loaded?.model, first.model);
+      expect(
+        loaded?.catalog.models.map((model) => model.ref.modelId),
+        unorderedEquals(['gpt-5-mini', 'gpt-5']),
+      );
 
       final replacement = _snapshot(_ref(2));
       await persistence.replace(loaded, replacement);
@@ -45,6 +48,52 @@ void main() {
         (await persistence.load('toapis'))?.config.secretRef,
         replacement.config.secretRef,
       );
+    },
+  );
+
+  test(
+    'catalog refresh replaces the full directory and only clears removed bindings',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-settings-');
+      addTearDown(() => directory.delete(recursive: true));
+      final store = SqliteProviderConfigurationStore.open(
+        '${directory.path}/providers.sqlite',
+      );
+      addTearDown(store.close);
+      final persistence = AtomicProviderSettingsPersistence(store);
+      final first = _snapshot(_ref(22));
+      await persistence.replace(null, first);
+      await persistence.finalizeReplace(null, first);
+      await store.setGlobalDefaultModel(
+        ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      );
+      await store.setAgentModelOverride(
+        'agent.keep',
+        ModelRef(providerId: 'toapis', modelId: 'gpt-5'),
+      );
+      final previous = (await persistence.load('toapis'))!;
+      final refreshed = ProviderSettingsSnapshot(
+        config: previous.config,
+        catalog: _catalog(
+          modelIds: const ['gpt-5'],
+          discoveredAt: DateTime.utc(2026, 7, 29, 13),
+        ),
+      );
+
+      await persistence.replace(previous, refreshed);
+      await persistence.finalizeReplace(previous, refreshed);
+
+      expect(await store.loadGlobalDefaultModel(), isNull);
+      expect(
+        await store.loadAgentModelOverride('agent.keep'),
+        ModelRef(providerId: 'toapis', modelId: 'gpt-5'),
+      );
+      final loaded = (await persistence.load('toapis'))!;
+      expect(loaded.config.secretRef, previous.config.secretRef);
+      expect(loaded.catalog.discoveredAt, DateTime.utc(2026, 7, 29, 13));
+      expect(loaded.catalog.models.map((model) => model.ref.modelId), [
+        'gpt-5',
+      ]);
     },
   );
 
@@ -327,7 +376,10 @@ void main() {
         expectedRevision: current.revision,
         expectedOldRef: oldPrimary,
         newRef: newPrimary,
-        replacement: ProviderConfigurationReplacement(config: nextConfig),
+        replacement: ProviderConfigurationReplacement(
+          config: nextConfig,
+          modelCatalog: null,
+        ),
       );
       await store.close();
 
@@ -346,7 +398,23 @@ void main() {
 
 ProviderSettingsSnapshot _snapshot(SecretRef ref) => ProviderSettingsSnapshot(
   config: ProviderConfig.toApis(secretRef: ref),
-  model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+  catalog: _catalog(),
+);
+
+PersistedProviderModelCatalog _catalog({
+  List<String> modelIds = const ['gpt-5-mini', 'gpt-5'],
+  DateTime? discoveredAt,
+}) => PersistedProviderModelCatalog(
+  providerId: 'toapis',
+  models: [
+    for (final modelId in modelIds)
+      ModelDescriptor(
+        ref: ModelRef(providerId: 'toapis', modelId: modelId),
+        displayName: modelId,
+        capabilities: const ModelCapabilities.text(),
+      ),
+  ],
+  discoveredAt: discoveredAt ?? DateTime.utc(2026, 7, 29, 12),
 );
 
 SecretRef _ref(int value) => SecretRef.parse(

@@ -6,6 +6,7 @@ import 'package:halo_mobile/features/settings/provider_settings_persistence.dart
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
+import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
@@ -23,13 +24,14 @@ void main() {
       final newRef = _ref(2);
       final first = ProviderSettingsSnapshot(
         config: ProviderConfig.toApis(secretRef: oldRef),
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+        catalog: _catalog(),
       );
       await persistence.replace(null, first);
       await persistence.finalizeReplace(null, first);
       final credentials = _Credentials({oldRef: 'old-key'});
       final controller = ProviderSettingsController(
         credentials: credentials,
+        catalogFetcher: _Fetcher(),
         persistence: persistence,
         runtime: _CloseStoreAndFail(store),
         secretRefs: _FixedRef(newRef),
@@ -39,7 +41,6 @@ void main() {
         controller.save(
           const ProviderSettingsDraft(
             providerId: 'toapis',
-            modelId: 'gpt-5-mini',
             apiKey: 'new-key',
             enabled: true,
           ),
@@ -63,6 +64,24 @@ void main() {
     },
   );
 }
+
+final class _Fetcher implements ProviderModelCatalogFetcher {
+  @override
+  Future<PersistedProviderModelCatalog> fetch(ProviderConfig config) async =>
+      _catalog();
+}
+
+PersistedProviderModelCatalog _catalog() => PersistedProviderModelCatalog(
+  providerId: 'toapis',
+  models: [
+    ModelDescriptor(
+      ref: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      displayName: 'GPT-5 mini',
+      capabilities: const ModelCapabilities.text(),
+    ),
+  ],
+  discoveredAt: DateTime.utc(2026, 7, 29, 12),
+);
 
 SecretRef _ref(int value) => SecretRef.parse(
   'keychain://halo.provider/00000000-0000-4000-8000-'

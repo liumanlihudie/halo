@@ -1,7 +1,6 @@
 import 'dart:collection';
 
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
-import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
@@ -36,13 +35,18 @@ final class AtomicProviderSettingsPersistence
   Future<ProviderSettingsSnapshot?> load(String providerId) async {
     final versioned = await _store.loadProvider(providerId);
     if (versioned == null) return null;
-    final global = await _store.loadGlobalDefaultModel();
-    final model = global?.providerId == providerId
-        ? global!
-        : _defaultModel(providerId);
+    final store = _store;
+    if (store is! ProviderModelCatalogStore) {
+      throw StateError('Provider model catalog persistence is unavailable');
+    }
+    final catalog = await (store as ProviderModelCatalogStore)
+        .loadProviderModelCatalog(providerId);
+    if (catalog == null || catalog.models.isEmpty) {
+      throw StateError('Provider model catalog is missing');
+    }
     final snapshot = ProviderSettingsSnapshot(
       config: versioned.config,
-      model: model,
+      catalog: catalog,
     );
     _versions[snapshot] = versioned;
     return snapshot;
@@ -60,10 +64,7 @@ final class AtomicProviderSettingsPersistence
     }
     final replacement = ProviderConfigurationReplacement(
       config: next.config,
-      modelBindings: ProviderModelBindingMutation(
-        replaceGlobalDefault: true,
-        globalDefault: next.model,
-      ),
+      modelCatalog: next.catalog,
     );
     late final ProviderConfigurationMutationLease lease;
     if (previous == null) {
@@ -299,9 +300,3 @@ String _account(SecretRef ref) {
   ProviderSecretRefPolicy.validate(ref);
   return ref.locator.pathSegments.single;
 }
-
-ModelRef _defaultModel(String providerId) => switch (providerId) {
-  'toapis' => ModelRef(providerId: providerId, modelId: 'gpt-5-mini'),
-  'deepseek' => ModelRef(providerId: providerId, modelId: 'deepseek-chat'),
-  _ => throw StateError('Provider is not enabled for production chat'),
-};

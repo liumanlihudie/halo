@@ -10,12 +10,16 @@ import 'package:halo_mobile/features/settings/provider_settings_persistence.dart
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/drift_chat_message_repository.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
+import 'package:halo_mobile/model_runtime/model_catalog_discovery.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/production_model_runtime_factory.dart';
+import 'package:halo_mobile/model_runtime/production_provider_inspection_transport.dart';
+import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
+import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/unary_http_transport.dart';
 import 'package:path_provider/path_provider.dart';
@@ -39,6 +43,7 @@ final class ProductionAppKernelFactory {
     ProviderSettingsPersistenceBuilder? buildSettingsPersistence,
     SecureCredentialStore? credentials,
     DurableChatRepositoryOpener? openChatRepository,
+    UnaryHttpAdapter? unaryHttpAdapter,
   }) : _applicationSupportDirectory =
            applicationSupportDirectory ?? getApplicationSupportDirectory,
        _openProviderStore =
@@ -47,13 +52,19 @@ final class ProductionAppKernelFactory {
            buildSettingsPersistence ?? AtomicProviderSettingsPersistence.new,
        _credentials = credentials ?? const MethodChannelSecureCredentialStore(),
        _openChatRepository =
-           openChatRepository ?? _openDriftChatMessageRepository;
+           openChatRepository ?? _openDriftChatMessageRepository,
+       _unaryHttpAdapter = unaryHttpAdapter ?? DartIoUnaryHttpAdapter(),
+       _endpointPolicy = TrustedProviderEndpointPolicy(
+         providerHosts: const {'api.deepseek.com', 'toapis.com'},
+       );
 
   final ApplicationSupportDirectoryProvider _applicationSupportDirectory;
   final ProviderStorePathOpener _openProviderStore;
   final ProviderSettingsPersistenceBuilder _buildSettingsPersistence;
   final SecureCredentialStore _credentials;
   final DurableChatRepositoryOpener _openChatRepository;
+  final UnaryHttpAdapter _unaryHttpAdapter;
+  final TrustedProviderEndpointPolicy _endpointPolicy;
 
   Future<ApplicationKernel> create() async {
     ProviderConfigurationStore? settingsStore;
@@ -86,7 +97,8 @@ final class ProductionAppKernelFactory {
         commandOutbox: FileSingleChatCommandOutbox(singleChatOutboxPath),
         conversations: _productionSingleChatConversations,
       );
-      final runtimeFactory = _runtimeFactory(databasePath);
+      final inspectionTransport = _inspectionTransport();
+      final runtimeFactory = _runtimeFactory(databasePath, inspectionTransport);
       final initialRuntime = await runtimeFactory.create();
       runtimeSlot = ProductionModelRuntimeSlot(initialRuntime);
       singleChatPort = ProductionSingleChatPort(
@@ -97,6 +109,10 @@ final class ProductionAppKernelFactory {
       );
       final settings = ProviderSettingsController(
         credentials: _credentials,
+        catalogFetcher: _ProductionProviderModelCatalogFetcher(
+          transport: inspectionTransport,
+          secretResolver: KeychainSecretResolver(store: _credentials),
+        ),
         persistence: settingsPersistence,
         runtime: _SlotRuntimeReloader(runtimeSlot, runtimeFactory),
       );
@@ -129,16 +145,67 @@ final class ProductionAppKernelFactory {
     }
   }
 
-  ProductionModelRuntimeFactory _runtimeFactory(String databasePath) =>
-      ProductionModelRuntimeFactory(
-        openConfigurationStore: () => _openProviderStore(databasePath),
-        credentialStore: _credentials,
-        loadModelCatalog: _loadProductionModels,
-        inspectionTransport: const _UnavailableInspectionTransport(),
-        endpointPolicy: TrustedProviderEndpointPolicy(
-          providerHosts: const {'api.deepseek.com', 'toapis.com'},
+  ProductionModelRuntimeFactory _runtimeFactory(
+    String databasePath,
+    ProviderInspectionTransport inspectionTransport,
+  ) => ProductionModelRuntimeFactory(
+    openConfigurationStore: () => _openProviderStore(databasePath),
+    credentialStore: _credentials,
+    loadModelCatalog: (providerId, cancellationToken) =>
+        _loadPersistedProductionModels(
+          databasePath,
+          providerId,
+          cancellationToken,
+        ),
+    inspectionTransport: inspectionTransport,
+    unaryHttpAdapter: _unaryHttpAdapter,
+    endpointPolicy: _endpointPolicy,
+  );
+
+  ProductionProviderInspectionTransport _inspectionTransport() =>
+      ProductionProviderInspectionTransport(
+        client: SecureJsonHttpClient(
+          adapter: _unaryHttpAdapter,
+          endpointPolicy: _endpointPolicy,
         ),
       );
+
+  Future<List<ModelDescriptor>> _loadPersistedProductionModels(
+    String databasePath,
+    String providerId,
+    CancellationToken cancellationToken,
+  ) async {
+    if (cancellationToken.isCancelled) {
+      throw StateError('Runtime creation was cancelled');
+    }
+    final store = _openProviderStore(databasePath);
+    try {
+      if (store is! ProviderModelCatalogStore) {
+        throw const ModelRuntimeException(
+          code: ModelRuntimeErrorCode.invalidConfiguration,
+          safeMessage: '模型服务目录缺失',
+          retryable: false,
+        );
+      }
+      final catalog = await (store as ProviderModelCatalogStore)
+          .loadProviderModelCatalog(providerId);
+      if (cancellationToken.isCancelled) {
+        throw StateError('Runtime creation was cancelled');
+      }
+      if (catalog == null ||
+          catalog.providerId != providerId ||
+          catalog.models.isEmpty) {
+        throw const ModelRuntimeException(
+          code: ModelRuntimeErrorCode.invalidConfiguration,
+          safeMessage: '模型服务目录缺失',
+          retryable: false,
+        );
+      }
+      return catalog.models;
+    } finally {
+      await store.close();
+    }
+  }
 }
 
 Future<DurableChatMessageRepository> _openDriftChatMessageRepository({
@@ -150,32 +217,6 @@ Future<DurableChatMessageRepository> _openDriftChatMessageRepository({
   commandOutbox: commandOutbox,
   conversations: conversations,
 );
-
-Future<List<ModelDescriptor>> _loadProductionModels(
-  String providerId,
-  CancellationToken cancellationToken,
-) async {
-  if (cancellationToken.isCancelled) {
-    throw StateError('Runtime creation was cancelled');
-  }
-  return switch (providerId) {
-    'toapis' => [
-      ModelDescriptor(
-        ref: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-        displayName: 'GPT-5 mini',
-        capabilities: const ModelCapabilities.text(),
-      ),
-    ],
-    'deepseek' => [
-      ModelDescriptor(
-        ref: ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
-        displayName: 'DeepSeek Chat',
-        capabilities: const ModelCapabilities.text(),
-      ),
-    ],
-    _ => throw StateError('Provider is not enabled for production chat'),
-  };
-}
 
 final class _SlotRuntimeReloader implements ProviderRuntimeReloader {
   const _SlotRuntimeReloader(this.slot, this.factory);
@@ -258,27 +299,32 @@ final class _ProductionAppKernel implements ApplicationKernel {
   }
 }
 
-final class _UnavailableInspectionTransport
-    implements ProviderInspectionTransport {
-  const _UnavailableInspectionTransport();
+final class _ProductionProviderModelCatalogFetcher
+    implements ProviderModelCatalogFetcher {
+  _ProductionProviderModelCatalogFetcher({
+    required this.transport,
+    required this.secretResolver,
+  });
+
+  final ProviderInspectionTransport transport;
+  final SecretResolver secretResolver;
 
   @override
-  Future<ProviderCatalogTransportResult> discoverModels(
-    ProviderInspectionRequest request,
-  ) => throw const ModelRuntimeException(
-    code: ModelRuntimeErrorCode.unsupportedEndpoint,
-    safeMessage: '模型目录暂不可用',
-    retryable: false,
-  );
-
-  @override
-  Future<ProviderHealthTransportResult> probeHealth(
-    ProviderInspectionRequest request,
-  ) => throw const ModelRuntimeException(
-    code: ModelRuntimeErrorCode.unsupportedEndpoint,
-    safeMessage: '连接测试暂不可用',
-    retryable: false,
-  );
+  Future<PersistedProviderModelCatalog> fetch(ProviderConfig config) async {
+    final snapshot = await ModelCatalogDiscovery(
+      configs: [config],
+      transport: transport,
+      secretResolver: secretResolver,
+    ).discover(config.providerId, forceRefresh: true);
+    return PersistedProviderModelCatalog(
+      providerId: snapshot.providerId,
+      models: snapshot.models,
+      discoveredAt: DateTime.fromMillisecondsSinceEpoch(
+        snapshot.discoveredAt.millisecondsSinceEpoch,
+        isUtc: true,
+      ),
+    );
+  }
 }
 
 const _productionSingleChatConversations = {
