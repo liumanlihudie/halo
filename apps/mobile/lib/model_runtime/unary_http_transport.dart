@@ -356,10 +356,10 @@ _AddressScope _ipv4Scope(List<int> bytes) {
 }
 
 String _normalizeUnaryHttpMethod(String method) {
-  if (method != 'POST') {
+  if (method != 'GET' && method != 'POST') {
     throw ArgumentError('Unsupported unary HTTP method');
   }
-  return 'POST';
+  return method;
 }
 
 @immutable
@@ -673,6 +673,35 @@ class SecureJsonHttpClient {
     Map<String, String> headers = const {},
     Set<String> sensitiveHeaderNames = const {},
     CancellationToken? cancellationToken,
+  }) => _requestJson(
+    method: 'POST',
+    endpoint: endpoint,
+    body: body,
+    headers: headers,
+    sensitiveHeaderNames: sensitiveHeaderNames,
+    cancellationToken: cancellationToken ?? CancellationToken(),
+  );
+
+  Future<SecureJsonHttpResponse> getJson({
+    required Uri endpoint,
+    required Map<String, String> headers,
+    required Set<String> sensitiveHeaderNames,
+    required CancellationToken cancellationToken,
+  }) => _requestJson(
+    method: 'GET',
+    endpoint: endpoint,
+    headers: headers,
+    sensitiveHeaderNames: sensitiveHeaderNames,
+    cancellationToken: cancellationToken,
+  );
+
+  Future<SecureJsonHttpResponse> _requestJson({
+    required String method,
+    required Uri endpoint,
+    Map<String, Object?>? body,
+    required Map<String, String> headers,
+    required Set<String> sensitiveHeaderNames,
+    required CancellationToken cancellationToken,
   }) async {
     _validateEndpoint(endpoint);
     _validateHeaders(headers);
@@ -683,8 +712,12 @@ class SecureJsonHttpClient {
         UnaryTransportErrorCode.invalidCredential,
       );
     }
-    final encodedBody = _encodeRequestBody(body);
-    final callerToken = cancellationToken ?? CancellationToken();
+    final encodedBody = switch (method) {
+      'GET' when body == null => Uint8List(0),
+      'POST' when body != null => _encodeRequestBody(body),
+      _ => throw ArgumentError('Invalid unary JSON request'),
+    };
+    final callerToken = cancellationToken;
     if (callerToken.isCancelled) {
       throw const UnaryTransportException(UnaryTransportErrorCode.cancelled);
     }
@@ -708,6 +741,7 @@ class SecureJsonHttpClient {
     });
 
     final operation = _execute(
+      method: method,
       endpoint: endpoint,
       bodyBytes: encodedBody,
       headers: headers,
@@ -748,6 +782,7 @@ class SecureJsonHttpClient {
   }
 
   Future<SecureJsonHttpResponse> _execute({
+    required String method,
     required Uri endpoint,
     required Uint8List bodyBytes,
     required Map<String, String> headers,
@@ -762,7 +797,7 @@ class SecureJsonHttpClient {
     try {
       response = await adapter.send(
         UnaryHttpAdapterRequest(
-          method: 'POST',
+          method: method,
           endpoint: endpoint,
           headers: headers,
           sensitiveHeaderNames: sensitiveHeaderNames,

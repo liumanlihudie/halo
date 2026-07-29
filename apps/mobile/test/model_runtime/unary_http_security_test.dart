@@ -490,15 +490,20 @@ void main() {
     },
   );
 
-  test('adapter requests reject unsafe and unknown HTTP methods', () {
+  test('adapter requests accept only canonical GET and POST methods', () {
     for (final method in [
       '',
       ' ',
-      'GET',
+      'PATCH',
+      'get',
       'post',
+      ' GET',
+      'GET ',
       ' POST',
       'POST ',
+      'GET\r\nInjected',
       'POST\r\nInjected',
+      'GET\tInjected',
       'POST\tInjected',
     ]) {
       expect(
@@ -508,13 +513,25 @@ void main() {
       );
     }
 
-    final request = _adapterRequest('POST');
-    expect(request.method, 'POST');
-    expect(request.toString(), contains('method: POST'));
+    for (final method in ['GET', 'POST']) {
+      final request = _adapterRequest(method);
+      expect(request.method, method);
+      expect(request.toString(), contains('method: $method'));
+    }
   });
 
-  test('safe fake records reject log-injecting HTTP methods', () {
-    for (final method in ['', 'GET', 'POST\r\nInjected', 'POST Injected']) {
+  test('safe fake records accept only canonical GET and POST methods', () {
+    for (final method in [
+      '',
+      'get',
+      'post',
+      ' GET',
+      'GET ',
+      'GET\r\nInjected',
+      'POST\r\nInjected',
+      'GET Injected',
+      'POST Injected',
+    ]) {
       expect(
         () => _safeRecord(method),
         throwsA(isA<ArgumentError>()),
@@ -522,9 +539,103 @@ void main() {
       );
     }
 
-    final record = _safeRecord('POST');
-    expect(record.method, 'POST');
-    expect(record.toString(), contains('method: POST'));
+    for (final method in ['GET', 'POST']) {
+      final record = _safeRecord(method);
+      expect(record.method, method);
+      expect(record.toString(), contains('method: $method'));
+    }
+  });
+
+  test(
+    'GET sends no body or content type and safe fake redacts credentials',
+    () async {
+      const credential = 'catalog-secret-that-must-not-be-retained';
+      final adapter =
+          FakeUnaryHttpAdapter(
+            retainSafeHeaderValuesForTesting: true,
+            retainRequestContentForTesting: true,
+          )..enqueueJson(
+            statusCode: 302,
+            body: const {},
+            headers: const {'location': 'https://attacker.example/collect'},
+          );
+      final client = SecureJsonHttpClient(
+        adapter: adapter,
+        endpointPolicy: _AllowingEndpointPolicy(),
+      );
+
+      final response = await client.getJson(
+        endpoint: Uri.parse('https://example.com/v1/models'),
+        headers: const {
+          'accept': 'application/json',
+          'authorization': 'Bearer $credential',
+        },
+        sensitiveHeaderNames: const {'authorization'},
+        cancellationToken: CancellationToken(),
+      );
+
+      expect(response.statusCode, 302);
+      final record = adapter.records.single;
+      expect(record.method, 'GET');
+      expect(record.path, '/v1/models');
+      expect(record.hasBody, isFalse);
+      expect(record.bodyByteLength, 0);
+      expect(record.body, isEmpty);
+      expect(record.contentType, isNull);
+      expect(record.accept, 'application/json');
+      expect(record.followRedirects, isFalse);
+      expect(record.authorizationWasBearer, isTrue);
+      expect(record.hadCredential, isTrue);
+      expect(record.safeHeaders, isNot(containsValue(credential)));
+      expect(record.safeHeaders, isNot(contains('authorization')));
+      expect(record.toString(), isNot(contains(credential)));
+    },
+  );
+
+  test('GET cancellation aborts the shared fake request', () async {
+    final adapter = FakeUnaryHttpAdapter()..enqueuePending();
+    final token = CancellationToken();
+    final client = SecureJsonHttpClient(
+      adapter: adapter,
+      endpointPolicy: _AllowingEndpointPolicy(),
+    );
+    final future = client.getJson(
+      endpoint: Uri.parse('https://example.com/v1/models'),
+      headers: const {},
+      sensitiveHeaderNames: const {},
+      cancellationToken: token,
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    token.cancel();
+
+    await expectLater(
+      future,
+      throwsA(_transportError(UnaryTransportErrorCode.cancelled)),
+    );
+    expect(adapter.cancellationObserved, isTrue);
+  });
+
+  test('GET runs endpoint policy before and after adapter dispatch', () async {
+    final adapter = FakeUnaryHttpAdapter()
+      ..enqueueJson(statusCode: 200, body: {'data': <Object?>[]});
+    final policy = _TrackingEndpointPolicy();
+    final client = SecureJsonHttpClient(
+      adapter: adapter,
+      endpointPolicy: policy,
+    );
+    final endpoint = Uri.parse('https://models.example/v1/models');
+
+    await client.getJson(
+      endpoint: endpoint,
+      headers: const {},
+      sensitiveHeaderNames: const {},
+      cancellationToken: CancellationToken(),
+    );
+
+    expect(policy.beforeEndpoints, [endpoint]);
+    expect(policy.afterEndpoints, [endpoint]);
+    expect(policy.remoteAddresses.single.address, '8.8.8.8');
   });
 
   test('safe fake retains no header values by default', () async {
@@ -657,4 +768,21 @@ class _AllowingEndpointPolicy implements EndpointPolicy {
 
   @override
   void validateAfterConnect(Uri endpoint, InternetAddress remoteAddress) {}
+}
+
+class _TrackingEndpointPolicy implements EndpointPolicy {
+  final List<Uri> beforeEndpoints = [];
+  final List<Uri> afterEndpoints = [];
+  final List<InternetAddress> remoteAddresses = [];
+
+  @override
+  Future<void> validateBeforeConnect(Uri endpoint) async {
+    beforeEndpoints.add(endpoint);
+  }
+
+  @override
+  void validateAfterConnect(Uri endpoint, InternetAddress remoteAddress) {
+    afterEndpoints.add(endpoint);
+    remoteAddresses.add(remoteAddress);
+  }
 }

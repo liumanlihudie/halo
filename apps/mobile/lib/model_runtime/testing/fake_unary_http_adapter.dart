@@ -200,8 +200,8 @@ class FakeUnaryHttpAdapter implements UnaryHttpAdapter {
 class _PendingOutcome {}
 
 String _normalizeSafeRecordMethod(String method) {
-  if (method != 'POST') {
+  if (method != 'GET' && method != 'POST') {
     throw ArgumentError('Unsupported unary HTTP method');
   }
-  return 'POST';
+  return method;
 }

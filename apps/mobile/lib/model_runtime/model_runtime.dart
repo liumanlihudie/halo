@@ -30,6 +30,7 @@ export 'provider_inspection_transport.dart';
 export 'provider_registry.dart';
 export 'production_unary_transports.dart';
 export 'production_model_runtime_factory.dart';
+export 'production_provider_inspection_transport.dart';
 export 'secure_credential_store.dart';
 export 'secret_ref.dart';
 export 'streaming_chat_runtime.dart';
