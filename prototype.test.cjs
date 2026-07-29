@@ -19,10 +19,218 @@ function expectAll(source, values, label) {
   }
 }
 
-test('prototype contains the four AI-only IM tabs', () => {
+test('prototype contains the four familiar but Halo-specific top tabs', () => {
   const html = readPrototype();
-  expectAll(html, ['对话', '通讯录', 'AI 朋友圈', '设置'], 'navigation');
+  expectAll(html, ['对话', '专家团', '圈层', '设置'], 'navigation');
+  assert.doesNotMatch(html, />通讯录<|>AI 朋友圈</);
   assert.doesNotMatch(html, /真人好友|真人朋友圈|企业通讯录/);
+});
+
+test('circle is an unclassified reverse-chronological expert feed, not a Moments clone', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'class="circle-head"',
+      'class="circle-post"',
+      '你的专家最近在想什么、做什么',
+      '主动分享',
+      '定时任务',
+      '监控变化',
+      '任务失败',
+      '查看来源',
+      '继续对话'
+    ],
+    'circle feed'
+  );
+  assert.doesNotMatch(html, /class="moment-cover"|class="cover-avatar"|class="feed-space"/);
+});
+
+test('each expert can be prevented from publishing without disabling their work', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'const circlePublisherState=',
+      'function setCirclePublishing(',
+      'function syncCirclePermissionUI(',
+      'data-action="circle-publishing-toggle"',
+      'data-action="block-circle-publisher"',
+      '不让该专家发圈层',
+      '不会停止对话、任务、定时任务或监控'
+    ],
+    'circle publishing controls'
+  );
+});
+
+test('current UI copy uses expert team and circle terminology', () => {
+  const html = readPrototype();
+  expectAll(html, ['添加到专家团', '发布到圈层', '允许发布到圈层'], 'current terminology');
+  assert.doesNotMatch(
+    html,
+    /发布到朋友圈|自动总结到朋友圈|添加到通讯录|总结到 AI 朋友圈|朋友圈自动总结/
+  );
+});
+
+test('single Agent chat opens a complete chat details page', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'id="chat-details"',
+      'data-go="chat-details"',
+      '查找聊天记录',
+      '消息免打扰',
+      '置顶聊天',
+      '重要消息提醒',
+      '设置当前聊天背景',
+      '导出聊天记录',
+      '清空聊天记录',
+      '反馈专家问题'
+    ],
+    'single chat details'
+  );
+});
+
+test('group and expert pages expose familiar management paths', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      '查找群聊记录',
+      '讨论完成提醒',
+      '导出群聊记录',
+      'id="expert-data"',
+      '专家数据',
+      '最近圈层动态',
+      'data-action="filter-circle-agent"'
+    ],
+    'group and expert management'
+  );
+});
+
+test('chat details and expert data expose stateful interactive handlers', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'const conversationPreferences=',
+      'function togglePreference(',
+      'function openChatBackgroundPicker(',
+      'function openExportOptions(',
+      'function openExpertData(',
+      'function filterCircleByAgent('
+    ],
+    'interactive state'
+  );
+});
+
+test('chat history opens in a search-only idle state', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'id="historySearchInput"',
+      'id="historyContent"',
+      'data-history-mode="search-idle"',
+      'const historyViewState=',
+      '.navbar button[hidden]{display:none}'
+    ],
+    'chat history search shell'
+  );
+  assert.doesNotMatch(html, /class="history-filter|id="historyResults"/);
+});
+
+test('history search renders highlighted list results', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'const historyItems=[',
+      'messageText:',
+      'displayName:',
+      'agentName:',
+      'sourceTitle:',
+      'function renderHistorySearchResults(query)',
+      'function highlightHistoryMatch(text,query)',
+      'class="history-search-result',
+      '<mark class="history-match">'
+    ],
+    'history search results'
+  );
+});
+
+test('history categories render date-grouped cards', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'function renderHistoryCards(category)',
+      'class="history-date-section"',
+      'class="history-media-grid"',
+      'class="history-file-grid"',
+      'class="history-link-card',
+      'class="history-artifact-card',
+      'data-action="history-category-menu"',
+      "content.dataset.historyMode='category-cards'"
+    ],
+    'history card categories'
+  );
+});
+
+test('add-to-group sheet uses compact thumbnails that cannot overflow their rows', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'class="sheet-group-avatar"',
+      '.sheet-option .sheet-group-avatar{width:36px;height:36px;flex:0 0 36px',
+      '.sheet-group-avatar i{min-width:0;min-height:0',
+      '<button type="button" class="sheet-option" data-sheet-action="pick-group"'
+    ],
+    'add-to-group sheet layout'
+  );
+});
+
+test('model service UI supports multiple simultaneous providers and ModelRef labels', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'ToAPIs',
+      'DeepSeek',
+      'OpenAI',
+      'Anthropic Claude',
+      'Google Gemini',
+      '自定义 OpenAI-compatible',
+      '本地模型',
+      '豆包端到端语音',
+      '默认文字模型',
+      '默认图片模型',
+      '默认视频模型',
+      'providerId',
+      'modelId'
+    ],
+    'multi-provider UI'
+  );
+  assert.doesNotMatch(html, /所有模型必须经过 ToAPIs|平台 Token|Token 充值/);
+});
+
+test('default model selection persists providerId and modelId as separate values', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'function applyDefaultModel(kind,providerId,modelId)',
+      'applyDefaultModel(action.dataset.modelKind,action.dataset.providerRef,action.dataset.modelRef)',
+      'providerState.defaultModels[kind]={providerId,modelId}'
+    ],
+    'default model selection'
+  );
+  assert.doesNotMatch(
+    html,
+    /applyDefaultModel\(action\.dataset\.modelKind,\{providerId:/
+  );
 });
 
 test('conversation list includes three distinct text groups', () => {
@@ -91,6 +299,96 @@ test('conversation mocks cover rich message and failure formats', () => {
   );
 });
 
+test('all rich media messages expose a shared preview interaction', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'id="media-preview"',
+      'id="mediaPreviewImage"',
+      'id="mediaPreviewTitle"',
+      'id="mediaPreviewCounter"',
+      'const mediaPreviewState=',
+      'function openMediaPreview(',
+      'function stepMediaPreview(',
+      'data-preview-image=',
+      'data-preview-file=',
+      'data-preview-link=',
+      'data-action="close-media-preview"',
+      'data-action="preview-previous"',
+      'data-action="preview-next"'
+    ],
+    'shared rich media preview'
+  );
+  assert.match(
+    html,
+    /closest\('\.gallery-message,\.photo-grid,\.circle-gallery'\)/,
+    'circle galleries should open as one navigable image group'
+  );
+});
+
+test('previewable media has visible affordance and accessible labels', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      '.previewable-media',
+      '.media-preview',
+      '.media-preview-toolbar',
+      'aria-label="预览图片"',
+      'aria-label="预览文件"',
+      'aria-label="打开网页预览"'
+    ],
+    'preview affordance'
+  );
+});
+
+test('contacts group settings and context rows never show dead-end affordances', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      'data-contact-profile=',
+      'function openContactProfile(',
+      'id="profileAgentName"',
+      'id="groupInfoGoal"',
+      'id="groupInfoHost"',
+      'data-action="edit-group-goal"',
+      'data-action="edit-group-host"',
+      'data-preview-file="IOS-IM 产品规格.md"',
+      'data-action="memory-private"'
+    ],
+    'interactive rows'
+  );
+});
+
+test('call controls and rich cards use semantic buttons with feedback', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    [
+      '<button type="button" class="call-btn"',
+      '<button type="button" class="round"',
+      'aria-label="切换摄像头"',
+      'aria-label="静音"',
+      'data-action="play-voice"',
+      'data-action="inspect-rich-card"',
+      'data-go="moment-detail"'
+    ],
+    'semantic controls'
+  );
+  assert.doesNotMatch(html, /<div class="(?:call-btn|round)(?:\s|")/);
+});
+
+test('open-source market UI describes BYOK instead of platform prices', () => {
+  const html = readPrototype();
+  expectAll(
+    html,
+    ['使用你的 API Key', 'BYOK · 按服务商账单结算'],
+    'BYOK market copy'
+  );
+});
+
 test('all three groups define independent members goals and histories', () => {
   const html = readPrototype();
   expectAll(
@@ -121,6 +419,19 @@ test('single conversation sends and scenario actions update visible state', () =
     ],
     'conversation mutation'
   );
+});
+
+test('destructive message actions render as deliberate iOS controls', () => {
+  const html = readPrototype();
+  assert.match(
+    html,
+    /\.message-action\.danger\{[^}]*border:1px solid[^}]*background:#fff6f6[^}]*color:var\(--red\)/
+  );
+  assert.match(
+    html,
+    /class="message-action \$\{message\.action==='stop-task'\?'danger':''\}"/
+  );
+  assert.match(html, /ph-stop-circle/);
 });
 
 test('compact titles stay centered and one-to-one calls live in the plus menu', () => {
@@ -181,7 +492,7 @@ test('group discussion shows phases, rebuttal, stop, and summary actions', () =>
       '我不同意',
       '停止讨论',
       '保存总结',
-      '发布到朋友圈'
+      '发布到圈层'
     ],
     'discussion flow'
   );
@@ -201,12 +512,12 @@ test('main pages contain varied mock data families', () => {
   );
   expectAll(
     html,
-    ['数据洞察', '周报', '仅自己可见', '任务失败', '来源对话'],
-    'Moments mocks'
+    ['主动分享', '定时任务', '监控变化', '任务失败', '查看来源'],
+    'circle mocks'
   );
   expectAll(
     html,
-    ['iCloud', '共享事实记忆', '模型与用量', 'Face ID', '数据与权限'],
+    ['本地空间', '共享事实记忆', '模型服务', 'Face ID', '系统权限'],
     'settings mocks'
   );
 });
@@ -217,7 +528,7 @@ test('market and mutable flows are represented', () => {
     html,
     [
       'AI 市场',
-      '添加到通讯录',
+      '添加到专家团',
       '添加到群聊',
       'createGroup',
       'installAgent',
@@ -257,6 +568,8 @@ test('navigation controls use one real icon family with explicit glyph sizing', 
   const html = readPrototype();
   assert.match(html, /@phosphor-icons\/web@2\.1\.1/);
   assert.doesNotMatch(html, /remixicon|class="ri-/);
+  assert.doesNotMatch(html, /ph-orbit/, 'Phosphor 2.1.1 does not ship the ph-orbit glyph');
+  assert.match(html, /ph-circles-three/, 'circle navigation should use an available glyph');
   assert.match(html, /\.icon>i\s*\{[^}]*font-size\s*:\s*18px/);
   assert.match(html, /\.rail-icon i\s*\{[^}]*font-size\s*:\s*16px/);
   assert.match(html, /\.tabs button i\s*\{[^}]*font-size\s*:\s*21px/);
@@ -364,23 +677,23 @@ test('every market expert can populate the shared detail screen', () => {
   );
 });
 
-test('settings exposes an expanded identity card and real icons', () => {
+test('settings exposes an expanded local-space card and real icons', () => {
   const html = readPrototype();
   expectAll(
     html,
     [
       'class="settings-profile-card"',
-      'Halo ID',
-      '偏好直接结论 · 主要用于产品与研究',
+      '无账号 · 数据由你掌控',
+      '数据仅保存在本机',
       '已添加 Agent',
-      '本月用量',
+      '已配置模型',
       'ph ph-brain',
       'ph ph-users',
       'ph ph-sparkle',
-      'ph ph-chart-donut',
+      'ph ph-cpu',
       'ph ph-waveform',
       'ph ph-video-camera',
-      'ph ph-bell',
+      'ph ph-database',
       'ph ph-shield-check',
       'ph ph-scan'
     ],
@@ -389,110 +702,69 @@ test('settings exposes an expanded identity card and real icons', () => {
   assert.doesNotMatch(html, /<div class="row-icon">(?:忆|私|圈|模|声|像|铃|权|面)<\/div>/);
 });
 
-test('settings exposes complete account security and token navigation', () => {
+test('settings exposes BYOK providers local data and optional self-hosting', () => {
   const html = readPrototype();
   expectAll(
     html,
     [
-      'data-go="account-center"',
-      'data-go="token-center"',
-      'data-go="change-password"',
-      'data-go="switch-account"',
-      'data-action="logout"',
-      'id="account-center"',
-      'id="token-center"',
-      'id="token-checkout"',
-      'id="token-result"',
-      'id="change-password"',
-      'id="switch-account"'
+      'data-go="model-providers"',
+      'data-go="provider-detail"',
+      'data-go="self-hosted-gateway"',
+      'data-go="local-data"',
+      'id="model-providers"',
+      'id="provider-detail"',
+      'id="self-hosted-gateway"',
+      'id="local-data"',
+      'API Key',
+      'iOS Keychain',
+      'OpenAI-compatible',
+      '自托管 Gateway',
+      '导入数据包',
+      '导出数据包'
     ],
-    'account and token navigation'
+    'local-first settings'
   );
 });
 
-test('authentication screens cover password code and reset flows', () => {
+test('prototype has no account authentication or platform billing flow', () => {
+  const html = readPrototype();
+  assert.doesNotMatch(html, /id="(?:login|verification-login|forgot-password|change-password|switch-account|account-center|token-center|token-checkout|token-result)"/);
+  assert.doesNotMatch(html, /data-action="(?:logout|password-login|apple-login|start-token-checkout|submit-token-payment)"/);
+  assert.doesNotMatch(html, /退出登录|验证码登录|忘记密码|充值 Token|Token 余额|删除账户/);
+});
+
+test('provider configuration can be tested saved and removed locally', () => {
   const html = readPrototype();
   expectAll(
     html,
     [
-      'id="login"',
-      'id="verification-login"',
-      'id="forgot-password"',
-      'function submitPasswordLogin()',
-      'function sendVerificationCode()',
-      'function submitVerificationLogin()',
-      'function advancePasswordReset()',
-      'function submitPasswordChange()',
-      'data-auth-error',
-      'data-action="toggle-password"',
-      'data-action="apple-login"'
+      'const providerState=',
+      'function renderProviderState()',
+      'function openProvider(id)',
+      'function testProviderConnection()',
+      'function saveProvider()',
+      'function removeProvider()',
+      'data-action="test-provider"',
+      'data-action="save-provider"',
+      'data-action="remove-provider"',
+      '只保存在本机 Keychain'
     ],
-    'authentication flows'
+    'provider configuration'
   );
 });
 
-test('prototype login accepts any non-empty demo credentials', () => {
-  const html = readPrototype();
-  const passwordLogin = html.match(/function submitPasswordLogin\(\)\{([\s\S]*?)\n  \}/);
-  const sendCode = html.match(/function sendVerificationCode\(\)\{([\s\S]*?)\n  \}/);
-  const verificationLogin = html.match(/function submitVerificationLogin\(\)\{([\s\S]*?)\n  \}/);
-
-  assert.ok(passwordLogin, 'password login handler should exist');
-  assert.match(passwordLogin[1], /if\(!account\)/);
-  assert.match(passwordLogin[1], /if\(!password\)/);
-  assert.doesNotMatch(passwordLogin[1], /validPassword/);
-
-  assert.ok(sendCode, 'send-code handler should exist');
-  assert.match(sendCode[1], /if\(!contact\)/);
-
-  assert.ok(verificationLogin, 'verification login handler should exist');
-  assert.match(verificationLogin[1], /if\(!contact\)/);
-  assert.match(verificationLogin[1], /code\.length!==6/);
-});
-
-test('account switching and logout update visible account state', () => {
+test('local data controls explain ownership backup and destructive clearing', () => {
   const html = readPrototype();
   expectAll(
     html,
     [
-      'const accountState=',
-      "id:'cofe'",
-      "id:'product-research'",
-      "id:'personal-life'",
-      'function renderAccountState()',
-      'function switchAccount(accountId)',
-      'function confirmLogout()',
-      'function completeLogout()',
-      'data-sheet-action="confirm-logout" data-go="login"',
-      "if(id==='login')accountState.authenticated=false",
-      'data-action="login-other-account"',
-      '退出登录后，Agent、记忆和成果仍会保留'
+      '数据默认保存在本机',
+      'API Key 不进入导出包',
+      'data-action="export-local-data"',
+      'data-action="import-local-data"',
+      'data-action="clear-local-data"',
+      '清除本机数据'
     ],
-    'account switching and logout'
-  );
-});
-
-test('token center supports packs payments outcomes and transactions', () => {
-  const html = readPrototype();
-  expectAll(
-    html,
-    [
-      'const tokenState=',
-      "id:'pack-50k'",
-      "id:'pack-120k'",
-      "id:'pack-260k'",
-      "id:'apple-pay'",
-      "id:'alipay'",
-      "id:'wechat-pay'",
-      'function renderTokenState()',
-      'function selectTokenPack(packId)',
-      'function selectPaymentMethod(methodId)',
-      'function submitTokenPayment(outcome)',
-      '文字模型',
-      '端到端语音',
-      'Vidu 视频',
-      '充值到账'
-    ],
-    'token flow'
+    'local data ownership'
   );
 });

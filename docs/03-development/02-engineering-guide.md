@@ -1,341 +1,144 @@
 # IOS-IM 工程开发规范
 
-版本：1.0  
 日期：2026-07-28
 
-## 1. 文档目的
-
-本文定义正式 MVP 的工程边界、推荐目录、环境、接口、测试和交付规范。当前 `prototype.html` 是产品演示，不直接演进为正式 Flutter 或服务端代码。
-
-## 2. 推荐仓库结构
-
-正式开发启动后，在 `IOS-IM` 下增加：
+## 仓库结构
 
 ```text
-IOS-IM/
-├── apps/
-│   └── mobile/
-│       ├── lib/
-│       │   ├── app/
-│       │   ├── core/
-│       │   └── features/
-│       ├── test/
-│       ├── integration_test/
-│       ├── ios/
-│       ├── android/
-│       └── pubspec.yaml
-├── services/
-│   ├── api/
-│   ├── orchestrator/
-│   └── workers/
-├── packages/
-│   ├── contracts/
-│   └── agent-evals/
-├── infra/
-│   ├── docker/
-│   └── migrations/
-├── docs/
-├── prototype.html
-└── prototype.test.cjs
+apps/
+  mobile/
+packages/
+  design_system/
+  domain/
+  provider_contracts/
+services/
+  gateway/          # 可选自托管
+docs/
 ```
 
-首版允许 API、Conversation、Agent Market 和 Moment 运行在同一个模块化单体中；LangGraph Orchestrator 独立为 Python 服务。不要在验证商业价值前拆成大量微服务。
+移动应用必须可以在 `services/gateway` 未启动时完成本地浏览、配置和所有可直连模型对话。
 
-## 3. 技术栈
+## Flutter 模块边界
 
-### Flutter 移动端
+- `foundation/database`：Drift schema、migration、事务。
+- `foundation/files`：原子文件写入、缩略图、预览和缓存。
+- `foundation/assets`：Asset 元数据、内容哈希、引用计数、生成成果和授权解析。
+- `foundation/security`：Vault，不暴露平台 API 给业务层。
+- `features/providers`：Provider 适配器与 Router。
+- `features/conversations`：消息状态机。
+- `features/chat_history`：按会话检索图片视频、文件、链接和 AI 成果。
+- `features/group_chat`：成员队列、轮次、取消和总结。
+- `features/agent_collaboration`：Agent Message Bus、任务委派、协作日志、预算、循环检测和幂等派发。
+- `features/memory`：共享/私有记忆和检索。
+- `features/local_data`：导入导出和清除。
 
-- Flutter Stable + Dart，最低支持 iOS 18 和 Android API 26。
-- Riverpod 管理 Feature 状态与依赖注入。
-- go_router 管理登录态、四 Tab ShellRoute 和类型安全路由入口。
-- Dio、WebSocket 和 Stream 管理 REST 与实时事件。
-- Drift / SQLite 管理本地缓存；数据库 Row 不直接穿透到业务层。
-- Freezed 与 json_serializable 生成不可变领域对象和契约 DTO。
-- flutter_test、integration_test、golden tests 和 mocktail。
-- 豆包语音、Vidu、通知、系统分享与无法跨端抽象的媒体能力通过 Platform Channel 或 Flutter Plugin 接入 Swift/Kotlin。
+Feature 之间通过领域接口交互，Widget 不直接执行 SQL、读取密钥或调用厂商 SDK。
 
-### 服务端
+## 核心接口
 
-- Python 3.12。
-- FastAPI 提供 REST、SSE/WebSocket 鉴权入口。
-- LangGraph 实现单聊和群聊编排。
-- PostgreSQL 保存业务数据和生产 Checkpoint。
-- Redis 用于短期锁、限流、连接路由和可丢失缓存。
-- S3 兼容对象存储保存附件。
-- Alembic 管理数据库迁移。
-- Pytest、Ruff、Mypy。
+```dart
+abstract interface class SecretVault {
+  Future<void> write(String ref, String secret);
+  Future<String?> read(String ref);
+  Future<void> delete(String ref);
+}
 
-### 可观测性
+abstract interface class ModelProvider {
+  ProviderCapabilities get capabilities;
+  Future<ConnectionResult> testConnection();
+  Future<List<ModelDescriptor>> listModels({ModelKind? kind});
+  Stream<ModelEvent> generateText(ModelRequest request);
+  Future<GenerationTask> generateMedia(MediaRequest request);
+  Future<GenerationTask> getMediaTask(String remoteTaskId);
+  Future<ProviderBalance?> getBalance();
+}
 
-- OpenTelemetry Trace 贯穿 `request_id → run_id → generation_id → tool_call_id`。
-- 结构化日志禁止记录完整 Prompt、Token、密码、短信验证码和附件正文。
-- 指标包括消息成功率、首 Token 延迟、完整延迟、重试率、停止成功率、Provider 错误率和单 Run 成本。
+abstract interface class MessageRepository {
+  Stream<List<Message>> watchConversation(String conversationId);
+  Future<void> append(Message message);
+  Future<void> updateStatus(String messageId, MessageStatus status);
+}
 
-## 4. Flutter 模块边界
-
-```text
-apps/mobile/
-├── lib/
-│   ├── app/
-│   │   ├── app.dart
-│   │   ├── router.dart
-│   │   └── environment.dart
-│   ├── core/
-│   │   ├── api/
-│   │   ├── auth/
-│   │   ├── database/
-│   │   ├── realtime/
-│   │   ├── design_system/
-│   │   ├── media/
-│   │   └── observability/
-│   └── features/
-│       ├── conversations/
-│       ├── chat/
-│       ├── group_chat/
-│       ├── contacts/
-│       ├── agent_market/
-│       ├── moments/
-│       ├── settings/
-│       ├── voice_call/
-│       └── video_call/
-├── ios/
-└── android/
+abstract interface class AssetRepository {
+  Stream<List<Asset>> watchConversationAssets(
+    String conversationId,
+    AssetFilter filter,
+  );
+  Future<Asset> importFile(ImportAssetCommand command);
+  Future<Asset> finalizeGeneratedAsset(GeneratedAssetCommand command);
+  Future<void> addReference(AssetReference reference);
+  Future<DeleteAssetResult> removeReference(AssetReference reference);
+}
 ```
 
-规则：
+## 状态和并发
 
-1. Feature 不直接依赖其他 Feature 的 Widget 或 Notifier。
-2. UI 使用领域 DTO，不使用数据库 Row 或原始网络 JSON。
-3. 导航由 go_router 的集中 Router 管理，不在任意 Widget 中拼装全局页面状态。
-4. WebSocket 事件先进入 Realtime Store，再更新 Feature Repository。
-5. 所有图片、文件和音视频都通过 Media 层获得短期访问地址。
-6. `lib/` 不直接导入 Swift/Kotlin 类型；原生差异通过 Dart 接口和插件实现隔离。
+- 每次生成使用稳定 `runId` 和 `messageId`。
+- 取消是显式状态，不用丢弃 Stream 代替。
+- UI reducer 必须忽略已完成或已取消 Run 的迟到事件。
+- 工具副作用带幂等键。
+- 群聊设置轮数、时间、并发和模型用量上限。
+- Agent 间通讯必须持久化结构化 AgentMessage；自然语言不能直接触发另一个 Agent。
+- 协作分支只能引用当前 Run 授权的 Message、Claim、Evidence 和 Asset ID。
 
-## 5. 服务端模块边界
+## 配置与密钥
 
-```text
-services/api/app/
-├── identity/
-├── accounts/
-├── billing/
-├── agents/
-├── conversations/
-├── messages/
-├── memories/
-├── moments/
-├── files/
-├── realtime/
-└── shared/
+- Provider 的 URL、模型 ID、能力和 Key 引用可进 SQLite。
+- 完整 API Key 和 Gateway 令牌只能进 Keychain / Keystore。
+- ToAPIs 预置配置的默认 Base URL 为 `https://toapis.com/v1`；业务层不得拼接任何厂商路径。
+- Provider Registry 支持多个 Adapter 和同类型多个实例；模型引用必须保存 `providerId + modelId`。
+- 模型目录以 `GET /models?type=all` 的当前 Key 响应为准，缓存必须记录刷新时间。
+- `.env.example` 只放字段名与假值。
+- 日志、Telemetry、Crash report、剪贴板和导出包默认脱敏。
+- 连接测试不得发送用户对话正文。
 
-services/orchestrator/app/
-├── graphs/
-│   ├── single_chat/
-│   ├── group_chat/
-│   ├── moment_generation/
-│   └── common/
-├── runners/
-├── model_gateway/
-├── tools/
-├── context/
-├── policies/
-└── telemetry/
-```
+## 数据库迁移
 
-API 服务拥有业务数据写权限。Orchestrator 通过明确的 Repository/HTTP 接口读取上下文和追加生成消息，不直接随意修改账户、充值或市场数据。
+- 每个 schema 变更提供 up migration 和升级测试。
+- 禁止在 Widget 内查询数据库。
+- 批量消息和记忆写入使用事务。
+- 删除附件前检查引用计数。
+- 数据库只保存沙盒相对路径，不保存设备绝对路径。
+- 模型生成结果先写临时文件，校验完成后原子移动到资产目录。
+- GenerationArtifact 必须保存来源消息、Agent、Provider、模型和输入资产 ID。
+- 迁移失败保留原文件并提供可恢复错误。
 
-## 6. 核心接口
+## Gateway
 
-### AgentRunner
+Gateway 使用小型模块化服务即可：
 
-```python
-class AgentRunner(Protocol):
-    async def stream(
-        self,
-        request: AgentRunRequest,
-    ) -> AsyncIterator[AgentRunEvent]: ...
+- 健康检查与版本协商。
+- 短期凭证和请求签名。
+- WebSocket / SSE 适配。
+- 默认无正文日志、无对话数据库。
 
-    async def cancel(self, generation_id: str) -> None: ...
-```
+不得添加 Halo 官方账户、平台 Token 账本或强制云同步。
 
-`AgentRunRequest` 必须包含：
+## 测试分层
 
-- `generation_id`
-- `agent_profile_version`
-- `model_profile`
-- `context_snapshot`
-- `tool_policy`
-- `limits`
+| 层级 | 内容 |
+|---|---|
+| Dart 单元 | Router、Reducer、Vault 引用、导出过滤 |
+| Widget | 四 Tab、Provider 设置、群聊、聊天记录分类、本地数据 |
+| Repository | migration、事务、附件去重、引用删除、生成成果落盘 |
+| Provider 契约 | ToAPIs 模型目录、SSE、异步媒体、超时、取消、限流与错误映射 |
+| Gateway 集成 | 健康检查、签名、版本不兼容 |
+| 真机 | 权限、后台、弱网、磁盘、Keychain |
 
-Hermes Runner、直接 Provider Runner 或未来本地模型 Runner 都实现同一协议。
-
-### ModelGateway
-
-```python
-class ModelGateway(Protocol):
-    async def stream_chat(
-        self,
-        request: NormalizedModelRequest,
-    ) -> AsyncIterator[NormalizedModelEvent]: ...
-```
-
-业务层禁止直接判断 Anthropic/OpenAI/豆包响应格式。
-
-### MessageRepository
-
-```python
-class MessageRepository(Protocol):
-    async def accept_user_message(self, command: SendMessage) -> Message: ...
-    async def append_agent_delta(self, event: AgentDelta) -> None: ...
-    async def complete_agent_message(self, event: AgentCompleted) -> Message: ...
-```
-
-所有写方法带幂等键。
-
-## 7. API 与事件契约
-
-契约源文件建议存放于：
-
-```text
-packages/contracts/
-├── openapi.yaml
-├── events/
-│   ├── realtime-event.schema.json
-│   ├── message-event.schema.json
-│   └── generation-event.schema.json
-└── fixtures/
-```
-
-生成 Dart DTO 和 Python 校验模型，禁止手工维护两份不同字段名。兼容性规则：
-
-- 新增可选字段属于向后兼容。
-- 删除字段、改类型、改枚举语义必须升级 API 版本。
-- Event 必须允许旧客户端忽略未知事件。
-- 服务端在最低支持版本淘汰前保留旧字段。
-
-## 8. 配置和密钥
-
-环境分为 `local`、`staging`、`production`：
-
-```text
-DATABASE_URL
-REDIS_URL
-OBJECT_STORAGE_ENDPOINT
-OBJECT_STORAGE_BUCKET
-MODEL_GATEWAY_MASTER_KEY
-APPLE_BUNDLE_ID
-APPLE_TEAM_ID
-DOUBAO_VOICE_APP_ID
-VIDU_API_BASE_URL
-```
-
-- `.env.example` 只包含变量名和无敏感默认值。
-- 本地密钥不得提交 Git。
-- 生产密钥进入云端 Secret Manager。
-- 移动客户端只保存短期登录 Token 和设备标识，不内置 Provider 主密钥。
-- 所有外部 Provider 配置支持独立禁用和灰度。
-
-## 9. 数据库迁移
-
-1. 每次 Schema 修改必须带 Alembic Migration。
-2. Migration 在 Staging 真实数据副本上验证升级时间。
-3. 删除字段使用“停止写入 → 观察 → 停止读取 → 后续版本删除”流程。
-4. 消息和账务表只允许可审计修正，不做无记录覆盖。
-5. Agent Profile 版本不可变；更新产生新版本。
-
-## 10. 开发流程
-
-每个功能按以下顺序：
-
-1. 修改产品/功能规格。
-2. 修改 OpenAPI 或 Event Schema。
-3. 写失败的单元或契约测试。
-4. 实现最小功能。
-5. 运行单元、集成和受影响的 UI 测试。
-6. 更新 QA 证据与文档。
-7. 提交一个意图明确的 Commit。
-
-Commit 建议：
-
-```text
-feat(group-chat): add explicit mentioned routing
-fix(realtime): deduplicate replayed message events
-docs(architecture): define agent runner boundary
-test(billing): cover duplicate Apple transaction
-```
-
-## 11. 测试分层
-
-| 层级 | 内容 | 阻断合并 |
-|---|---|---|
-| 单元 | Router、Reducer、预算、权限、格式化 | 是 |
-| 契约 | OpenAPI、事件 Schema、Provider 适配 | 是 |
-| 集成 | PostgreSQL、Checkpoint、对象存储、WebSocket | 是 |
-| Eval | Agent 选择、总结质量、隐私泄露、工具策略 | 低于阈值阻断 |
-| Flutter Widget | Router、Reducer、四 Tab、登录、聊天、群聊、市场和设置 | 核心路径阻断 |
-| 双端集成 | iOS 与 Android 的登录、权限、媒体、前后台恢复和通知 | 核心路径阻断 |
-| 视觉回归 | 字号、安全区、图标、截断和滚动 | 发布前阻断 |
-
-Agent Eval 数据不能只使用正常问题，至少包含：
-
-- 模糊意图。
-- 错误 Mention。
-- 提示词注入。
-- 请求 Agent 泄露其他 Agent 私有记忆。
-- 超长群聊。
-- Provider 超时和部分失败。
-- 用户中途停止。
-
-## 12. 本地开发
-
-正式工程建立后，统一入口建议为：
+## 提交门槛
 
 ```bash
-make bootstrap
-make dev
-make test
-make lint
-make contracts
+dart format --set-exit-if-changed .
+flutter analyze
+flutter test
 ```
 
-`make dev` 启动 PostgreSQL、Redis、对象存储模拟、API 和 Orchestrator。Flutter 使用 `--dart-define=API_BASE_URL=...` 指向本机 API；Android 模拟器默认使用 `10.0.2.2`，iOS 模拟器使用 `127.0.0.1`。
+Gateway 另运行格式化、类型检查、单元测试和容器健康检查。CI 必须包含 secret scan、依赖漏洞和许可证扫描。
 
-本机前置依赖：
+## 发布门槛
 
-- Flutter Stable，通过 FVM 锁定仓库版本并提交 `.fvmrc`。
-- Xcode 与 iOS Simulator。
-- Android Studio、Android SDK 和 Android Emulator。
-- CocoaPods，仅用于 Flutter iOS 插件依赖。
-- Java 17 或 Flutter 当前稳定版要求的兼容 JDK。
-
-移动端常用命令：
-
-```bash
-cd IOS-IM/apps/mobile
-fvm flutter pub get
-fvm dart run build_runner build --delete-conflicting-outputs
-fvm flutter analyze
-fvm flutter test
-fvm flutter test integration_test
-fvm flutter run
-```
-
-当前 HTML 演示仍使用：
-
-```bash
-python3 -m http.server 4173 --directory IOS-IM
-node --test IOS-IM/prototype.test.cjs
-```
-
-## 13. 发布门槛
-
-进入 TestFlight 与 Google Play 内测前必须满足：
-
-- 账户删除和数据导出真实可用。
-- Apple 登录、Token 账本与支付回执具备幂等处理。
-- 权限文案和 Privacy Manifest 完成。
-- Android Data Safety、通知权限和前台服务声明完成。
-- Provider、豆包和 Vidu 都有超时、熔断和总开关。
-- 群聊 Run 具备 Token、轮数、时间和工具调用上限。
-- Prompt、Agent Profile 和 Graph 都记录版本。
-- Staging 完成弱网、后台恢复、推送和断线重连测试。
-- 崩溃、日志和 Trace 不包含敏感内容。
+- 全部测试通过且关键页面完成视觉 QA。
+- 数据升级和导入导出在上一版本真实数据上验证。
+- App 包与仓库没有服务商密钥。
+- 无账号首次启动路径在离线环境可进入。
+- README、隐私说明、许可证和 Gateway 部署文档同步更新。

@@ -16,9 +16,14 @@
 
 | 顺序 | 文档 | 用途 |
 |---|---|---|
-| 01 | [总体技术方案](02-architecture/01-system-technical-design.md) | Flutter 双端、服务端、数据、API、模型、语音视频与安全总设计 |
-| 02 | [多 Agent 编排方案](02-architecture/02-agent-orchestration-langgraph.md) | 三种群聊模式、LangGraph 状态机、上下文和失败策略 |
-| 03 | [技术选型决策](02-architecture/03-technology-selection.md) | OpenMinis、Hermes、LangGraph 的评估和最终决定 |
+| 01 | [总体技术方案](02-architecture/01-system-technical-design.md) | Flutter 双端、本地数据、Provider、Gateway、语音视频与安全 |
+| 02 | [多 Agent LangGraph 参考](02-architecture/02-agent-orchestration-langgraph.md) | 可选自托管复杂 Runner 的图状态与失败策略 |
+| 03 | [技术选型决策](02-architecture/03-technology-selection.md) | 本地优先技术栈与不采用项 |
+| 04 | [开源本地优先架构](02-architecture/04-local-first-open-source-architecture.md) | 数据边界、请求路径和 Gateway 责任 |
+| 05 | [ToAPIs Provider 接入](02-architecture/05-toapis-provider-integration.md) | 预置聚合中转站、Key 配置、模型发现、流式文本与异步媒体 |
+| 06 | [多模型 Provider 架构](02-architecture/06-multi-provider-model-access.md) | ToAPIs、官方 API、自定义兼容服务、本地模型与跨 Provider 路由 |
+| 07 | [Agent 事实可信与证据协议](02-architecture/07-agent-truthfulness-evidence-protocol.md) | Claim、证据、独立核验、受约束总结、发布闸门与幻觉评测 |
+| 08 | [可执行 Agent Profile 与 Prompt 系统](02-architecture/08-executable-agent-profile-prompt-system.md) | Prompt Package、Routing Card、工具策略、记忆、输出 Schema 与评测合同 |
 
 ## 03 开发
 
@@ -35,19 +40,25 @@
 |---|---|---|
 | 01 | [AI 市场与设置](04-feature-specs/01-agent-market-settings-design.md) | 50 位专家市场和设置资料卡 |
 | 02 | [全会话 Mock 数据](04-feature-specs/02-conversation-mock-data-design.md) | 各类消息、会话和异常状态覆盖 |
-| 03 | [账户、认证与 Token](04-feature-specs/03-account-auth-token-design.md) | 登录、验证码、密码、切换账号、退出和充值 |
+| 03 | [本地优先与 BYOK](04-feature-specs/03-local-first-byok-design.md) | 无账号、模型密钥、本地数据与自托管 Gateway |
+| 04 | [聊天记录与文件资产](04-feature-specs/04-chat-history-assets-design.md) | 按会话分类查找用户文件和模型生成成果 |
+| 05 | [专家团与圈层](04-feature-specs/05-expert-team-circle-design.md) | 四栏导航、私人专家动态流和按专家发布权限 |
+| 06 | [聊天详情与专家资料完整交互](04-feature-specs/06-chat-details-expert-profile-interactions.md) | 单聊、群聊、专家资料的熟悉路径与全可点击验收矩阵 |
 
 ## 05 历史实施计划
 
 - [AI 市场与设置实施计划](05-implementation-plans/01-agent-market-settings-plan.md)
 - [全会话 Mock 数据实施计划](05-implementation-plans/02-conversation-mock-data-plan.md)
-- [账户、认证与 Token 实施计划](05-implementation-plans/03-account-auth-token-plan.md)
+- [本地优先与 BYOK 实施计划](05-implementation-plans/03-local-first-byok-plan.md)
+- [专家团与圈层实施计划](05-implementation-plans/04-expert-team-circle-plan.md)
+- [聊天详情与专家资料完整交互实施计划](05-implementation-plans/05-chat-details-expert-profile-plan.md)
 
 这些文档记录 HTML 演示的实现过程。正式 MVP 开发以 `03-development/04-mvp-implementation-plan.md` 为准。
 
 ## 06 质量
 
 - [设计与交互 QA 记录](06-quality/01-design-qa.md)
+- [聊天详情与多 Provider QA](06-quality/02-chat-details-multi-provider-qa.md)
 - `06-quality/assets/`：浏览器验收截图
 
 ## 根目录非文档文件

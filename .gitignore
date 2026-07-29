@@ -1,4 +1,5 @@
 .DS_Store
+migration-backups/
 
 # Flutter / Dart
 .dart_tool/

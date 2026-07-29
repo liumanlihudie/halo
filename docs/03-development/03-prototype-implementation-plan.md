@@ -4,13 +4,13 @@
 
 **Goal:** Build a realistic, single-file, clickable HTML prototype for the personal AI-only iOS IM defined in `../01-product/02-product-design.md`.
 
-**Architecture:** Copy the approved V4 prototype into `IOS-IM/prototype.html`, then extend its page-based state machine with group-chat screens, modal sheets, mutable mock state, and richer datasets. Keep the artifact build-free and self-contained except for remote mock images, while providing a Node test that verifies required screens, controls, and content contracts.
+**Architecture:** Copy the approved V4 prototype into `prototype.html`, then extend its page-based state machine with group-chat screens, modal sheets, mutable mock state, and richer datasets. Keep the artifact build-free and self-contained except for remote mock images, while providing a Node test that verifies required screens, controls, and content contracts.
 
 **Tech Stack:** HTML5, CSS, vanilla JavaScript, Node.js built-in test runner.
 
 ## Global Constraints
 
-- All deliverables live under `/Users/cofe/office Lady/IOS-IM`.
+- All deliverables live in the repository root and use repository-relative paths.
 - The prototype is personal-only and contains no human social contacts.
 - The bottom navigation has exactly four tabs: 对话、通讯录、AI 朋友圈、设置.
 - Group chat is text-only; voice and video remain one-to-one Agent features.
@@ -24,13 +24,13 @@
 ### Task 1: Establish the Prototype Contract
 
 **Files:**
-- Create: `IOS-IM/prototype.test.cjs`
-- Read: `IOS-IM/docs/01-product/02-product-design.md`
-- Read: `IOS-IM/docs/01-product/03-prototype-spec.md`
+- Create: `prototype.test.cjs`
+- Read: `docs/01-product/02-product-design.md`
+- Read: `docs/01-product/03-prototype-spec.md`
 
 **Interfaces:**
 - Consumes: the page and interaction requirements in the two specification files.
-- Produces: a Node test suite that reads `IOS-IM/prototype.html` and asserts required page IDs, copy, controls, mock types, and the absence of group-call controls.
+- Produces: a Node test suite that reads `prototype.html` and asserts required page IDs, copy, controls, mock types, and the absence of group-call controls.
 
 - [ ] **Step 1: Write the failing structure tests**
 
@@ -38,25 +38,25 @@ Create tests for the four main tabs, three named group chats, `group-chat`, `gro
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
-Expected: FAIL because `IOS-IM/prototype.html` does not exist.
+Expected: FAIL because `prototype.html` does not exist.
 
 - [ ] **Step 3: Commit the contract**
 
 Run:
 
 ```bash
-git add IOS-IM/prototype.test.cjs IOS-IM/docs/03-development/03-prototype-implementation-plan.md
+git add prototype.test.cjs docs/03-development/03-prototype-implementation-plan.md
 git commit -m "test: define IOS-IM prototype contract"
 ```
 
 ### Task 2: Migrate and Restructure the Existing Prototype
 
 **Files:**
-- Create: `IOS-IM/prototype.html`
+- Create: `prototype.html`
 - Source: `.superpowers/brainstorm/62868-1785223698/content/ios-interactive-prototype-v4.html`
-- Modify: `IOS-IM/prototype.test.cjs`
+- Modify: `prototype.test.cjs`
 
 **Interfaces:**
 - Consumes: the approved V4 visual language and `data-go` page navigation convention.
@@ -64,7 +64,7 @@ git commit -m "test: define IOS-IM prototype contract"
 
 - [ ] **Step 1: Copy the existing approved HTML**
 
-Copy V4 to `IOS-IM/prototype.html` as the visual and interaction baseline.
+Copy V4 to `prototype.html` as the visual and interaction baseline.
 
 - [ ] **Step 2: Add all required page shells**
 
@@ -76,15 +76,15 @@ Ensure the group header contains search, group information, and more actions, wi
 
 - [ ] **Step 4: Run contract tests**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: structure assertions pass; behavior assertions may remain failing until Task 3.
 
 ### Task 3: Implement the Three Group Reply Modes
 
 **Files:**
-- Modify: `IOS-IM/prototype.html`
-- Modify: `IOS-IM/prototype.test.cjs`
+- Modify: `prototype.html`
+- Modify: `prototype.test.cjs`
 
 **Interfaces:**
 - Consumes: group members and reply-mode controls declared in the HTML.
@@ -96,7 +96,7 @@ Assert the presence of the three function names, explicit modes `auto`, `mention
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: FAIL on missing mode functions.
 
@@ -118,15 +118,15 @@ The stop control cancels pending mock timers and appends a “讨论已停止”
 
 - [ ] **Step 7: Run tests and verify GREEN**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: all group interaction contract tests pass.
 
 ### Task 4: Expand Mock Data and Mutable Interactions
 
 **Files:**
-- Modify: `IOS-IM/prototype.html`
-- Modify: `IOS-IM/prototype.test.cjs`
+- Modify: `prototype.html`
+- Modify: `prototype.test.cjs`
 
 **Interfaces:**
 - Consumes: existing pages and generic bottom-sheet/toast helpers.
@@ -138,7 +138,7 @@ Assert at least three content families per main page and the required group/mark
 
 - [ ] **Step 2: Run tests and verify RED**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: FAIL on missing mock content or action labels.
 
@@ -164,15 +164,15 @@ Creating a group adds it to the conversation list; adding an Agent updates Conta
 
 - [ ] **Step 8: Run tests and verify GREEN**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: all tests pass.
 
 ### Task 5: Visual and Interaction Verification
 
 **Files:**
-- Verify: `IOS-IM/prototype.html`
-- Verify: `IOS-IM/prototype.test.cjs`
+- Verify: `prototype.html`
+- Verify: `prototype.test.cjs`
 - Update: `IOS-IM/README.md`
 
 **Interfaces:**
@@ -184,15 +184,15 @@ Expected: all tests pass.
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
-git diff --check -- IOS-IM
+node --test prototype.test.cjs
+git diff --check -- .
 ```
 
 Expected: zero failures and zero whitespace errors.
 
 - [ ] **Step 2: Serve the prototype locally**
 
-Run: `python3 -m http.server 4173 --directory IOS-IM`
+Run: `python3 -m http.server 4173 --directory .`
 
 Open: `http://127.0.0.1:4173/prototype.html`
 

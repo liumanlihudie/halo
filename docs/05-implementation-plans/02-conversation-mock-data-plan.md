@@ -24,8 +24,8 @@
 ### Task 1: 建立 12 条可映射会话的数据契约
 
 **Files:**
-- Modify: `IOS-IM/prototype.test.cjs`
-- Modify: `IOS-IM/prototype.html`
+- Modify: `prototype.test.cjs`
+- Modify: `prototype.html`
 
 **Interfaces:**
 - Produces: `conversationMocks: Record<string, ConversationMock>`
@@ -60,7 +60,7 @@ test('every conversation list item maps to one of twelve rich mock conversations
 
 - [ ] **Step 2: 运行测试确认失败**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: FAIL，提示 `conversationMocks` 或会话 ID 缺失。
 
@@ -89,14 +89,14 @@ Expected: FAIL，提示 `conversationMocks` 或会话 ID 缺失。
 
 - [ ] **Step 4: 运行测试确认通过**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: 新测试 PASS，既有测试无回归。
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs
+git add prototype.html prototype.test.cjs
 git commit -m "feat: add twelve mapped conversation scenarios"
 ```
 
@@ -105,8 +105,8 @@ git commit -m "feat: add twelve mapped conversation scenarios"
 ### Task 2: 实现共享消息渲染器和完整格式
 
 **Files:**
-- Modify: `IOS-IM/prototype.test.cjs`
-- Modify: `IOS-IM/prototype.html`
+- Modify: `prototype.test.cjs`
+- Modify: `prototype.html`
 
 **Interfaces:**
 - Consumes: `conversationMocks`
@@ -147,7 +147,7 @@ test('conversation mocks cover rich message and failure formats', () => {
 
 - [ ] **Step 2: 运行测试确认失败**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: FAIL，提示消息类型与渲染函数缺失。
 
@@ -201,14 +201,14 @@ if(conversationNode){
 
 - [ ] **Step 6: 运行测试确认通过**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: 全部 PASS。
 
 - [ ] **Step 7: 提交**
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs
+git add prototype.html prototype.test.cjs
 git commit -m "feat: render rich conversation message formats"
 ```
 
@@ -217,8 +217,8 @@ git commit -m "feat: render rich conversation message formats"
 ### Task 3: 为三个群聊提供独立历史
 
 **Files:**
-- Modify: `IOS-IM/prototype.test.cjs`
-- Modify: `IOS-IM/prototype.html`
+- Modify: `prototype.test.cjs`
+- Modify: `prototype.html`
 
 **Interfaces:**
 - Consumes: `groups`
@@ -247,7 +247,7 @@ test('all three groups define independent members goals and histories', () => {
 
 - [ ] **Step 2: 运行测试确认失败**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: FAIL，提示独立历史或渲染函数缺失。
 
@@ -279,14 +279,14 @@ Expected: FAIL，提示独立历史或渲染函数缺失。
 
 - [ ] **Step 6: 运行测试确认通过**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: 全部 PASS。
 
 - [ ] **Step 7: 提交**
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs
+git add prototype.html prototype.test.cjs
 git commit -m "feat: add distinct mock histories for every group"
 ```
 
@@ -295,8 +295,8 @@ git commit -m "feat: add distinct mock histories for every group"
 ### Task 4: 新消息、场景动作与列表同步
 
 **Files:**
-- Modify: `IOS-IM/prototype.test.cjs`
-- Modify: `IOS-IM/prototype.html`
+- Modify: `prototype.test.cjs`
+- Modify: `prototype.html`
 
 **Interfaces:**
 - Consumes: `currentConversationId`, `conversationMocks`
@@ -323,7 +323,7 @@ test('single conversation sends and scenario actions update visible state', () =
 
 - [ ] **Step 2: 运行测试确认失败**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: FAIL，提示状态更新函数或动作缺失。
 
@@ -351,14 +351,14 @@ Expected: FAIL，提示状态更新函数或动作缺失。
 
 - [ ] **Step 5: 运行测试确认通过**
 
-Run: `node --test IOS-IM/prototype.test.cjs`
+Run: `node --test prototype.test.cjs`
 
 Expected: 全部 PASS。
 
 - [ ] **Step 6: 提交**
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs
+git add prototype.html prototype.test.cjs
 git commit -m "feat: add mutable conversation scenario actions"
 ```
 
@@ -367,8 +367,8 @@ git commit -m "feat: add mutable conversation scenario actions"
 ### Task 5: 浏览器 QA、文档和最终验证
 
 **Files:**
-- Modify: `IOS-IM/DEVELOPMENT-GUIDE.md`
-- Modify: `IOS-IM/design-qa.md`
+- Modify: `docs/03-development/01-development-guide.md`
+- Modify: `docs/06-quality/01-design-qa.md`
 - Create: `IOS-IM/qa-rich-conversations.png`
 
 **Interfaces:**
@@ -384,9 +384,9 @@ git commit -m "feat: add mutable conversation scenario actions"
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
-node -e "const fs=require('fs'),vm=require('vm');const h=fs.readFileSync('IOS-IM/prototype.html','utf8');new vm.Script(h.match(/<script>([\s\S]*?)<\/script>/)[1])"
-git diff --check -- IOS-IM
+node --test prototype.test.cjs
+node -e "const fs=require('fs'),vm=require('vm');const h=fs.readFileSync('prototype.html','utf8');new vm.Script(h.match(/<script>([\s\S]*?)<\/script>/)[1])"
+git diff --check -- .
 ```
 
 Expected: 零失败、零语法错误、零空白错误。
@@ -412,7 +412,7 @@ Expected: 零失败、零语法错误、零空白错误。
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 npm test
 curl -fsS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:4173/prototype.html
 ```

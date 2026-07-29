@@ -22,8 +22,8 @@
 ### Task 1: 建立 50 个专家数据与基础市场渲染
 
 **Files:**
-- Modify: `IOS-IM/prototype.html`
-- Test: `IOS-IM/prototype.test.cjs`
+- Modify: `prototype.html`
+- Test: `prototype.test.cjs`
 
 **Interfaces:**
 - Produces: `marketAgents: MarketAgent[]`
@@ -80,7 +80,7 @@ test('AI market defines exactly 50 varied experts', () => {
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 ```
 
 Expected: FAIL，提示 `marketAgents should be declared`。
@@ -155,7 +155,7 @@ renderMarketAgents();
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 ```
 
 Expected: PASS。
@@ -163,7 +163,7 @@ Expected: PASS。
 - [ ] **Step 6: 提交**
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs
+git add prototype.html prototype.test.cjs
 git commit -m "feat: add fifty expert market profiles"
 ```
 
@@ -172,8 +172,8 @@ git commit -m "feat: add fifty expert market profiles"
 ### Task 2: 分类、搜索与分批加载
 
 **Files:**
-- Modify: `IOS-IM/prototype.html`
-- Test: `IOS-IM/prototype.test.cjs`
+- Modify: `prototype.html`
+- Test: `prototype.test.cjs`
 
 **Interfaces:**
 - Consumes: `marketAgents`, `marketState`, `filterMarketAgents()`, `renderMarketAgents()`
@@ -207,7 +207,7 @@ test('AI market supports filtering, search, and ten-item incremental loading', (
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 ```
 
 Expected: FAIL，缺少分类、搜索或加载函数。
@@ -287,13 +287,13 @@ document.querySelector('#market .market-body').addEventListener('scroll',event=>
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 ```
 
 Expected: PASS。
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs
+git add prototype.html prototype.test.cjs
 git commit -m "feat: add expert market discovery controls"
 ```
 
@@ -302,8 +302,8 @@ git commit -m "feat: add expert market discovery controls"
 ### Task 3: 动态专家详情与添加状态
 
 **Files:**
-- Modify: `IOS-IM/prototype.html`
-- Test: `IOS-IM/prototype.test.cjs`
+- Modify: `prototype.html`
+- Test: `prototype.test.cjs`
 
 **Interfaces:**
 - Consumes: `marketAgents`, `marketState`
@@ -336,7 +336,7 @@ test('every market expert can populate the shared detail screen', () => {
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 ```
 
 Expected: FAIL，缺少动态详情绑定。
@@ -398,13 +398,13 @@ function installSelectedAgent(){
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 ```
 
 Expected: PASS。
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs
+git add prototype.html prototype.test.cjs
 git commit -m "feat: bind market cards to expert details"
 ```
 
@@ -413,8 +413,8 @@ git commit -m "feat: bind market cards to expert details"
 ### Task 4: 扩大个人资料卡并统一设置图标
 
 **Files:**
-- Modify: `IOS-IM/prototype.html`
-- Test: `IOS-IM/prototype.test.cjs`
+- Modify: `prototype.html`
+- Test: `prototype.test.cjs`
 
 **Interfaces:**
 - Produces: `.settings-profile-card`
@@ -455,7 +455,7 @@ test('settings exposes an expanded identity card and real icons', () => {
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 ```
 
 Expected: FAIL，缺少身份卡或真实设置图标。
@@ -514,13 +514,13 @@ CSS 使用现有圆角、浅灰背景和紫色强调色。卡片最小高度 150
 Run:
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
+node --test prototype.test.cjs
 ```
 
 Expected: PASS。
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs
+git add prototype.html prototype.test.cjs
 git commit -m "feat: expand settings identity and icons"
 ```
 
@@ -529,10 +529,10 @@ git commit -m "feat: expand settings identity and icons"
 ### Task 5: 浏览器验收、设计 QA 与服务
 
 **Files:**
-- Modify: `IOS-IM/design-qa.md`
-- Create: `IOS-IM/qa-market-50-agents.png`
-- Create: `IOS-IM/qa-settings-profile.png`
-- Test: `IOS-IM/prototype.test.cjs`
+- Modify: `docs/06-quality/01-design-qa.md`
+- Create: `docs/06-quality/assets/qa-market-50-agents.png`
+- Create: `docs/06-quality/assets/qa-settings-profile.png`
+- Test: `prototype.test.cjs`
 
 **Interfaces:**
 - Consumes: 完成后的 `prototype.html`
@@ -541,9 +541,9 @@ git commit -m "feat: expand settings identity and icons"
 - [ ] **Step 1: 运行静态与全量测试**
 
 ```bash
-node --test IOS-IM/prototype.test.cjs
-node -e 'const fs=require("fs"),vm=require("vm");const h=fs.readFileSync("IOS-IM/prototype.html","utf8");const m=h.match(/<script>([\s\S]*)<\/script>/);if(!m)throw new Error("script missing");new vm.Script(m[1]);console.log("inline script syntax: ok")'
-git diff --check -- IOS-IM
+node --test prototype.test.cjs
+node -e 'const fs=require("fs"),vm=require("vm");const h=fs.readFileSync("prototype.html","utf8");const m=h.match(/<script>([\s\S]*)<\/script>/);if(!m)throw new Error("script missing");new vm.Script(m[1]);console.log("inline script syntax: ok")'
+git diff --check -- .
 npm test
 ```
 
@@ -576,7 +576,7 @@ Expected: `HTTP 200`。
 5. 搜索“合同”，确认结果名称或标签匹配。
 6. 点击搜索结果，确认详情名称、模型和权限随专家变化。
 7. 检查浏览器控制台无错误。
-8. 保存 `IOS-IM/qa-market-50-agents.png`。
+8. 保存 `docs/06-quality/assets/qa-market-50-agents.png`。
 
 - [ ] **Step 4: 浏览器验证设置页**
 
@@ -584,11 +584,11 @@ Expected: `HTTP 200`。
 2. 确认个人资料卡完整显示头像、Halo ID、简介、同步状态和三项统计。
 3. 确认每个设置项均为 Phosphor 图标，不出现文字方块。
 4. 滚动到页面底部，确认底部导航与设置项均不裁切。
-5. 保存 `IOS-IM/qa-settings-profile.png`。
+5. 保存 `docs/06-quality/assets/qa-settings-profile.png`。
 
 - [ ] **Step 5: 更新设计 QA**
 
-在 `IOS-IM/design-qa.md` 追加本轮来源、截图、浏览器 viewport、交互检查、控制台结果和五项视觉检查：字体、间距、颜色、图片、文案。只有没有未解决 P0/P1/P2 时写：
+在 `docs/06-quality/01-design-qa.md` 追加本轮来源、截图、浏览器 viewport、交互检查、控制台结果和五项视觉检查：字体、间距、颜色、图片、文案。只有没有未解决 P0/P1/P2 时写：
 
 ```md
 final result: passed
@@ -597,6 +597,6 @@ final result: passed
 - [ ] **Step 6: 最终提交**
 
 ```bash
-git add IOS-IM/prototype.html IOS-IM/prototype.test.cjs IOS-IM/design-qa.md IOS-IM/qa-market-50-agents.png IOS-IM/qa-settings-profile.png
+git add prototype.html prototype.test.cjs docs/06-quality/01-design-qa.md docs/06-quality/assets/qa-market-50-agents.png docs/06-quality/assets/qa-settings-profile.png
 git commit -m "feat: complete expanded AI expert market"
 ```
