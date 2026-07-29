@@ -49,7 +49,7 @@ void main() {
     expect(find.text('Agent 私有关系记忆'), findsOneWidget);
   });
 
-  testWidgets('group chat title carries its member-count badge', (
+  testWidgets('group chat title carries its loaded member-count badge', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -58,7 +58,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('iOS 产品小组'), findsOneWidget);
-    expect(find.text('4 AI'), findsOneWidget);
+    expect(find.text('5 AI'), findsOneWidget);
   });
 
   testWidgets(

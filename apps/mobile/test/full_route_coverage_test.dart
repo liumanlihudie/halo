@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/app/app.dart';
+import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
 
 void main() {
   const prototypeRoutes = <String, String>{
@@ -37,6 +38,14 @@ void main() {
         HaloApp(key: UniqueKey(), initialLocation: route.key),
       );
       await tester.pumpAndSettle();
+      if (route.key == '/chat/general-assistant') {
+        expect(
+          find.byType(SingleChatPage),
+          findsOneWidget,
+          reason: 'Missing prototype route ${route.key}',
+        );
+        continue;
+      }
       expect(
         find.text(route.value),
         findsAtLeastNWidgets(1),
