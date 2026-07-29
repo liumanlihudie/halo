@@ -1,37 +1,205 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
-import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
+
+import 'chat_message_repository.dart';
+import 'single_chat_controller.dart';
 
 class SingleChatPage extends StatefulWidget {
-  const SingleChatPage({required this.conversationId, super.key});
+  const SingleChatPage({
+    required this.conversationId,
+    this.expertId,
+    this.service,
+    this.repository,
+    this.repositoryLoader,
+    this.verifier = const RejectingVerifierReceiptRegistry(),
+    this.allowEphemeralRepositoryForTesting = false,
+    super.key,
+  }) : assert(repository == null || repositoryLoader == null);
+
   final String conversationId;
+  final String? expertId;
+  final SingleChatPort? service;
+  final ChatMessageRepository? repository;
+  final FutureOr<ChatMessageRepository> Function()? repositoryLoader;
+  final TrustedVerifierReceiptRegistry verifier;
+  final bool allowEphemeralRepositoryForTesting;
 
   @override
   State<SingleChatPage> createState() => _SingleChatPageState();
 }
 
 class _SingleChatPageState extends State<SingleChatPage> {
-  final _controller = TextEditingController();
+  final _textController = TextEditingController();
+  late SingleChatConversationProjection _conversation;
+  SingleChatController? _chatController;
+  bool _dependencyLoadFailed = false;
+  int _dependencyGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _resetConversationPlaceholder();
+    _startDependencyInitialization();
+  }
+
+  @override
+  void didUpdateWidget(covariant SingleChatPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.conversationId == widget.conversationId &&
+        oldWidget.expertId == widget.expertId &&
+        identical(oldWidget.service, widget.service) &&
+        identical(oldWidget.repository, widget.repository) &&
+        identical(oldWidget.repositoryLoader, widget.repositoryLoader) &&
+        identical(oldWidget.verifier, widget.verifier) &&
+        oldWidget.allowEphemeralRepositoryForTesting ==
+            widget.allowEphemeralRepositoryForTesting) {
+      return;
+    }
+    if (oldWidget.conversationId != widget.conversationId ||
+        oldWidget.expertId != widget.expertId) {
+      _textController.clear();
+    }
+    _chatController
+      ?..removeListener(_onChatChanged)
+      ..dispose();
+    _chatController = null;
+    _dependencyLoadFailed = false;
+    _resetConversationPlaceholder();
+    _startDependencyInitialization();
+  }
+
+  void _resetConversationPlaceholder() {
+    final placeholderExpertId = widget.expertId ?? widget.conversationId;
+    _conversation = SingleChatConversationProjection(
+      conversationId: widget.conversationId,
+      expertId: placeholderExpertId,
+      title: widget.conversationId,
+      agentName: placeholderExpertId,
+      modelLabel: 'Provider / model',
+      avatarLetter: placeholderExpertId.isEmpty ? '?' : placeholderExpertId[0],
+    );
+  }
+
+  void _startDependencyInitialization() {
+    final generation = ++_dependencyGeneration;
+    final conversationId = widget.conversationId;
+    final expertId = widget.expertId;
+    final service = widget.service;
+    final repository = widget.repository;
+    final repositoryLoader = widget.repositoryLoader;
+    final verifier = widget.verifier;
+    final allowEphemeral = widget.allowEphemeralRepositoryForTesting;
+    unawaited(
+      _initializeDependencies(
+        generation: generation,
+        conversationId: conversationId,
+        expertId: expertId,
+        service: service,
+        repository: repository,
+        repositoryLoader: repositoryLoader,
+        verifier: verifier,
+        allowEphemeral: allowEphemeral,
+      ),
+    );
+  }
+
+  Future<void> _initializeDependencies({
+    required int generation,
+    required String conversationId,
+    required String? expertId,
+    required SingleChatPort? service,
+    required ChatMessageRepository? repository,
+    required FutureOr<ChatMessageRepository> Function()? repositoryLoader,
+    required TrustedVerifierReceiptRegistry verifier,
+    required bool allowEphemeral,
+  }) async {
+    try {
+      final resolvedRepository =
+          repository ??
+          await Future<ChatMessageRepository>.sync(
+            repositoryLoader ?? SingleChatCatalogRepository.new,
+          );
+      if (service != null &&
+          resolvedRepository is! DurableChatMessageRepository &&
+          !allowEphemeral) {
+        throw StateError(
+          'A production single-chat service requires durable repository injection.',
+        );
+      }
+      final described = resolvedRepository.describe(conversationId);
+      if (expertId case final override? when override != described.expertId) {
+        throw StateError(
+          'Single chat expert identity does not match its conversation.',
+        );
+      }
+      if (!mounted || generation != _dependencyGeneration) {
+        return;
+      }
+      final controller = SingleChatController(
+        conversationId: conversationId,
+        expertId: described.expertId,
+        service: service ?? const _UnavailableSingleChatPort(),
+        repository: resolvedRepository,
+        commandIdFactory: _newCommandId,
+        verifier: verifier,
+      )..addListener(_onChatChanged);
+      setState(() {
+        _conversation = described;
+        _chatController = controller;
+      });
+      await controller.initialize();
+    } catch (_) {
+      if (mounted && generation == _dependencyGeneration) {
+        setState(() {
+          _dependencyLoadFailed = true;
+        });
+      }
+    }
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _chatController
+      ?..removeListener(_onChatChanged)
+      ..dispose();
+    _textController.dispose();
     super.dispose();
+  }
+
+  void _onChatChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _send() {
+    final text = _textController.text;
+    if (text.trim().isEmpty) {
+      return;
+    }
+    final controller = _chatController;
+    if (controller == null) {
+      return;
+    }
+    unawaited(controller.submit(text));
+    if (controller.activeText == text.trim()) {
+      _textController.clear();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final conversation = HaloFixtures.conversations.firstWhere(
-      (item) => item.id == widget.conversationId,
-      orElse: () => HaloFixtures.conversations[1],
-    );
+    final controller = _chatController;
+    final state = controller?.state ?? SingleChatState();
     return HaloPageScaffold(
-      title: conversation.title,
-      titleBadge: conversation.tag,
-      titleBadgeTone: conversation.tagTone,
+      title: _conversation.title,
+      titleBadge: _conversation.tag,
+      titleBadgeTone: _conversation.tagTone,
       compactTitle: true,
       leading: HaloIconButton(
         prototypeIconClass: 'ph ph-caret-left',
@@ -50,25 +218,100 @@ class _SingleChatPageState extends State<SingleChatPage> {
       backgroundColor: HaloColors.soft,
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
-        children: const [
-          _SystemNotice('今天 10:02 · 已启用共享事实记忆'),
-          _MineBubble('结合我刚发的材料，整理一版面向投资人的竞品分析。'),
-          _AgentBubble(
-            child: Text(
-              '收到。我先让研究员核验关键数据，再整理成市场格局、差异化和风险三部分。',
-              style: HaloTextStyles.body,
+        children: [
+          if (_dependencyLoadFailed) const _SystemNotice('聊天存储暂不可用，请稍后重试'),
+          if (state.historyLoadFailed) const _SystemNotice('历史消息加载失败，可继续当前对话'),
+          for (final message in state.messages)
+            _ProjectedMessage(message: message, conversation: _conversation),
+          if (state.status == SingleChatRunStatus.running)
+            _AgentBubble(
+              conversation: _conversation,
+              child: _ProgressMessage(onStop: controller!.stop),
             ),
-          ),
-          _AgentBubble(child: _ProgressMessage()),
-          _AgentBubble(child: _FileMessage()),
-          _MineImageMessage(),
-          _AgentBubble(child: _QuoteMessage()),
+          if (_terminalMessage(state.status) case final terminal?)
+            _AgentBubble(
+              conversation: _conversation,
+              child: _RunStatusMessage(
+                text: terminal,
+                canRetry: state.canRetry,
+                onRetry: controller!.retry,
+              ),
+            ),
         ],
       ),
       bottom: _Composer(
-        controller: _controller,
+        controller: _textController,
         onAttach: () => _showAttachmentSheet(context),
+        onSend: _send,
+        enabled: controller != null && !_dependencyLoadFailed,
       ),
+    );
+  }
+}
+
+class _ProjectedMessage extends StatelessWidget {
+  const _ProjectedMessage({required this.message, required this.conversation});
+
+  final ChatMessageProjection message;
+  final SingleChatConversationProjection conversation;
+
+  @override
+  Widget build(BuildContext context) {
+    return switch (message.kind) {
+      ChatMessageKind.systemNotice => _SystemNotice(message.text ?? ''),
+      ChatMessageKind.userText => _MineBubble(message.text ?? ''),
+      ChatMessageKind.agentText => _AgentBubble(
+        conversation: conversation,
+        child: _AgentTextMessage(message),
+      ),
+      ChatMessageKind.progress => _AgentBubble(
+        conversation: conversation,
+        child: _ProgressMessage(message: message),
+      ),
+      ChatMessageKind.file => _AgentBubble(
+        conversation: conversation,
+        child: _FileMessage(message),
+      ),
+      ChatMessageKind.userImage => _MineImageMessage(message.imageUrl),
+      ChatMessageKind.quote => _AgentBubble(
+        conversation: conversation,
+        child: _QuoteMessage(message),
+      ),
+    };
+  }
+}
+
+class _AgentTextMessage extends StatelessWidget {
+  const _AgentTextMessage(this.message);
+
+  final ChatMessageProjection message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(message.text ?? '', style: HaloTextStyles.body),
+        if (message.sourceType case final source?) ...[
+          const SizedBox(height: 7),
+          Text(
+            _sourceLabel(source, message.evidenceReferences),
+            style: const TextStyle(
+              color: HaloColors.muted,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        if (message.sourceType == ChatMessageSourceType.verifiedEvidence ||
+            isSafeSingleChatUncertaintyDisclosure(message.uncertainty)) ...[
+          const SizedBox(height: 5),
+          Text(
+            '不确定性：${isSafeSingleChatUncertaintyDisclosure(message.uncertainty) ? message.uncertainty : '未提供不确定性说明'}',
+            style: HaloTextStyles.caption,
+          ),
+        ],
+      ],
     );
   }
 }
@@ -128,7 +371,9 @@ class _MineBubble extends StatelessWidget {
 }
 
 class _AgentBubble extends StatelessWidget {
-  const _AgentBubble({required this.child});
+  const _AgentBubble({required this.conversation, required this.child});
+
+  final SingleChatConversationProjection conversation;
   final Widget child;
 
   @override
@@ -138,10 +383,9 @@ class _AgentBubble extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const HaloAvatar(
-            imageUrl:
-                'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120',
-            letter: '助',
+          HaloAvatar(
+            imageUrl: conversation.avatarImageUrl,
+            letter: conversation.avatarLetter,
             size: 36,
           ),
           const SizedBox(width: 8),
@@ -149,8 +393,8 @@ class _AgentBubble extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  '通用助理 · Doubao / doubao-s2s-realtime',
+                Text(
+                  '${conversation.agentName} · ${conversation.modelLabel}',
                   style: HaloTextStyles.caption,
                 ),
                 const SizedBox(height: 4),
@@ -172,62 +416,116 @@ class _AgentBubble extends StatelessWidget {
 }
 
 class _ProgressMessage extends StatelessWidget {
-  const _ProgressMessage();
+  const _ProgressMessage({this.message, this.onStop});
+
+  final ChatMessageProjection? message;
+  final Future<void> Function()? onStop;
 
   @override
   Widget build(BuildContext context) {
+    final progress = message?.progress;
     return SizedBox(
       width: 235,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
               Expanded(
                 child: Text(
-                  '任务进行中',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  message?.text ?? '任务进行中',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
                 ),
               ),
-              Text(
-                '68%',
-                style: TextStyle(
-                  color: HaloColors.accentDeep,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 12,
+              if (progress != null)
+                Text(
+                  '${(progress * 100).round()}%',
+                  style: const TextStyle(
+                    color: HaloColors.accentDeep,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(3),
-            child: const LinearProgressIndicator(
-              value: .68,
+            child: LinearProgressIndicator(
+              value: progress,
               minHeight: 5,
               backgroundColor: HaloColors.line,
               color: HaloColors.accent,
             ),
           ),
-          const SizedBox(height: 7),
-          const Text('已核验 16 / 23 个来源', style: HaloTextStyles.caption),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: null,
-            icon: Icon(
-              HaloIcon.requirePrototypeClass('ph ph-stop-circle'),
-              size: 15,
+          if (message?.secondaryText case final secondary?) ...[
+            const SizedBox(height: 7),
+            Text(secondary, style: HaloTextStyles.caption),
+          ],
+          if (onStop != null) ...[
+            const SizedBox(height: 8),
+            Semantics(
+              button: true,
+              label: '停止生成',
+              child: ExcludeSemantics(
+                child: OutlinedButton.icon(
+                  onPressed: () => unawaited(onStop!()),
+                  icon: Icon(
+                    HaloIcon.requirePrototypeClass('ph ph-stop-circle'),
+                    size: 15,
+                  ),
+                  label: const Text('停止'),
+                ),
+              ),
             ),
-            label: const Text('停止'),
-          ),
+          ],
         ],
       ),
     );
   }
 }
 
+class _RunStatusMessage extends StatelessWidget {
+  const _RunStatusMessage({
+    required this.text,
+    required this.canRetry,
+    required this.onRetry,
+  });
+
+  final String text;
+  final bool canRetry;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(text, style: HaloTextStyles.body),
+        if (canRetry) ...[
+          const SizedBox(height: 8),
+          Semantics(
+            button: true,
+            label: '重试发送',
+            child: ExcludeSemantics(
+              child: OutlinedButton(
+                onPressed: () => unawaited(onRetry()),
+                child: const Text('重试'),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _FileMessage extends StatelessWidget {
-  const _FileMessage();
+  const _FileMessage(this.message);
+  final ChatMessageProjection message;
 
   @override
   Widget build(BuildContext context) {
@@ -256,26 +554,29 @@ class _FileMessage extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '个人 AI 通讯竞品分析.pdf',
-                      style: TextStyle(
+                      message.text ?? '',
+                      style: const TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
                     ),
-                    SizedBox(height: 4),
-                    Text('12 页 · 2.4 MB · 已完成', style: HaloTextStyles.caption),
+                    const SizedBox(height: 4),
+                    Text(
+                      message.secondaryText ?? '',
+                      style: HaloTextStyles.caption,
+                    ),
                   ],
                 ),
               ),
             ],
           ),
           const Divider(height: 18),
-          const Text('8 个来源 · 已沉淀至圈层', style: HaloTextStyles.caption),
+          Text(message.tertiaryText ?? '', style: HaloTextStyles.caption),
         ],
       ),
     );
@@ -283,16 +584,20 @@ class _FileMessage extends StatelessWidget {
 }
 
 class _MineImageMessage extends StatelessWidget {
-  const _MineImageMessage();
+  const _MineImageMessage(this.imageUrl);
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
+    if (imageUrl == null) {
+      return const SizedBox.shrink();
+    }
     return Align(
       alignment: Alignment.centerRight,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(13),
         child: Image.network(
-          'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=520',
+          imageUrl!,
           width: 210,
           height: 128,
           fit: BoxFit.cover,
@@ -304,31 +609,32 @@ class _MineImageMessage extends StatelessWidget {
 }
 
 class _QuoteMessage extends StatelessWidget {
-  const _QuoteMessage();
+  const _QuoteMessage(this.message);
+  final ChatMessageProjection message;
 
   @override
   Widget build(BuildContext context) {
-    return const SizedBox(
+    return SizedBox(
       width: 235,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           DecoratedBox(
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               border: Border(
                 left: BorderSide(color: HaloColors.accent, width: 3),
               ),
             ),
             child: Padding(
-              padding: EdgeInsets.only(left: 8),
-              child: Text('你发来的数据看板', style: HaloTextStyles.caption),
+              padding: const EdgeInsets.only(left: 8),
+              child: Text(
+                message.secondaryText ?? '',
+                style: HaloTextStyles.caption,
+              ),
             ),
           ),
-          SizedBox(height: 7),
-          Text(
-            '我补充核对了漏斗口径：注册到首次有效对话的转化率应为 42.8%，原图少算了跨端登录。',
-            style: HaloTextStyles.body,
-          ),
+          const SizedBox(height: 7),
+          Text(message.text ?? '', style: HaloTextStyles.body),
         ],
       ),
     );
@@ -336,9 +642,17 @@ class _QuoteMessage extends StatelessWidget {
 }
 
 class _Composer extends StatelessWidget {
-  const _Composer({required this.controller, required this.onAttach});
+  const _Composer({
+    required this.controller,
+    required this.onAttach,
+    required this.onSend,
+    required this.enabled,
+  });
+
   final TextEditingController controller;
   final VoidCallback onAttach;
+  final VoidCallback onSend;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -367,15 +681,17 @@ class _Composer extends StatelessWidget {
                 children: [
                   HaloIconButton(
                     prototypeIconClass: 'ph ph-microphone',
-                    semanticLabel: '语音输入',
-                    onPressed: () {},
+                    semanticLabel: '语音输入（暂不可用）',
+                    onPressed: () => _showUnavailable(context),
                   ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: TextField(
                       controller: controller,
+                      enabled: enabled,
                       minLines: 1,
                       maxLines: 4,
+                      onSubmitted: (_) => onSend(),
                       decoration: const InputDecoration(
                         hintText: '输入消息，或继续追问成果',
                         filled: true,
@@ -395,13 +711,13 @@ class _Composer extends StatelessWidget {
                   HaloIconButton(
                     prototypeIconClass: 'ph ph-plus',
                     semanticLabel: '添加附件',
-                    onPressed: onAttach,
+                    onPressed: enabled ? onAttach : null,
                   ),
                   HaloIconButton(
                     prototypeIconClass: 'ph ph-arrow-up',
                     semanticLabel: '发送',
                     primary: true,
-                    onPressed: () {},
+                    onPressed: enabled ? onSend : null,
                   ),
                 ],
               ),
@@ -432,15 +748,15 @@ class _QuickAction extends StatelessWidget {
 }
 
 void _showAttachmentSheet(BuildContext context) {
-  const abilities = <(String, String, String)>[
-    ('ph ph-phone', '端到端语音通话', '与当前 Agent 实时对话'),
-    ('ph ph-video-camera', 'Vidu 视频通话', '使用当前 Agent 形象'),
-    ('ph ph-camera', '拍照', '现场拍摄'),
-    ('ph ph-image', '图片', '从相册选择'),
-    ('ph ph-file', '文件', 'PDF、Office'),
-    ('ph ph-scan', '扫描', '识别纸质材料'),
-    ('ph ph-link', '网页', '粘贴链接'),
-    ('ph ph-microphone', '录音', '总结音频'),
+  const abilities = <(String, String)>[
+    ('ph ph-phone', '端到端语音通话'),
+    ('ph ph-video-camera', 'Vidu 视频通话'),
+    ('ph ph-camera', '拍照'),
+    ('ph ph-image', '图片'),
+    ('ph ph-file', '文件'),
+    ('ph ph-scan', '扫描'),
+    ('ph ph-link', '网页'),
+    ('ph ph-microphone', '录音'),
   ];
   showModalBottomSheet<void>(
     context: context,
@@ -484,14 +800,7 @@ void _showAttachmentSheet(BuildContext context) {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(13),
                     child: InkWell(
-                      onTap: () {
-                        Navigator.of(sheetContext).pop();
-                        if (ability.$2 == '端到端语音通话') {
-                          context.push('/call/voice/general-assistant');
-                        } else if (ability.$2 == 'Vidu 视频通话') {
-                          context.push('/call/video/general-assistant');
-                        }
-                      },
+                      onTap: () => _showUnavailable(sheetContext),
                       borderRadius: BorderRadius.circular(13),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -513,11 +822,9 @@ void _showAttachmentSheet(BuildContext context) {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            Text(
-                              ability.$3,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                            const Text(
+                              '暂不可用',
+                              style: TextStyle(
                                 fontSize: 7,
                                 color: HaloColors.muted,
                               ),
@@ -534,4 +841,60 @@ void _showAttachmentSheet(BuildContext context) {
       ),
     ),
   );
+}
+
+void _showUnavailable(BuildContext context) {
+  ScaffoldMessenger.maybeOf(
+    context,
+  )?.showSnackBar(const SnackBar(content: Text('该能力暂不可用')));
+}
+
+String _newCommandId() {
+  return MonotonicUlidGenerator.shared.next();
+}
+
+String? _terminalMessage(SingleChatRunStatus status) {
+  return switch (status) {
+    SingleChatRunStatus.stopped => '任务已停止',
+    SingleChatRunStatus.failed => '发送失败，请重试',
+    SingleChatRunStatus.quotaLimited => '模型额度不足，请检查 Provider 配额',
+    SingleChatRunStatus.authentication => '模型认证失败，请检查 Provider 配置',
+    SingleChatRunStatus.filtered => '内容未通过安全检查',
+    SingleChatRunStatus.idle ||
+    SingleChatRunStatus.running ||
+    SingleChatRunStatus.completed => null,
+  };
+}
+
+class _UnavailableSingleChatPort implements SingleChatPort {
+  const _UnavailableSingleChatPort();
+
+  @override
+  Future<SingleAgentRunHandle> startSingleAgentRun(
+    StartSingleAgentRunRequest request,
+  ) async {
+    return SingleAgentRunHandle(
+      runId: request.clientCommandId,
+      outcome: Future.value(
+        const SingleAgentRunOutcome.failed(
+          failure: SingleAgentRunFailure.authentication,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Future<void> stopSingleAgentRun(String runId) async {}
+}
+
+String _sourceLabel(
+  ChatMessageSourceType source,
+  List<String> evidenceReferences,
+) {
+  return switch (source) {
+    ChatMessageSourceType.verifiedEvidence => '已核验',
+    ChatMessageSourceType.userVisibleSummary => '用户可见摘要',
+    ChatMessageSourceType.modelOutput =>
+      evidenceReferences.isEmpty ? '未核验' : '模型输出 · 附来源',
+  };
 }
