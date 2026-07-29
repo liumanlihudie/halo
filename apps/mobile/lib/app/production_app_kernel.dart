@@ -17,6 +17,7 @@ import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
+import 'package:halo_mobile/model_runtime/unary_http_transport.dart';
 import 'package:path_provider/path_provider.dart';
 
 typedef ApplicationSupportDirectoryProvider = Future<Directory> Function();
@@ -134,6 +135,9 @@ final class ProductionAppKernelFactory {
         credentialStore: _credentials,
         loadModelCatalog: _loadProductionModels,
         inspectionTransport: const _UnavailableInspectionTransport(),
+        endpointPolicy: TrustedProviderEndpointPolicy(
+          providerHosts: const {'api.deepseek.com', 'toapis.com'},
+        ),
       );
 }
 

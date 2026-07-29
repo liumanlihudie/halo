@@ -53,6 +53,20 @@ void main() {
     },
   );
 
+  test('get accepts an unmodifiable byte buffer returned by iOS', () async {
+    const secret = 'deepseek-keychain-secret';
+    final platformBytes = Uint8List.fromList(
+      utf8.encode(secret),
+    ).asUnmodifiableView();
+    final channel = FakeSecureCredentialChannel()..enqueueResult(platformBytes);
+    final store = MethodChannelSecureCredentialStore(channel: channel);
+
+    expect(
+      await store.get(SecretRef.parse('keychain://deepseek/primary')),
+      secret,
+    );
+  });
+
   test(
     'store accepts only strict keychain service and account references',
     () async {

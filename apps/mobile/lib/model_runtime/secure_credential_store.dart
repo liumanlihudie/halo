@@ -151,14 +151,16 @@ class MethodChannelSecureCredentialStore implements SecureCredentialStore {
         SecureCredentialStoreError.invalidResponse,
       );
     }
+    final mutableBytes = Uint8List.fromList(result);
+    _wipeBytes(result);
     try {
-      return utf8.decode(result, allowMalformed: false);
+      return utf8.decode(mutableBytes, allowMalformed: false);
     } catch (_) {
       throw const SecureCredentialStoreException(
         SecureCredentialStoreError.invalidResponse,
       );
     } finally {
-      result.fillRange(0, result.length, 0);
+      _wipeBytes(mutableBytes);
     }
   }
 
@@ -236,7 +238,7 @@ class MethodChannelSecureCredentialStore implements SecureCredentialStore {
         (value) {
           if (race.isCompleted) {
             if (cancellationWon && value is Uint8List) {
-              value.fillRange(0, value.length, 0);
+              _wipeBytes(value);
             }
             return;
           }
@@ -342,6 +344,14 @@ class MethodChannelSecureCredentialStore implements SecureCredentialStore {
 
   @override
   String toString() => 'MethodChannelSecureCredentialStore([REDACTED])';
+}
+
+void _wipeBytes(Uint8List bytes) {
+  try {
+    bytes.fillRange(0, bytes.length, 0);
+  } on UnsupportedError {
+    // StandardMessageCodec can return an unmodifiable typed-data view.
+  }
 }
 
 class KeychainSecretResolver implements SecretResolver {

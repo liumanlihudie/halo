@@ -138,6 +138,37 @@ void main() {
   });
 
   test(
+    'trusted provider policy accepts fake-IP DNS only for allowlisted hosts',
+    () async {
+      final policy = TrustedProviderEndpointPolicy(
+        providerHosts: const {'api.deepseek.com'},
+        resolver: _FixedResolver([InternetAddress('198.18.0.101')]),
+      );
+
+      await policy.validateBeforeConnect(
+        Uri.parse('https://api.deepseek.com/v1/chat/completions'),
+      );
+      policy.validateAfterConnect(
+        Uri.parse('https://api.deepseek.com/v1/chat/completions'),
+        InternetAddress('198.18.0.101'),
+      );
+      await expectLater(
+        policy.validateBeforeConnect(
+          Uri.parse('https://attacker.example/v1/chat/completions'),
+        ),
+        throwsA(_transportError(UnaryTransportErrorCode.endpointRejected)),
+      );
+      expect(
+        () => policy.validateAfterConnect(
+          Uri.parse('https://attacker.example/v1/chat/completions'),
+          InternetAddress('198.18.0.101'),
+        ),
+        throwsA(_transportError(UnaryTransportErrorCode.endpointRejected)),
+      );
+    },
+  );
+
+  test(
     'IPv4-compatible IPv6 is rejected as a literal and across DNS checks',
     () async {
       final embeddedPrivate = InternetAddress('::10.0.0.1');

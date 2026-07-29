@@ -59,6 +59,55 @@ void main() {
     },
   );
 
+  test('request tells the model the complete advice JSON contract', () async {
+    runtime.response = ChatResponse(
+      requestId: 'command-contract',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: jsonEncode(_adviceOutput('生产建议')),
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-contract',
+        expertId: 'product-manager',
+        text: '请分析需求',
+        clientCommandId: 'command-contract',
+      ),
+    );
+    await handle.outcome;
+
+    final systemPrompt = runtime.requests.single.messages.first.content;
+    for (final requiredField in const [
+      '"Problem"',
+      '"TargetUsers"',
+      '"Recommendation"',
+      '"Priorities"',
+      '"Risks"',
+      '"Verification"',
+    ]) {
+      expect(systemPrompt, contains(requiredField));
+    }
+    expect(systemPrompt, contains('"claimType":"advice"'));
+    expect(systemPrompt, contains('"tense":"proposed"'));
+    expect(systemPrompt, contains('"verified":false'));
+    expect(systemPrompt, contains('"source":"none"'));
+    expect(systemPrompt, contains('"proposedActions"'));
+    expect(systemPrompt, contains('"executedFacts":[]'));
+    expect(
+      systemPrompt,
+      contains('Verification.proposedActions MUST contain at least one action'),
+    );
+    expect(
+      systemPrompt,
+      contains(
+        'analyze, compare, document, implement, measure, plan, query, '
+        'review, test, train, verify',
+      ),
+    );
+  });
+
   test('rejects catalog-only expert that is not executable in single chat', () {
     expect(
       () => port.startSingleAgentRun(

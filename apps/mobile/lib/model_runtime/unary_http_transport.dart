@@ -99,6 +99,61 @@ class PublicEndpointPolicy implements EndpointPolicy {
   }
 }
 
+class TrustedProviderEndpointPolicy implements EndpointPolicy {
+  TrustedProviderEndpointPolicy({
+    required Set<String> providerHosts,
+    this.resolver = const DartIoHostResolver(),
+  }) : providerHosts = Set.unmodifiable(
+         providerHosts.map((host) => host.toLowerCase()),
+       ) {
+    if (this.providerHosts.isEmpty ||
+        this.providerHosts.any(
+          (host) =>
+              host != host.trim() ||
+              Uri.tryParse('https://$host')?.host != host ||
+              InternetAddress.tryParse(host) != null,
+        )) {
+      throw ArgumentError.value(providerHosts, 'providerHosts');
+    }
+  }
+
+  final Set<String> providerHosts;
+  final HostResolver resolver;
+
+  @override
+  Future<void> validateBeforeConnect(Uri endpoint) async {
+    try {
+      final addresses = await resolver.lookup(endpoint.host);
+      if (addresses.isEmpty ||
+          addresses.any((address) => !_allows(endpoint, address))) {
+        throw const UnaryTransportException(
+          UnaryTransportErrorCode.endpointRejected,
+        );
+      }
+    } on UnaryTransportException {
+      rethrow;
+    } catch (_) {
+      throw const UnaryTransportException(
+        UnaryTransportErrorCode.endpointRejected,
+      );
+    }
+  }
+
+  @override
+  void validateAfterConnect(Uri endpoint, InternetAddress remoteAddress) {
+    if (!_allows(endpoint, remoteAddress)) {
+      throw const UnaryTransportException(
+        UnaryTransportErrorCode.endpointRejected,
+      );
+    }
+  }
+
+  bool _allows(Uri endpoint, InternetAddress address) =>
+      !_isNonPublicAddress(address) ||
+      (providerHosts.contains(endpoint.host.toLowerCase()) &&
+          _isBenchmarkFakeIp(address));
+}
+
 class LocalEndpointPolicy implements EndpointPolicy {
   const LocalEndpointPolicy({this.resolver = const DartIoHostResolver()});
 
@@ -182,6 +237,14 @@ enum _AddressScope { public, loopback, lan, nonGlobal }
 
 bool _isNonPublicAddress(InternetAddress address) =>
     _addressScope(address) != _AddressScope.public;
+
+bool _isBenchmarkFakeIp(InternetAddress address) {
+  final bytes = address.rawAddress;
+  return address.type == InternetAddressType.IPv4 &&
+      bytes.length == 4 &&
+      bytes[0] == 198 &&
+      (bytes[1] == 18 || bytes[1] == 19);
+}
 
 _AddressScope _addressScope(InternetAddress address) {
   final bytes = address.rawAddress;
