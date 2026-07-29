@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/app/app.dart';
 
 void main() {
-  testWidgets('group chat exposes all three routing modes and summary', (
+  testWidgets('group chat keeps history and exposes live routing modes', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -16,6 +16,9 @@ void main() {
     expect(find.text('@某个 Agent'), findsOneWidget);
     expect(find.text('@所有人'), findsOneWidget);
     expect(find.text('让大家讨论'), findsOneWidget);
+    expect(find.text('发消息给这个 AI 小组'), findsOneWidget);
+    expect(find.text('编排服务待接入'), findsNothing);
+    expect(find.text('用户价值是成立的，但首版必须把“联系人就是能力”做透。'), findsOneWidget);
     expect(find.text('群聊阶段总结'), findsOneWidget);
     expect(find.text('语音通话'), findsNothing);
     expect(find.text('视频通话'), findsNothing);

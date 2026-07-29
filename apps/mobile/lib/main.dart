@@ -1,5 +1,4 @@
 import 'package:flutter/widgets.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:halo_mobile/app/app.dart';
 
 void main() {
@@ -8,5 +7,5 @@ void main() {
     'HALO_INITIAL_ROUTE',
     defaultValue: '/conversations',
   );
-  runApp(const ProviderScope(child: HaloApp(initialLocation: initialLocation)));
+  runApp(const HaloApp(initialLocation: initialLocation));
 }

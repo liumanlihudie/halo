@@ -1,30 +1,159 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/orchestration/orchestration_kernel.dart';
+import 'package:halo_mobile/orchestration/orchestration_models.dart';
+import 'package:halo_mobile/orchestration/orchestration_providers.dart';
 
-enum _GroupMode { auto, mention, all, discuss }
+enum _ComposerChoice { auto, mentioned, all, discuss }
 
-class GroupChatPage extends StatefulWidget {
-  const GroupChatPage({required this.groupId, super.key});
+class GroupChatPage extends ConsumerStatefulWidget {
+  const GroupChatPage({
+    required this.groupId,
+    this.orchestrationKernel,
+    super.key,
+  });
+
   final String groupId;
+  final OrchestrationKernel? orchestrationKernel;
 
   @override
-  State<GroupChatPage> createState() => _GroupChatPageState();
+  ConsumerState<GroupChatPage> createState() => _GroupChatPageState();
 }
 
-class _GroupChatPageState extends State<GroupChatPage> {
-  _GroupMode mode = _GroupMode.auto;
+class _GroupChatPageState extends ConsumerState<GroupChatPage> {
+  final _inputController = TextEditingController();
+  final _scrollController = ScrollController();
+  GroupChatController? _controller;
+  _ComposerChoice _choice = _ComposerChoice.auto;
+  String? _mentionedAgentId;
 
-  String get modeDescription => switch (mode) {
-    _GroupMode.auto => '自动选择 1–2 个合适的 Agent',
-    _GroupMode.mention => '仅被点名的 Agent 回答',
-    _GroupMode.all => '所有 Agent 依次回答',
-    _GroupMode.discuss => '所有 Agent 讨论并生成总结',
+  @override
+  void initState() {
+    super.initState();
+    final OrchestrationKernel kernel =
+        widget.orchestrationKernel ?? ref.read(orchestrationKernelProvider);
+    _controller = GroupChatController(
+      kernel: kernel,
+      conversationId: widget.groupId,
+    )..addListener(_refresh);
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ?..removeListener(_refresh)
+      ..dispose();
+    _inputController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (!mounted) return;
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  String get _modeDescription => switch (_choice) {
+    _ComposerChoice.auto => '自动选择 1–2 个合适的 Agent',
+    _ComposerChoice.mentioned =>
+      _mentionedAgentId == null
+          ? '选择一个 Agent 回答'
+          : '仅${_agent(_mentionedAgentId!).name}回答',
+    _ComposerChoice.all => '所有 Agent 依次回答',
+    _ComposerChoice.discuss => '所有 Agent 讨论并生成总结',
   };
+
+  ConversationReplyMode get _replyMode => switch (_choice) {
+    _ComposerChoice.auto => ConversationReplyMode.auto,
+    _ComposerChoice.mentioned => ConversationReplyMode.mentioned,
+    _ComposerChoice.all || _ComposerChoice.discuss => ConversationReplyMode.all,
+  };
+
+  Future<void> _selectChoice(_ComposerChoice choice) async {
+    if (_controller?.isRunning ?? false) return;
+    if (choice == _ComposerChoice.mentioned) {
+      final selected = await _showAgentPicker();
+      if (selected == null || !mounted) return;
+      setState(() {
+        _choice = choice;
+        _mentionedAgentId = selected;
+      });
+      return;
+    }
+    setState(() {
+      _choice = choice;
+      _mentionedAgentId = null;
+    });
+  }
+
+  Future<String?> _showAgentPicker() => showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.55,
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 2, 20, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('选择回答的 Agent', style: HaloTextStyles.compactTitle),
+              ),
+            ),
+            Expanded(
+              child: ListView(
+                children: [
+                  for (final agentId in groupChatMemberAgentIds)
+                    ListTile(
+                      leading: HaloAvatar(
+                        letter: _agent(agentId).letter,
+                        size: 36,
+                      ),
+                      title: Text(_agent(agentId).name),
+                      subtitle: Text(_agent(agentId).role),
+                      onTap: () => Navigator.pop(context, agentId),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Future<void> _send() async {
+    final controller = _controller;
+    if (controller == null) return;
+    if (_choice == _ComposerChoice.mentioned && _mentionedAgentId == null) {
+      await _selectChoice(_ComposerChoice.mentioned);
+      if (_mentionedAgentId == null) return;
+    }
+    final input = _inputController.text;
+    if (input.trim().isEmpty) return;
+    _inputController.clear();
+    await controller.submit(
+      input: input,
+      mode: _replyMode,
+      mentionedAgentIds: _mentionedAgentId == null
+          ? const []
+          : [_mentionedAgentId!],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final controller = _controller;
     return HaloPageScaffold(
       title: 'iOS 产品小组',
       titleBadge: '4 AI',
@@ -49,139 +178,187 @@ class _GroupChatPageState extends State<GroupChatPage> {
         ),
       ],
       body: ListView(
+        controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(12, 11, 12, 16),
-        children: const [
-          _CenterNotice('今天 10:12'),
-          _CenterNotice('群目标：判断个人 AI 通讯产品的 iOS MVP 是否值得做'),
-          _MineGroupBubble(),
-          _CenterNotice('自动选择了 产品经理、技术架构师'),
-          _ExpertGroupBubble(
-            name: '产品经理',
-            model: 'Anthropic / claude-sonnet-4',
-            letter: '产',
-            text: '用户价值是成立的，但首版必须把“联系人就是能力”做透。建议只验证高频工作与资讯场景。',
-          ),
-          _ExpertGroupBubble(
-            name: '技术架构师',
-            model: 'OpenAI / gpt-5',
-            letter: '技',
-            quote: '产品经理：首版只验证高频工作与资讯',
-            text: '工程上可行。最大的风险不是 UI，而是消息可靠性、模型编排和长期记忆边界。',
-          ),
-          _SummaryCard(),
+        children: [
+          const _CenterNotice('群目标：判断个人 AI 通讯产品的 iOS MVP 是否值得做'),
+          const _HistoricalGroupTimeline(),
+          if (controller != null)
+            for (final turn in controller.pastTurns) ...[
+              _MineGroupBubble(text: turn.input),
+              for (final message in turn.messages)
+                _ExpertGroupBubble(message: message),
+              if (turn.summary case final summary?)
+                _SummaryCard(summary: summary),
+              _RunStatus(
+                status: turn.status,
+                stage: turn.stage,
+                errorCode: turn.errorCode,
+              ),
+            ],
+          if (controller?.submittedInput case final input?)
+            _MineGroupBubble(text: input),
+          if (controller != null) ...[
+            if (controller.selectedAgentIds.isNotEmpty)
+              _CenterNotice(
+                '已选择 ${controller.selectedAgentIds.map((id) => _agent(id).name).join('、')}',
+              ),
+            if (controller.replyMode == ConversationReplyMode.all &&
+                controller.runId != null)
+              _DiscussionProgress(stage: controller.stage),
+            for (final message in controller.messages)
+              _ExpertGroupBubble(message: message),
+            if (controller.summary case final summary?)
+              _SummaryCard(summary: summary),
+            if (controller.status case final status?)
+              _RunStatus(
+                status: status,
+                stage: controller.stage,
+                errorCode: controller.errorCode,
+              ),
+          ],
         ],
       ),
       bottom: _GroupComposer(
-        selected: mode,
-        description: modeDescription,
-        onSelected: (value) => setState(() => mode = value),
+        selected: _choice,
+        description: _modeDescription,
+        inputController: _inputController,
+        enabled: controller != null,
+        isRunning: controller?.isRunning ?? false,
+        stopRequested: controller?.stopRequested ?? false,
+        onSelected: _selectChoice,
+        onMention: () => _selectChoice(_ComposerChoice.mentioned),
+        onSend: _send,
+        onStop: controller?.stop,
       ),
     );
   }
 }
+
+class _AgentPresentation {
+  const _AgentPresentation(this.name, this.role, this.letter);
+  final String name;
+  final String role;
+  final String letter;
+}
+
+_AgentPresentation _agent(String agentId) => switch (agentId) {
+  'product-manager' => const _AgentPresentation('产品经理', '产品判断与需求拆解', '产'),
+  'interaction-designer' => const _AgentPresentation('交互设计师', '体验与交互方案', '设'),
+  'technical-architect' => const _AgentPresentation('技术架构师', '架构与工程风险', '技'),
+  'growth-advisor' => const _AgentPresentation('增长顾问', '增长与验证策略', '增'),
+  _ => _AgentPresentation(agentId, 'Agent', 'AI'),
+};
 
 class _CenterNotice extends StatelessWidget {
   const _CenterNotice(this.text);
   final String text;
 
   @override
-  Widget build(BuildContext context) {
-    return Align(
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFFE4E6EA),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: HaloTextStyles.caption,
-        ),
+  Widget build(BuildContext context) => Align(
+    child: Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE4E6EA),
+        borderRadius: BorderRadius.circular(8),
       ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: HaloTextStyles.caption,
+      ),
+    ),
+  );
+}
+
+class _HistoricalGroupTimeline extends StatelessWidget {
+  const _HistoricalGroupTimeline();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: [
+        _CenterNotice('今天 10:12'),
+        _MineGroupBubble(text: '先从用户价值、实现难度和商业化三个角度判断一下。'),
+        _CenterNotice('自动选择了 产品经理、技术架构师'),
+        _ExpertGroupBubble(
+          message: GroupChatAgentMessage(
+            agentId: 'product-manager',
+            text: '用户价值是成立的，但首版必须把“联系人就是能力”做透。',
+            status: GroupChatMessageStatus.completed,
+          ),
+        ),
+        _ExpertGroupBubble(
+          message: GroupChatAgentMessage(
+            agentId: 'technical-architect',
+            text: '工程上可行。最大的风险不是 UI，而是消息可靠性、模型编排和长期记忆边界。',
+            status: GroupChatMessageStatus.completed,
+          ),
+        ),
+        _SummaryCard(title: '群聊阶段总结', summary: '首版聚焦文字对话、可控群聊、Agent 市场和结果沉淀。'),
+      ],
     );
   }
 }
 
 class _MineGroupBubble extends StatelessWidget {
-  const _MineGroupBubble();
+  const _MineGroupBubble({required this.text});
+  final String text;
 
   @override
-  Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: Container(
-        margin: const EdgeInsets.only(left: 60, bottom: 12),
-        padding: const EdgeInsets.all(11),
-        decoration: BoxDecoration(
-          color: HaloColors.accent,
-          borderRadius: BorderRadius.circular(13),
-        ),
-        child: const Text(
-          '先从用户价值、实现难度和商业化三个角度判断一下。',
-          style: TextStyle(color: Colors.white, fontSize: 13, height: 1.5),
-        ),
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerRight,
+    child: Container(
+      margin: const EdgeInsets.only(left: 60, bottom: 12),
+      padding: const EdgeInsets.all(11),
+      decoration: BoxDecoration(
+        color: HaloColors.accent,
+        borderRadius: BorderRadius.circular(13),
       ),
-    );
-  }
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.5),
+      ),
+    ),
+  );
 }
 
 class _ExpertGroupBubble extends StatelessWidget {
-  const _ExpertGroupBubble({
-    required this.name,
-    required this.model,
-    required this.letter,
-    required this.text,
-    this.quote,
-  });
-  final String name;
-  final String model;
-  final String letter;
-  final String text;
-  final String? quote;
+  const _ExpertGroupBubble({required this.message});
+  final GroupChatAgentMessage message;
 
   @override
   Widget build(BuildContext context) {
+    final agent = _agent(message.agentId);
+    final isRunning = message.status == GroupChatMessageStatus.running;
+    final isFailed = message.status == GroupChatMessageStatus.failed;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          HaloAvatar(letter: letter, size: 36),
+          HaloAvatar(letter: agent.letter, size: 36),
           const SizedBox(width: 8),
           Flexible(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('$name · $model', style: HaloTextStyles.caption),
+                Text(agent.name, style: HaloTextStyles.caption),
                 const SizedBox(height: 4),
                 Container(
                   padding: const EdgeInsets.all(11),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: isFailed ? const Color(0xFFFFF1F0) : Colors.white,
                     borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (quote case final quote?) ...[
-                        Container(
-                          padding: const EdgeInsets.only(left: 8),
-                          decoration: const BoxDecoration(
-                            border: Border(
-                              left: BorderSide(
-                                color: HaloColors.accent,
-                                width: 3,
-                              ),
-                            ),
-                          ),
-                          child: Text(quote, style: HaloTextStyles.caption),
-                        ),
-                        const SizedBox(height: 7),
-                      ],
-                      Text(text, style: HaloTextStyles.body),
-                    ],
+                  child: Text(
+                    isRunning
+                        ? '正在思考…'
+                        : message.text.isEmpty && isFailed
+                        ? '回答失败'
+                        : message.text,
+                    style: HaloTextStyles.body,
                   ),
                 ),
               ],
@@ -193,91 +370,163 @@ class _ExpertGroupBubble extends StatelessWidget {
   }
 }
 
-class _SummaryCard extends StatelessWidget {
-  const _SummaryCard();
+class _DiscussionProgress extends StatelessWidget {
+  const _DiscussionProgress({required this.stage});
+  final ConversationStage? stage;
+
+  int get _activeIndex => switch (stage) {
+    ConversationStage.crossDiscussion => 1,
+    ConversationStage.summarizing || ConversationStage.completed => 2,
+    _ => 0,
+  };
 
   @override
   Widget build(BuildContext context) {
+    const labels = ['观点收集', '交叉讨论', '群聊总结'];
     return Container(
-      margin: const EdgeInsets.only(left: 44),
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(13),
-        border: Border.all(color: HaloColors.line),
+        borderRadius: BorderRadius.circular(12),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          const ColoredBox(
-            color: HaloColors.accentDeep,
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: SizedBox(
-                width: double.infinity,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '群聊阶段总结',
-                      style: TextStyle(color: Color(0xFFDCE1FF), fontSize: 10),
+          for (var index = 0; index < labels.length; index++) ...[
+            Expanded(
+              child: Column(
+                children: [
+                  Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: index <= _activeIndex
+                          ? HaloColors.accent
+                          : HaloColors.line,
+                      shape: BoxShape.circle,
                     ),
-                    SizedBox(height: 4),
-                    Text(
-                      '先验证个人工作通讯闭环',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    labels[index],
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: index == _activeIndex
+                          ? FontWeight.w700
+                          : FontWeight.w400,
+                      color: index <= _activeIndex
+                          ? HaloColors.accentDeep
+                          : HaloColors.muted,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
-          ),
-          const Padding(
-            padding: EdgeInsets.all(12),
-            child: Text(
-              '首版聚焦文字对话、可控群聊、Agent 市场和结果沉淀。语音仅保留一对一，群聊不做通话。',
-              style: HaloTextStyles.body,
-            ),
-          ),
-          const Divider(height: 1),
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(onPressed: null, child: const Text('保存总结')),
-              ),
-              const SizedBox(height: 38, child: VerticalDivider(width: 1)),
-              Expanded(
-                child: TextButton(onPressed: null, child: const Text('发布到圈层')),
-              ),
-            ],
-          ),
+            if (index < labels.length - 1)
+              const Expanded(child: Divider(height: 1)),
+          ],
         ],
       ),
     );
   }
 }
 
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({required this.summary, this.title = '群聊总结'});
+  final String summary;
+  final String title;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.only(left: 44, bottom: 12),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(13),
+      border: Border.all(color: HaloColors.line),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: HaloColors.accentDeep,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(summary, style: HaloTextStyles.body),
+      ],
+    ),
+  );
+}
+
+class _RunStatus extends StatelessWidget {
+  const _RunStatus({
+    required this.status,
+    required this.stage,
+    required this.errorCode,
+  });
+
+  final OrchestrationRunStatus status;
+  final ConversationStage? stage;
+  final String? errorCode;
+
+  String get _label => switch (status) {
+    OrchestrationRunStatus.running => switch (stage) {
+      ConversationStage.selectingAgents => '正在选择 Agent',
+      ConversationStage.collectingOpinions => '观点收集中',
+      ConversationStage.crossDiscussion => '交叉讨论中',
+      ConversationStage.summarizing => '正在生成群聊总结',
+      _ => '运行中',
+    },
+    OrchestrationRunStatus.completed => '已完成',
+    OrchestrationRunStatus.failed => '运行失败',
+    OrchestrationRunStatus.stopped => '已停止',
+  };
+
+  @override
+  Widget build(BuildContext context) => _CenterNotice(
+    errorCode == null || status != OrchestrationRunStatus.failed
+        ? _label
+        : '$_label · $errorCode',
+  );
+}
+
 class _GroupComposer extends StatelessWidget {
   const _GroupComposer({
     required this.selected,
     required this.description,
+    required this.inputController,
+    required this.enabled,
+    required this.isRunning,
+    required this.stopRequested,
     required this.onSelected,
+    required this.onMention,
+    required this.onSend,
+    required this.onStop,
   });
-  final _GroupMode selected;
+
+  final _ComposerChoice selected;
   final String description;
-  final ValueChanged<_GroupMode> onSelected;
+  final TextEditingController inputController;
+  final bool enabled;
+  final bool isRunning;
+  final bool stopRequested;
+  final ValueChanged<_ComposerChoice> onSelected;
+  final VoidCallback onMention;
+  final VoidCallback onSend;
+  final VoidCallback? onStop;
 
   @override
   Widget build(BuildContext context) {
-    const modes = <(_GroupMode, String)>[
-      (_GroupMode.auto, '自动选择'),
-      (_GroupMode.mention, '@某个 Agent'),
-      (_GroupMode.all, '@所有人'),
-      (_GroupMode.discuss, '让大家讨论'),
+    const modes = <(_ComposerChoice, String)>[
+      (_ComposerChoice.auto, '自动选择'),
+      (_ComposerChoice.mentioned, '@某个 Agent'),
+      (_ComposerChoice.all, '@所有人'),
+      (_ComposerChoice.discuss, '让大家讨论'),
     ];
     return DecoratedBox(
       decoration: const BoxDecoration(
@@ -292,19 +541,13 @@ class _GroupComposer extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  Text(
-                    '当前：$description',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: HaloColors.accentDeep,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  const Text('如何选择？', style: HaloTextStyles.caption),
-                ],
+              Text(
+                '当前：$description',
+                style: const TextStyle(
+                  fontSize: 10,
+                  color: HaloColors.accentDeep,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(height: 6),
               SingleChildScrollView(
@@ -317,7 +560,9 @@ class _GroupComposer extends StatelessWidget {
                         child: ChoiceChip(
                           label: Text(mode.$2),
                           selected: selected == mode.$1,
-                          onSelected: (_) => onSelected(mode.$1),
+                          onSelected: enabled && !isRunning
+                              ? (_) => onSelected(mode.$1)
+                              : null,
                           showCheckmark: false,
                           visualDensity: VisualDensity.compact,
                           labelStyle: TextStyle(
@@ -340,20 +585,24 @@ class _GroupComposer extends StatelessWidget {
                   HaloIconButton(
                     prototypeIconClass: 'ph ph-at',
                     semanticLabel: '提及 Agent',
-                    onPressed: () {},
+                    onPressed: enabled && !isRunning ? onMention : null,
                   ),
                   const SizedBox(width: 5),
-                  const Expanded(
+                  Expanded(
                     child: TextField(
+                      controller: inputController,
+                      enabled: enabled && !isRunning,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => onSend(),
                       decoration: InputDecoration(
-                        hintText: '发消息给这个 AI 小组',
+                        hintText: enabled ? '发消息给这个 AI 小组' : '编排服务待接入',
                         filled: true,
                         fillColor: Colors.white,
-                        border: OutlineInputBorder(
+                        border: const OutlineInputBorder(
                           borderRadius: BorderRadius.all(Radius.circular(12)),
                           borderSide: BorderSide.none,
                         ),
-                        contentPadding: EdgeInsets.symmetric(
+                        contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
                           vertical: 10,
                         ),
@@ -361,12 +610,20 @@ class _GroupComposer extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 7),
-                  HaloIconButton(
-                    prototypeIconClass: 'ph ph-arrow-up',
-                    semanticLabel: '发送',
-                    primary: true,
-                    onPressed: () {},
-                  ),
+                  if (isRunning)
+                    HaloIconButton(
+                      prototypeIconClass: 'ph ph-stop-circle',
+                      semanticLabel: '停止生成',
+                      primary: true,
+                      onPressed: stopRequested ? null : onStop,
+                    )
+                  else
+                    HaloIconButton(
+                      prototypeIconClass: 'ph ph-arrow-up',
+                      semanticLabel: '发送',
+                      primary: true,
+                      onPressed: enabled ? onSend : null,
+                    ),
                 ],
               ),
             ],
