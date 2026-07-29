@@ -322,7 +322,9 @@ class SingleChatController extends ChangeNotifier {
       if (_disposed) {
         return;
       }
-      final reconciliation = _reconcilePersistedCompletions(loadedMessages);
+      final reconciliation = await _reconcilePersistedCompletions(
+        loadedMessages,
+      );
       final messages = [
         for (final message in loadedMessages)
           if (!reconciliation.quarantinedMessageIds.contains(message.id))
@@ -346,8 +348,10 @@ class SingleChatController extends ChangeNotifier {
     }
   }
 
-  ({bool failed, Set<String> quarantinedMessageIds})
-  _reconcilePersistedCompletions(List<ChatMessageProjection> loadedMessages) {
+  Future<({bool failed, Set<String> quarantinedMessageIds})>
+  _reconcilePersistedCompletions(
+    List<ChatMessageProjection> loadedMessages,
+  ) async {
     _outboxReconciliationBlocked = false;
     final quarantinedMessageIds = <String>{};
     var failed = false;
@@ -369,30 +373,28 @@ class SingleChatController extends ChangeNotifier {
           failed = true;
           continue;
         }
-        SingleChatDispatchClaim? dispatchClaim;
-        if (command.hasDispatchClaim) {
-          if (command.dispatchClaimExpiresAtEpochMs! > nowEpochMs) {
-            continue;
-          }
-          if (answer.dispatchClaimOwner != command.dispatchClaimOwner ||
-              answer.dispatchClaimGeneration !=
-                  command.dispatchClaimGeneration) {
-            _outboxReconciliationBlocked = true;
-            quarantinedMessageIds.add(answer.id);
-            failed = true;
-            continue;
-          }
-          dispatchClaim = SingleChatDispatchClaim(
-            conversationId: command.conversationId,
-            commandId: command.commandId,
-            ownerId: command.dispatchClaimOwner!,
-            generation: command.dispatchClaimGeneration!,
-          );
-        }
-        if (dispatchClaim == null) {
-          _outboxReconciliationBlocked = true;
+        final dispatchClaim = SingleChatDispatchClaim(
+          conversationId: command.conversationId,
+          commandId: command.commandId,
+          ownerId: command.dispatchClaimOwner!,
+          generation: command.dispatchClaimGeneration!,
+        );
+        if (answer.dispatchClaimOwner != command.dispatchClaimOwner ||
+            answer.dispatchClaimGeneration != command.dispatchClaimGeneration) {
           quarantinedMessageIds.add(answer.id);
           failed = true;
+          final staleDisposition = await repository.discardStaleClaimedAnswer(
+            conversationId,
+            answer,
+            dispatchClaim,
+          );
+          if (staleDisposition ==
+              ChatMessageStaleAnswerDisposition.ownershipMismatch) {
+            _outboxReconciliationBlocked = true;
+          }
+          continue;
+        }
+        if (command.dispatchClaimExpiresAtEpochMs! > nowEpochMs) {
           continue;
         }
         try {

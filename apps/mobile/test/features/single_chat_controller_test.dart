@@ -802,7 +802,7 @@ void main() {
   );
 
   test(
-    'reconciliation cannot terminalize an answer after its claim is reclaimed',
+    'reconciliation removes a stale answer before a reclaimed live claim runs',
     () async {
       var nowEpochMs = 1000;
       final outbox = InMemorySingleChatCommandOutbox(
@@ -857,10 +857,25 @@ void main() {
         outbox.read('conversation-data', command.commandId)?.status,
         SingleChatCommandStatus.pending,
       );
-      expect(controller.state.historyLoadFailed, isFalse);
+      expect(controller.state.historyLoadFailed, isTrue);
+      expect(controller.state.messages, isEmpty);
+      final newCommit = await repository.appendIf(
+        'conversation-data',
+        const ChatMessageProjection(
+          id: 'command-reclaimed-recovery:answer',
+          kind: ChatMessageKind.agentText,
+          text: '新 owner 的答案',
+          dispatchClaimOwner: 'new-controller',
+          dispatchClaimGeneration: 2,
+        ),
+        ChatMessageCommitToken('new-owner-commit', generation: 2),
+        () => true,
+      );
+      expect(newCommit.committed, isTrue);
+      expect(newCommit.inserted, isTrue);
       expect(
-        controller.state.messages.single.id,
-        '${command.commandId}:answer',
+        (await repository.load('conversation-data')).single.text,
+        '新 owner 的答案',
       );
     },
   );
@@ -2583,6 +2598,90 @@ void main() {
       expect(remaining, hasLength(1));
       expect(remaining.single.id, 'command-durable:user');
       await finalRepository.close();
+    },
+  );
+
+  test(
+    'drift removes an exact stale answer before the reclaimed owner commits',
+    () async {
+      var nowEpochMs = 1000;
+      final directory = Directory.systemTemp.createTempSync(
+        'single-chat-drift-reclaimed-',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final outbox = FileSingleChatCommandOutbox(
+        '${directory.path}/commands.json',
+        nowEpochMs: () => nowEpochMs,
+      );
+      final command = outbox.reserve(
+        conversationId: 'conversation-data',
+        normalizedIntent: 'drift reclaimed claim',
+        createCommandId: () => 'command-drift-reclaimed',
+      );
+      final oldClaim = outbox.claimForDispatch(
+        conversationId: 'conversation-data',
+        commandId: command.commandId,
+        ownerId: 'old-owner',
+        nowEpochMs: 1000,
+        leaseExpiresAtEpochMs: 2000,
+      )!;
+      final repository = await DriftChatMessageRepository.open(
+        databasePath: '${directory.path}/history.sqlite',
+        commandOutbox: outbox,
+        conversations: const {},
+      );
+      await repository.appendIf(
+        'conversation-data',
+        ChatMessageProjection(
+          id: '${command.commandId}:answer',
+          kind: ChatMessageKind.agentText,
+          text: '旧 owner 的答案',
+          dispatchClaimOwner: oldClaim.ownerId,
+          dispatchClaimGeneration: oldClaim.generation,
+        ),
+        ChatMessageCommitToken('old-owner-commit', generation: 1),
+        () => true,
+      );
+      nowEpochMs = 2000;
+      final newClaim = outbox.claimForDispatch(
+        conversationId: 'conversation-data',
+        commandId: command.commandId,
+        ownerId: 'new-owner',
+        nowEpochMs: 2000,
+        leaseExpiresAtEpochMs: 3000,
+      )!;
+      final controller = SingleChatController(
+        conversationId: 'conversation-data',
+        expertId: 'data-analyst',
+        service: _FakeConversationApplicationService(),
+        repository: repository,
+        commandIdFactory: () => 'unused-command',
+        nowEpochMs: () => nowEpochMs,
+      );
+
+      await controller.initialize();
+
+      expect(controller.state.historyLoadFailed, isTrue);
+      expect(controller.state.messages, isEmpty);
+      final newCommit = await repository.appendIf(
+        'conversation-data',
+        ChatMessageProjection(
+          id: '${command.commandId}:answer',
+          kind: ChatMessageKind.agentText,
+          text: '新 owner 的答案',
+          dispatchClaimOwner: newClaim.ownerId,
+          dispatchClaimGeneration: newClaim.generation,
+        ),
+        ChatMessageCommitToken('new-owner-commit', generation: 2),
+        () => true,
+      );
+      expect(newCommit.committed, isTrue);
+      expect(newCommit.inserted, isTrue);
+      expect(
+        (await repository.load('conversation-data')).single.text,
+        '新 owner 的答案',
+      );
+      await repository.close();
     },
   );
 

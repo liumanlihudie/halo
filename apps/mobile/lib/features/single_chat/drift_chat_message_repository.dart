@@ -249,6 +249,41 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
   }
 
   @override
+  Future<ChatMessageStaleAnswerDisposition> discardStaleClaimedAnswer(
+    String conversationId,
+    ChatMessageProjection staleAnswer,
+    SingleChatDispatchClaim currentClaim,
+  ) async {
+    _ensureOpen();
+    if (!isReplaceableStaleAnswer(
+      conversationId: conversationId,
+      staleAnswer: staleAnswer,
+      currentClaim: currentClaim,
+    )) {
+      return ChatMessageStaleAnswerDisposition.ownershipMismatch;
+    }
+    return _database.transaction(() async {
+      final current = await _findMessage(conversationId, staleAnswer.id);
+      if (current == null) {
+        return ChatMessageStaleAnswerDisposition.alreadyAbsent;
+      }
+      if (!_sameStoredMessage(current, staleAnswer)) {
+        return ChatMessageStaleAnswerDisposition.ownershipMismatch;
+      }
+      await (_database.delete(_database.singleChatMessages)..where(
+            (row) =>
+                row.conversationId.equals(conversationId) &
+                row.messageId.equals(staleAnswer.id) &
+                row.storageRevision.equals(current.storageRevision) &
+                row.projectionJson.equals(current.projectionJson) &
+                row.projectionSha256.equals(current.projectionSha256),
+          ))
+          .go();
+      return ChatMessageStaleAnswerDisposition.removedExactStaleAnswer;
+    });
+  }
+
+  @override
   Future<void> close() {
     final closing = _closing;
     if (closing != null) {

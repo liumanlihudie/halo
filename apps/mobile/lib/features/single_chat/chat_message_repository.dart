@@ -163,6 +163,12 @@ enum ChatMessageRollbackDisposition {
   commitDidNotInsert,
 }
 
+enum ChatMessageStaleAnswerDisposition {
+  removedExactStaleAnswer,
+  alreadyAbsent,
+  ownershipMismatch,
+}
+
 extension ChatMessageRollbackDispositionSafety
     on ChatMessageRollbackDisposition {
   bool get confirmsNoCommittedAnswer =>
@@ -1089,6 +1095,14 @@ abstract interface class ChatMessageRepository {
     String conversationId,
     ChatMessageCommitResult commit,
   );
+
+  /// Removes only the exact stale answer projection when [currentClaim] has
+  /// replaced its dispatch owner/generation for the same command.
+  Future<ChatMessageStaleAnswerDisposition> discardStaleClaimedAnswer(
+    String conversationId,
+    ChatMessageProjection staleAnswer,
+    SingleChatDispatchClaim currentClaim,
+  );
 }
 
 abstract interface class DurableChatMessageRepository
@@ -1273,6 +1287,33 @@ class InMemoryChatMessageRepository implements ChatMessageRepository {
   }
 
   @override
+  Future<ChatMessageStaleAnswerDisposition> discardStaleClaimedAnswer(
+    String conversationId,
+    ChatMessageProjection staleAnswer,
+    SingleChatDispatchClaim currentClaim,
+  ) async {
+    if (!isReplaceableStaleAnswer(
+      conversationId: conversationId,
+      staleAnswer: staleAnswer,
+      currentClaim: currentClaim,
+    )) {
+      return ChatMessageStaleAnswerDisposition.ownershipMismatch;
+    }
+    final messages = _messages[conversationId];
+    final index =
+        messages?.indexWhere((message) => message.id == staleAnswer.id) ?? -1;
+    if (index < 0) {
+      return ChatMessageStaleAnswerDisposition.alreadyAbsent;
+    }
+    if (!_sameMessageProjection(messages![index], staleAnswer)) {
+      return ChatMessageStaleAnswerDisposition.ownershipMismatch;
+    }
+    messages.removeAt(index);
+    _messageOwnership[conversationId]?.remove(staleAnswer.id);
+    return ChatMessageStaleAnswerDisposition.removedExactStaleAnswer;
+  }
+
+  @override
   Future<void> append(
     String conversationId,
     ChatMessageProjection message,
@@ -1399,6 +1440,21 @@ class InMemoryChatMessageRepository implements ChatMessageRepository {
     owners!.remove(messageId);
     return ChatMessageRollbackDisposition.removedOwnedRevision;
   }
+}
+
+bool isReplaceableStaleAnswer({
+  required String conversationId,
+  required ChatMessageProjection staleAnswer,
+  required SingleChatDispatchClaim currentClaim,
+}) {
+  final staleOwner = staleAnswer.dispatchClaimOwner;
+  final staleGeneration = staleAnswer.dispatchClaimGeneration;
+  return currentClaim.conversationId == conversationId &&
+      staleAnswer.id == '${currentClaim.commandId}:answer' &&
+      staleOwner != null &&
+      staleGeneration != null &&
+      (staleOwner != currentClaim.ownerId ||
+          staleGeneration != currentClaim.generation);
 }
 
 bool _sameMessageProjection(
