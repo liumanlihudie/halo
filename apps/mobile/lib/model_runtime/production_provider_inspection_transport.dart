@@ -41,7 +41,7 @@ final class ProductionProviderInspectionTransport
       final seen = <String>{};
       final models = <UpstreamModelMetadata>[];
       for (final item in data) {
-        if (item is! Map<String, Object?>) {
+        if (item is! Map<String, Object?> || item['object'] != 'model') {
           throw const FormatException();
         }
         final modelId = item['id'];

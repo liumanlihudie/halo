@@ -162,6 +162,36 @@ void main() {
     }
   });
 
+  test(
+    'oversized HTTP error body preserves status mapping without parsing',
+    () async {
+      final adapter = FakeUnaryHttpAdapter()
+        ..enqueueRaw(
+          statusCode: 429,
+          headers: const {'retry-after': '11'},
+          bytes: List<int>.filled(
+            SecureJsonHttpClient.maximumBodyBytes + 1,
+            0x61,
+          ),
+        );
+
+      await expectLater(
+        _transport(
+          adapter,
+        ).discoverModels(_request(config: ProviderConfig.deepSeek())),
+        throwsA(
+          _safeRuntimeError(ModelRuntimeErrorCode.rateLimited)
+              .having((error) => error.httpStatus, 'status', 429)
+              .having(
+                (error) => error.retryAfter,
+                'retryAfter',
+                const Duration(seconds: 11),
+              ),
+        ),
+      );
+    },
+  );
+
   test('malformed response roots fail with a fixed safe error', () async {
     final bodies = <List<int>>[
       utf8.encode('["not-a-map"]'),
@@ -172,6 +202,31 @@ void main() {
     for (final body in bodies) {
       final adapter = FakeUnaryHttpAdapter()
         ..enqueueRaw(statusCode: 200, bytes: body);
+
+      await expectLater(
+        _transport(
+          adapter,
+        ).discoverModels(_request(config: ProviderConfig.deepSeek())),
+        throwsA(_safeRuntimeError(ModelRuntimeErrorCode.malformedResponse)),
+      );
+    }
+  });
+
+  test('catalog items require the model object discriminator', () async {
+    final items = <Map<String, Object?>>[
+      {'id': 'deepseek-chat'},
+      {'id': 'deepseek-chat', 'object': 'not-a-model'},
+    ];
+
+    for (final item in items) {
+      final adapter = FakeUnaryHttpAdapter()
+        ..enqueueJson(
+          statusCode: 200,
+          body: {
+            'object': 'list',
+            'data': [item],
+          },
+        );
 
       await expectLater(
         _transport(

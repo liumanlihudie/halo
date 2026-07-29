@@ -808,10 +808,6 @@ class SecureJsonHttpClient {
         ),
       );
       endpointPolicy.validateAfterConnect(endpoint, response.remoteAddress);
-      final rawBody = await _readBounded(
-        response.body,
-        cancellationToken: cancellationToken,
-      );
       final retryAfter = _parseRetryAfter(response.headers['retry-after']);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return SecureJsonHttpResponse(
@@ -820,6 +816,10 @@ class SecureJsonHttpClient {
           retryAfter: retryAfter,
         );
       }
+      final rawBody = await _readBounded(
+        response.body,
+        cancellationToken: cancellationToken,
+      );
       final decodedBody = await _decodeContent(
         rawBody,
         response.headers['content-encoding'],
