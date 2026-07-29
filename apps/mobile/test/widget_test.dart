@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/app/app.dart';
 
@@ -30,6 +31,11 @@ void main() {
 
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('自托管 Gateway'),
+      300,
+      scrollable: find.byType(Scrollable).last,
+    );
     expect(find.text('自托管 Gateway'), findsOneWidget);
   });
 }
