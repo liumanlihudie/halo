@@ -12,6 +12,7 @@ class SecretRef {
         uri == null ||
         !const {'keychain', 'vault', 'memory'}.contains(uri.scheme) ||
         uri.host.isEmpty ||
+        uri.hasPort ||
         uri.hasQuery ||
         uri.hasFragment ||
         uri.userInfo.isNotEmpty ||

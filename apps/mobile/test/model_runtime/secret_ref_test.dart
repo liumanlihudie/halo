@@ -22,6 +22,8 @@ void main() {
       'plain-text-secret',
       'https://example.com/secret',
       'vault:missing-authority',
+      'keychain://openai:443/primary',
+      'vault://provider:8443/account',
       'memory://production/not-test',
       '',
     ]) {

@@ -26,6 +26,7 @@ export 'provider_health_probe.dart';
 export 'provider_inspection_models.dart';
 export 'provider_inspection_transport.dart';
 export 'provider_registry.dart';
+export 'secure_credential_store.dart';
 export 'secret_ref.dart';
 export 'streaming_chat_runtime.dart';
 export 'structured_sse_frame.dart';
