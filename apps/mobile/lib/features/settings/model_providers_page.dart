@@ -3,12 +3,19 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/features/settings/model_picker_sheet.dart';
+import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 
 class ModelProvidersPage extends StatefulWidget {
-  const ModelProvidersPage({this.controller, super.key});
+  const ModelProvidersPage({
+    this.controller,
+    this.routingController,
+    super.key,
+  });
 
   final ProviderSettingsController? controller;
+  final ModelRoutingController? routingController;
 
   static const providers = <(String, String, String, bool)>[
     ('toapis', 'ToAPIs', '推荐聚合 · OpenAI-compatible · 多模态', true),
@@ -31,12 +38,16 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
   void initState() {
     super.initState();
     _loadSupported();
+    _loadRouting();
   }
 
   @override
   void didUpdateWidget(ModelProvidersPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) _loadSupported();
+    if (oldWidget.routingController != widget.routingController) {
+      _loadRouting();
+    }
   }
 
   void _loadSupported() {
@@ -47,9 +58,24 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
     }
   }
 
+  void _loadRouting() {
+    widget.routingController?.load().catchError((Object _) => null);
+  }
+
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
+    final routingController = widget.routingController;
+    if (routingController != null) {
+      return AnimatedBuilder(
+        animation: routingController,
+        builder: (context, _) => _buildWithProviderController(controller),
+      );
+    }
+    return _buildWithProviderController(controller);
+  }
+
+  Widget _buildWithProviderController(ProviderSettingsController? controller) {
     if (controller != null) {
       return AnimatedBuilder(
         animation: controller,
@@ -89,9 +115,11 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
             children: [
               HaloSettingsRow(
                 label: '默认文字模型',
-                detail: '尚未配置',
+                detail: _globalModelDetail(),
                 prototypeIconClass: 'ph ph-chat-circle-text',
-                onTap: () {},
+                onTap: widget.routingController == null
+                    ? null
+                    : _chooseGlobalModel,
               ),
               HaloSettingsRow(
                 label: '默认图片模型',
@@ -180,6 +208,39 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
         ],
       ),
     );
+  }
+
+  String _globalModelDetail() {
+    final routing = widget.routingController;
+    final option = routing?.optionFor(routing.globalDefault);
+    if (option == null) return '尚未配置';
+    return '${option.providerName} / ${option.ref.modelId}';
+  }
+
+  Future<void> _chooseGlobalModel() async {
+    final routing = widget.routingController;
+    if (routing == null) return;
+    try {
+      await routing.load();
+      if (!mounted) return;
+      final selection = await showModelPickerSheet(
+        context,
+        options: routing.availableModels,
+        selectedModel: routing.globalDefault,
+      );
+      final model = selection?.model;
+      if (model == null || !mounted) return;
+      await routing.setGlobalDefault(model);
+    } on ModelRoutingException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.safeMessage)));
+    } on StateError {
+      // The kernel swapped this controller out mid-interaction; the replacement
+      // page rebuilds from the new controller.
+      return;
+    }
   }
 
   String _providerState(

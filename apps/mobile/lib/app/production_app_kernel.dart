@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:halo_mobile/app/app_kernel.dart';
 import 'package:halo_mobile/app/production_single_chat_port.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
@@ -34,6 +35,7 @@ typedef DurableChatRepositoryOpener =
       required String databasePath,
       required FileSingleChatCommandOutbox commandOutbox,
       required Map<String, SingleChatConversationProjection> conversations,
+      required Map<String, String> supersededExpertBindings,
     });
 
 final class ProductionAppKernelFactory {
@@ -91,16 +93,23 @@ final class ProductionAppKernelFactory {
           'Production provider settings require durable recovery support',
         );
       }
-      await recoveryPersistence.recoverPending(_credentials);
+      final mutationCoordinator = SerializedProviderMutationCoordinator();
+      await mutationCoordinator.runExclusive(
+        () => recoveryPersistence.recoverPending(_credentials),
+      );
       chatRepository = await _openChatRepository(
         databasePath: singleChatDatabasePath,
         commandOutbox: FileSingleChatCommandOutbox(singleChatOutboxPath),
-        conversations: _productionSingleChatConversations,
+        conversations: productionSingleChatConversations,
+        supersededExpertBindings: supersededSingleChatExpertBindings,
       );
       final inspectionTransport = _inspectionTransport();
       final runtimeFactory = _runtimeFactory(databasePath, inspectionTransport);
       final initialRuntime = await runtimeFactory.create();
       runtimeSlot = ProductionModelRuntimeSlot(initialRuntime);
+      final runtimeReloader = SerializedProviderRuntimeReloader(
+        _SlotRuntimeReloader(runtimeSlot, runtimeFactory),
+      );
       singleChatPort = ProductionSingleChatPort(
         runtime: _SlotSingleChatRuntime(runtimeSlot),
         experts: ExecutableExpertRegistry(
@@ -114,17 +123,25 @@ final class ProductionAppKernelFactory {
           secretResolver: KeychainSecretResolver(store: _credentials),
         ),
         persistence: settingsPersistence,
-        runtime: _SlotRuntimeReloader(runtimeSlot, runtimeFactory),
+        runtime: runtimeReloader,
+        mutationCoordinator: mutationCoordinator,
+      );
+      final modelRouting = ModelRoutingController(
+        persistence: SqliteModelRoutingPersistence(settingsStore),
+        runtime: runtimeReloader,
+        mutationCoordinator: mutationCoordinator,
       );
       return _ProductionAppKernel(
         dependencies: AppDependencies(
           singleChatPort: singleChatPort,
           chatRepository: chatRepository,
           providerSettings: settings,
+          modelRouting: modelRouting,
         ),
         port: singleChatPort,
         chatRepository: chatRepository,
         settings: settings,
+        modelRouting: modelRouting,
         runtimeSlot: runtimeSlot,
         settingsStore: settingsStore,
       );
@@ -212,10 +229,12 @@ Future<DurableChatMessageRepository> _openDriftChatMessageRepository({
   required String databasePath,
   required FileSingleChatCommandOutbox commandOutbox,
   required Map<String, SingleChatConversationProjection> conversations,
+  required Map<String, String> supersededExpertBindings,
 }) => DriftChatMessageRepository.open(
   databasePath: databasePath,
   commandOutbox: commandOutbox,
   conversations: conversations,
+  supersededExpertBindings: supersededExpertBindings,
 );
 
 final class _SlotRuntimeReloader implements ProviderRuntimeReloader {
@@ -247,11 +266,13 @@ final class _ProductionAppKernel implements ApplicationKernel {
     required ProductionSingleChatPort port,
     required DurableChatMessageRepository chatRepository,
     required ProviderSettingsController settings,
+    required ModelRoutingController modelRouting,
     required ProductionModelRuntimeSlot runtimeSlot,
     required ProviderConfigurationStore settingsStore,
   }) : _port = port,
        _chatRepository = chatRepository,
        _settings = settings,
+       _modelRouting = modelRouting,
        _runtimeSlot = runtimeSlot,
        _settingsStore = settingsStore;
 
@@ -263,6 +284,7 @@ final class _ProductionAppKernel implements ApplicationKernel {
   final ProductionSingleChatPort _port;
   final DurableChatMessageRepository _chatRepository;
   final ProviderSettingsController _settings;
+  final ModelRoutingController _modelRouting;
   final ProductionModelRuntimeSlot _runtimeSlot;
   final ProviderConfigurationStore _settingsStore;
   Future<void>? _closeFuture;
@@ -288,6 +310,7 @@ final class _ProductionAppKernel implements ApplicationKernel {
       }
     }
 
+    await closeOne(_modelRouting.close);
     await closeOne(_settings.close);
     await closeOne(_runtimeSlot.close);
     await closeOne(_port.close);
@@ -327,9 +350,36 @@ final class _ProductionProviderModelCatalogFetcher
   }
 }
 
-const _productionSingleChatConversations = {
+/// Conversations shipped earlier under a different expert.
+///
+/// `general-assistant` was the 产品经理 chat and `data-analyst-chat` was the
+/// 技术架构师 chat before installed contacts each got their own conversation.
+/// Existing databases still hold those rows, and the history schema has no
+/// upgrade path, so without this the fail-closed rebinding guard would keep
+/// every upgraded install from ever building a kernel again.
+const supersededSingleChatExpertBindings = <String, String>{
+  'general-assistant': 'product-manager',
+  'data-analyst-chat': 'technical-architect',
+};
+
+/// Durable conversation seeds for every installed expert profile.
+///
+/// Each key must equal an [InstalledExpertIdentity.conversationId] and each
+/// `expertId` must equal that identity's canonical expert ID, because the chat
+/// controller derives [StartSingleAgentRunRequest.expertId] from this
+/// projection while the profile page binds the model override to the same
+/// canonical ID.
+const productionSingleChatConversations = {
   'general-assistant': SingleChatConversationProjection(
     conversationId: 'general-assistant',
+    expertId: 'project-manager',
+    title: '通用助理',
+    agentName: '通用助理',
+    modelLabel: '已配置文字模型',
+    avatarLetter: '助',
+  ),
+  'product-manager-chat': SingleChatConversationProjection(
+    conversationId: 'product-manager-chat',
     expertId: 'product-manager',
     title: '产品经理',
     agentName: '产品经理',
@@ -338,10 +388,34 @@ const _productionSingleChatConversations = {
   ),
   'data-analyst-chat': SingleChatConversationProjection(
     conversationId: 'data-analyst-chat',
-    expertId: 'technical-architect',
-    title: '技术架构师',
-    agentName: '技术架构师',
+    expertId: 'data-analyst',
+    title: '数据分析师',
+    agentName: '数据分析师',
     modelLabel: '已配置文字模型',
-    avatarLetter: '技',
+    avatarLetter: '数',
+  ),
+  'writing-advisor-chat': SingleChatConversationProjection(
+    conversationId: 'writing-advisor-chat',
+    expertId: 'content-strategist',
+    title: '写作顾问',
+    agentName: '写作顾问',
+    modelLabel: '已配置文字模型',
+    avatarLetter: '写',
+  ),
+  'calendar-assistant': SingleChatConversationProjection(
+    conversationId: 'calendar-assistant',
+    expertId: 'operations-manager',
+    title: '日程管家',
+    agentName: '日程管家',
+    modelLabel: '已配置文字模型',
+    avatarLetter: '日',
+  ),
+  'fitness-planner-chat': SingleChatConversationProjection(
+    conversationId: 'fitness-planner-chat',
+    expertId: 'fitness-planner',
+    title: '健身计划师',
+    agentName: '健身计划师',
+    modelLabel: '已配置文字模型',
+    avatarLetter: '健',
   ),
 };

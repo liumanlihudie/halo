@@ -82,7 +82,7 @@ void main() {
               profile.validationPolicy == ExpertValidationPolicy.structural,
         );
 
-    expect(structuralProfiles, hasLength(21));
+    expect(structuralProfiles, hasLength(22));
     for (final profile in structuralProfiles) {
       expect(
         profile.outputSchema.fields['Verification'],

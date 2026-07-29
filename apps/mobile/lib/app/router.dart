@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/app/app_kernel.dart';
 import 'package:halo_mobile/app/app_shell.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/circle/circle_page.dart';
 import 'package:halo_mobile/features/circle/moment_detail_page.dart';
 import 'package:halo_mobile/features/conversations/conversations_page.dart';
@@ -135,8 +136,23 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/expert/:expertId',
-        builder: (context, state) =>
-            ExpertProfilePage(expertId: state.pathParameters['expertId']!),
+        builder: (context, state) {
+          final expertId = state.pathParameters['expertId']!;
+          final installedIdentity = _executableExperts
+              .installedIdentityForProfileId(expertId);
+          Widget buildPage(AppDependencies? current) => ExpertProfilePage(
+            key: ValueKey(current),
+            expertId: expertId,
+            installedIdentity: installedIdentity,
+            routingController: current?.modelRouting,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/expert/:expertId/data',
@@ -149,6 +165,7 @@ GoRouter createAppRouter({
           Widget buildPage(AppDependencies? current) => ModelProvidersPage(
             key: ValueKey(current),
             controller: current?.providerSettings,
+            routingController: current?.modelRouting,
           );
           final listenable = dependencyListenable;
           if (listenable == null) return buildPage(fixedDependencies);
@@ -185,6 +202,10 @@ GoRouter createAppRouter({
     ],
   );
 }
+
+final _executableExperts = ExecutableExpertRegistry(
+  gateway: const ExpertOutputValidationGateway(),
+);
 
 StatefulShellBranch _branch(String path, Widget child) {
   return StatefulShellBranch(

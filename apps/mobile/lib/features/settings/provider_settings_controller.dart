@@ -88,6 +88,22 @@ abstract interface class ProviderRuntimeReloader {
   Future<void> reload();
 }
 
+abstract interface class ProviderMutationCoordinator {
+  Future<T> runExclusive<T>(Future<T> Function() operation);
+}
+
+final class SerializedProviderMutationCoordinator
+    implements ProviderMutationCoordinator {
+  Future<void> _tail = Future<void>.value();
+
+  @override
+  Future<T> runExclusive<T>(Future<T> Function() operation) {
+    final result = _tail.then((_) => operation());
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return result;
+  }
+}
+
 abstract interface class ProviderSecretRefFactory {
   SecretRef next();
 }
@@ -134,17 +150,21 @@ final class ProviderSettingsController extends ChangeNotifier {
     required ProviderSettingsPersistence persistence,
     required ProviderRuntimeReloader runtime,
     ProviderSecretRefFactory? secretRefs,
+    ProviderMutationCoordinator? mutationCoordinator,
   }) : _credentials = credentials,
        _catalogFetcher = catalogFetcher,
        _persistence = persistence,
        _runtime = runtime,
-       _secretRefs = secretRefs ?? SecureUuidProviderSecretRefFactory();
+       _secretRefs = secretRefs ?? SecureUuidProviderSecretRefFactory(),
+       _mutationCoordinator =
+           mutationCoordinator ?? SerializedProviderMutationCoordinator();
 
   final SecureCredentialStore _credentials;
   final ProviderModelCatalogFetcher _catalogFetcher;
   final ProviderSettingsPersistence _persistence;
   final ProviderRuntimeReloader _runtime;
   final ProviderSecretRefFactory _secretRefs;
+  final ProviderMutationCoordinator _mutationCoordinator;
 
   ProviderSettingsState _state = ProviderSettingsState.idle;
   ProviderSettingsState get state => _state;
@@ -476,9 +496,11 @@ final class ProviderSettingsController extends ChangeNotifier {
       final contextToken = Object();
       _activeMutationContextTokens.add(contextToken);
       try {
-        await runZoned(
-          mutation,
-          zoneValues: {_providerSettingsMutationZoneKey: contextToken},
+        await _mutationCoordinator.runExclusive(
+          () => runZoned(
+            mutation,
+            zoneValues: {_providerSettingsMutationZoneKey: contextToken},
+          ),
         );
       } finally {
         _activeMutationContextTokens.remove(contextToken);

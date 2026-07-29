@@ -1,17 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/features/settings/model_picker_sheet.dart';
+import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
 class ExpertProfilePage extends StatelessWidget {
   const ExpertProfilePage({
     required this.expertId,
     this.marketMode = false,
+    this.installedIdentity,
+    this.routingController,
     super.key,
   });
   final String expertId;
   final bool marketMode;
+  final InstalledExpertIdentity? installedIdentity;
+  final ModelRoutingController? routingController;
 
   @override
   Widget build(BuildContext context) {
@@ -98,7 +105,11 @@ class ExpertProfilePage extends StatelessWidget {
               children: [
                 HaloSettingsRow(
                   label: '发消息',
-                  onTap: () => context.push('/chat/general-assistant'),
+                  onTap: installedIdentity == null
+                      ? null
+                      : () => context.push(
+                          '/chat/${installedIdentity!.conversationId}',
+                        ),
                 ),
                 HaloSettingsRow(
                   label: '语音通话',
@@ -118,6 +129,11 @@ class ExpertProfilePage extends StatelessWidget {
             ),
             HaloSettingsGroup(
               children: [
+                if (installedIdentity != null && routingController != null)
+                  _ExpertModelRoutingRow(
+                    canonicalExpertId: installedIdentity!.canonicalExpertId,
+                    controller: routingController!,
+                  ),
                 HaloSettingsRow(
                   label: '专家数据',
                   detail: '提示词、模型、工具与权限',
@@ -141,6 +157,95 @@ class ExpertProfilePage extends StatelessWidget {
       ),
       bottom: marketMode ? _MarketBottomBar(name: name) : null,
     );
+  }
+}
+
+class _ExpertModelRoutingRow extends StatefulWidget {
+  const _ExpertModelRoutingRow({
+    required this.canonicalExpertId,
+    required this.controller,
+  });
+
+  final String canonicalExpertId;
+  final ModelRoutingController controller;
+
+  @override
+  State<_ExpertModelRoutingRow> createState() => _ExpertModelRoutingRowState();
+}
+
+class _ExpertModelRoutingRowState extends State<_ExpertModelRoutingRow> {
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(_ExpertModelRoutingRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller ||
+        oldWidget.canonicalExpertId != widget.canonicalExpertId) {
+      _load();
+    }
+  }
+
+  Future<void> _load() async {
+    try {
+      await widget.controller.load();
+      await widget.controller.loadExpertOverride(widget.canonicalExpertId);
+    } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) =>
+          HaloSettingsRow(label: '模型', detail: _detail(), onTap: _chooseModel),
+    );
+  }
+
+  String _detail() {
+    final override = widget.controller.expertOverrideFor(
+      widget.canonicalExpertId,
+    );
+    final effective = override ?? widget.controller.globalDefault;
+    final option = widget.controller.optionFor(effective);
+    final prefix = override == null ? '跟随默认' : '独立';
+    if (option == null) return '$prefix · 尚未配置';
+    return '$prefix · ${option.providerName} / ${option.ref.modelId}';
+  }
+
+  Future<void> _chooseModel() async {
+    try {
+      await widget.controller.load();
+      await widget.controller.loadExpertOverride(widget.canonicalExpertId);
+      if (!mounted) return;
+      final override = widget.controller.expertOverrideFor(
+        widget.canonicalExpertId,
+      );
+      final selection = await showModelPickerSheet(
+        context,
+        options: widget.controller.availableModels,
+        selectedModel: override,
+        allowFollowGlobal: true,
+        followingGlobal: override == null,
+      );
+      if (selection == null || !mounted) return;
+      await widget.controller.setExpertOverride(
+        widget.canonicalExpertId,
+        selection.followsGlobal ? null : selection.model,
+      );
+    } on ModelRoutingException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.safeMessage)));
+    } on StateError {
+      // The kernel swapped this controller out mid-interaction; the replacement
+      // page rebuilds from the new controller.
+      return;
+    }
   }
 }
 

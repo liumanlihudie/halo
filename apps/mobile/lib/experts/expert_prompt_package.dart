@@ -979,15 +979,17 @@ class TrustedExpertOutputValidator {
 
 /// The application-level output validation composition root.
 ///
-/// Binding is library-private and used only by [ExecutableExpertRegistry];
-/// catalog metadata and trusted-evidence profiles cannot be promoted through
-/// this API.
+/// Binding is library-private and used only by [ExecutableExpertRegistry].
+/// Trusted-evidence profiles may be routed, but remain fail-closed in
+/// [ExecutableExpert] until a trusted evidence projection is supplied.
 class ExpertOutputValidationGateway {
   const ExpertOutputValidationGateway({this.verificationRegistry});
 
   final VerificationRegistry? verificationRegistry;
 
   ExecutableExpert _bind(ExpertProfile profile) {
+    // Fail fast at construction rather than shipping a launchable expert whose
+    // every reply fails closed in [ExecutableExpert.validateAndProject].
     if (profile.validationPolicy != ExpertValidationPolicy.structural) {
       throw StateError('Only structural launch profiles are executable.');
     }
@@ -1119,6 +1121,19 @@ class ExecutableExpert {
 ///
 /// Catalog APIs expose metadata only. The private gateway binding below is
 /// invoked solely for explicit launch allowlists in this registry.
+@immutable
+class InstalledExpertIdentity {
+  const InstalledExpertIdentity({
+    required this.profileId,
+    required this.conversationId,
+    required this.canonicalExpertId,
+  });
+
+  final String profileId;
+  final String conversationId;
+  final String canonicalExpertId;
+}
+
 class ExecutableExpertRegistry {
   factory ExecutableExpertRegistry({
     required ExpertOutputValidationGateway gateway,
@@ -1134,6 +1149,21 @@ class ExecutableExpertRegistry {
         throw StateError('Duplicate canonical expert ID: ${profile.id}');
       }
       profilesById[profile.id] = profile;
+    }
+    final installedProfileIds = <String>{};
+    final installedConversationIds = <String>{};
+    final installedCanonicalIds = <String>{};
+    if (installedExpertIdentities.any(
+      (identity) =>
+          !_identifierPattern.hasMatch(identity.profileId) ||
+          !_identifierPattern.hasMatch(identity.conversationId) ||
+          !installedProfileIds.add(identity.profileId) ||
+          !installedConversationIds.add(identity.conversationId) ||
+          !installedCanonicalIds.add(identity.canonicalExpertId) ||
+          !profilesById.containsKey(identity.canonicalExpertId) ||
+          !_singleChatIds.contains(identity.canonicalExpertId),
+    )) {
+      throw StateError('Invalid installed expert identity mapping');
     }
     final authorizedIds = {..._singleChatIds, ..._groupChatIds};
     final executableById = <String, ExecutableExpert>{
@@ -1184,6 +1214,10 @@ class ExecutableExpertRegistry {
     'qa-test-engineer',
     'ios-engineer',
     'flutter-engineer',
+    'data-analyst',
+    'content-strategist',
+    'operations-manager',
+    'fitness-planner',
   ];
 
   static const _productDeliveryGroupIds = <String>[
@@ -1226,6 +1260,54 @@ class ExecutableExpertRegistry {
     'market-36': 'finance-tax-analyst',
   };
 
+  /// Installed contact profiles that already have an executable single-chat
+  /// expert behind them.
+  ///
+  /// `contract`, `watcher` and `researcher` are deliberately absent: their
+  /// intended experts (`legal-risk-advisor`, `fact-checker`,
+  /// `industry-researcher`) use [ExpertValidationPolicy.trustedEvidence], which
+  /// [ExecutableExpert.validateAndProject] keeps fail-closed until a trusted
+  /// evidence projection and its verification registry exist. Listing them here
+  /// would ship three contacts whose every reply fails as filtered content.
+  static const installedExpertIdentities = <InstalledExpertIdentity>[
+    InstalledExpertIdentity(
+      profileId: 'general',
+      conversationId: 'general-assistant',
+      canonicalExpertId: 'project-manager',
+    ),
+    InstalledExpertIdentity(
+      profileId: 'product',
+      conversationId: 'product-manager-chat',
+      canonicalExpertId: 'product-manager',
+    ),
+    InstalledExpertIdentity(
+      profileId: 'data',
+      conversationId: 'data-analyst-chat',
+      canonicalExpertId: 'data-analyst',
+    ),
+    InstalledExpertIdentity(
+      profileId: 'writing',
+      conversationId: 'writing-advisor-chat',
+      canonicalExpertId: 'content-strategist',
+    ),
+    InstalledExpertIdentity(
+      profileId: 'calendar',
+      conversationId: 'calendar-assistant',
+      canonicalExpertId: 'operations-manager',
+    ),
+    InstalledExpertIdentity(
+      profileId: 'fitness',
+      conversationId: 'fitness-planner-chat',
+      canonicalExpertId: 'fitness-planner',
+    ),
+  ];
+
+  static final Map<String, InstalledExpertIdentity>
+  _installedIdentityByProfileId = Map.unmodifiable({
+    for (final identity in installedExpertIdentities)
+      identity.profileId: identity,
+  });
+
   final List<ExpertProfile> all;
   final Map<String, ExpertProfile> _profilesById;
   final Map<String, ExecutableExpert> _executableById;
@@ -1239,6 +1321,15 @@ class ExecutableExpertRegistry {
       _profilesById[canonicalExpertId];
 
   String? canonicalIdForMarketId(String marketId) => marketIdMappings[marketId];
+
+  InstalledExpertIdentity? installedIdentityForProfileId(
+    String installedProfileId,
+  ) {
+    final normalized = installedProfileId == 'general-assistant'
+        ? 'general'
+        : installedProfileId;
+    return _installedIdentityByProfileId[normalized];
+  }
 
   ExecutableExpert? singleChatById(String canonicalExpertId) =>
       _singleChatIds.contains(canonicalExpertId)

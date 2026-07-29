@@ -20,25 +20,29 @@ void main() {
     'automation-engineer',
     'customer-support-specialist',
     'recruiting-advisor',
+    'fitness-planner',
   ];
   const trustedIds = {'security-auditor'};
 
-  test('batch two exposes twelve unique profiles without prior collisions', () {
-    final profiles = ExpertCatalogBatchTwo.all;
-    final ids = profiles.map((profile) => profile.id).toList();
-    final priorIds = {
-      ...BuiltInExperts.all.map((profile) => profile.id),
-      ...ExpertCatalogBatchOne.all.map((profile) => profile.id),
-    };
+  test(
+    'batch two exposes thirteen unique profiles without prior collisions',
+    () {
+      final profiles = ExpertCatalogBatchTwo.all;
+      final ids = profiles.map((profile) => profile.id).toList();
+      final priorIds = {
+        ...BuiltInExperts.all.map((profile) => profile.id),
+        ...ExpertCatalogBatchOne.all.map((profile) => profile.id),
+      };
 
-    expect(ids, expectedIds);
-    expect(ids.toSet(), hasLength(12));
-    expect(ids.toSet().intersection(priorIds), isEmpty);
-    for (final id in expectedIds) {
-      expect(ExpertCatalogBatchTwo.byId(id)?.id, id);
-    }
-    expect(ExpertCatalogBatchTwo.byId('missing-expert'), isNull);
-  });
+      expect(ids, expectedIds);
+      expect(ids.toSet(), hasLength(13));
+      expect(ids.toSet().intersection(priorIds), isEmpty);
+      for (final id in expectedIds) {
+        expect(ExpertCatalogBatchTwo.byId(id)?.id, id);
+      }
+      expect(ExpertCatalogBatchTwo.byId('missing-expert'), isNull);
+    },
+  );
 
   test('every profile keeps the complete serialized safety contract', () {
     for (final profile in ExpertCatalogBatchTwo.all) {
@@ -146,6 +150,7 @@ void main() {
       '请规划自动化工程和工作流自动化': 'automation-engineer',
       '请制定客户支持和客诉处理方案': 'customer-support-specialist',
       '请优化招聘顾问流程和候选人评估': 'recruiting-advisor',
+      '请制定健身计划和训练饮食计划': 'fitness-planner',
     };
 
     for (final entry in cases.entries) {

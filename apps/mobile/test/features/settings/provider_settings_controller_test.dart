@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
@@ -34,6 +35,77 @@ void main() {
       secretRefs: refs,
     );
   });
+
+  test(
+    'provider save waits for failed routing reload rollback to finish',
+    () async {
+      final coordinator = SerializedProviderMutationCoordinator();
+      final oldModel = ModelRef(
+        providerId: 'deepseek',
+        modelId: 'deepseek-chat',
+      );
+      final nextModel = ModelRef(
+        providerId: 'deepseek',
+        modelId: 'deepseek-reasoner',
+      );
+      final restoreGate = Completer<void>();
+      final routingPersistence = _RoutingPersistence(
+        events: events,
+        options: [
+          AvailableModelOption(
+            ref: oldModel,
+            providerName: 'DeepSeek',
+            modelName: 'DeepSeek Chat',
+          ),
+          AvailableModelOption(
+            ref: nextModel,
+            providerName: 'DeepSeek',
+            modelName: 'DeepSeek Reasoner',
+          ),
+        ],
+        globalDefault: oldModel,
+        restoreGate: restoreGate.future,
+      );
+      final sharedRuntime = _RoutingAwareRuntime(routingPersistence);
+      final routing = ModelRoutingController(
+        persistence: routingPersistence,
+        runtime: sharedRuntime,
+        mutationCoordinator: coordinator,
+      );
+      final provider = ProviderSettingsController(
+        credentials: credentials,
+        catalogFetcher: catalogFetcher,
+        persistence: persistence,
+        runtime: sharedRuntime,
+        secretRefs: refs,
+        mutationCoordinator: coordinator,
+      );
+      await routing.load();
+
+      final routingWrite = routing.setGlobalDefault(nextModel);
+      await routingPersistence.restoreStarted.future;
+      final providerSave = provider.save(
+        const ProviderSettingsDraft(
+          providerId: 'deepseek',
+          apiKey: 'new-secret',
+          enabled: true,
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(events, isNot(contains('credential:set')));
+
+      restoreGate.complete();
+      await expectLater(routingWrite, throwsA(isA<ModelRoutingException>()));
+      await providerSave;
+
+      expect(routingPersistence.globalDefault, oldModel);
+      expect(sharedRuntime.publishedModel, oldModel);
+      expect(
+        events.indexOf('routing:rollback:end'),
+        lessThan(events.indexOf('credential:set')),
+      );
+    },
+  );
 
   test(
     'save orders Keychain, discovery, staged publish, reload, finalize, cleanup',
@@ -857,6 +929,63 @@ final class _FakeRuntimeReloader implements ProviderRuntimeReloader {
     final current = error;
     error = null;
     if (current != null) throw current;
+  }
+}
+
+final class _RoutingPersistence
+    implements ModelRoutingPersistence, ModelRoutingRollbackPersistence {
+  _RoutingPersistence({
+    required this.events,
+    required this.options,
+    required this.globalDefault,
+    required this.restoreGate,
+  });
+
+  final List<String> events;
+  final List<AvailableModelOption> options;
+  ModelRef? globalDefault;
+  final Future<void> restoreGate;
+  final Completer<void> restoreStarted = Completer<void>();
+
+  @override
+  Future<List<AvailableModelOption>> loadAvailableModels() async => options;
+
+  @override
+  Future<ModelRef?> loadGlobalDefault() async => globalDefault;
+
+  @override
+  Future<void> setGlobalDefault(ModelRef model) async {
+    globalDefault = model;
+  }
+
+  @override
+  Future<void> restoreGlobalDefault(ModelRef? model) async {
+    events.add('routing:rollback:start');
+    restoreStarted.complete();
+    await restoreGate;
+    globalDefault = model;
+    events.add('routing:rollback:end');
+  }
+
+  @override
+  Future<ModelRef?> loadExpertOverride(String expertId) async => null;
+
+  @override
+  Future<void> setExpertOverride(String expertId, ModelRef? model) async {}
+}
+
+final class _RoutingAwareRuntime implements ProviderRuntimeReloader {
+  _RoutingAwareRuntime(this.persistence);
+
+  final _RoutingPersistence persistence;
+  var reloadCount = 0;
+  ModelRef? publishedModel;
+
+  @override
+  Future<void> reload() async {
+    reloadCount++;
+    if (reloadCount == 1) throw StateError('routing reload failed');
+    publishedModel = persistence.globalDefault;
   }
 }
 

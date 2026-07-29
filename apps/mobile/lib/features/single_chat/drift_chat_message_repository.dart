@@ -55,14 +55,17 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
     required this._database,
     required this._commandOutbox,
     required Map<String, SingleChatConversationProjection> conversations,
+    required Map<String, String> supersededExpertBindings,
     required this._storagePolicy,
     required this._databaseFile,
-  }) : _conversations = Map.unmodifiable(conversations);
+  }) : _conversations = Map.unmodifiable(conversations),
+       _supersededExpertBindings = Map.unmodifiable(supersededExpertBindings);
 
   static Future<DriftChatMessageRepository> open({
     required String databasePath,
     required FileSingleChatCommandOutbox commandOutbox,
     required Map<String, SingleChatConversationProjection> conversations,
+    Map<String, String> supersededExpertBindings = const {},
     SingleChatOutboxStoragePolicy storagePolicy =
         const BestEffortSingleChatOutboxStoragePolicy(),
   }) async {
@@ -75,6 +78,7 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
       database: database,
       commandOutbox: commandOutbox,
       conversations: conversations,
+      supersededExpertBindings: supersededExpertBindings,
       storagePolicy: storagePolicy,
       databaseFile: file,
     );
@@ -100,6 +104,14 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
   final _SingleChatDatabase _database;
   final FileSingleChatCommandOutbox _commandOutbox;
   final Map<String, SingleChatConversationProjection> _conversations;
+
+  /// `conversationId -> the single previous expert ID that may be replaced`.
+  ///
+  /// A shipped conversation that is repurposed for a different expert would
+  /// otherwise trip the fail-closed rebinding guard forever, because the
+  /// history database has no upgrade path. Only these exact pairs migrate; any
+  /// other drift still fails closed.
+  final Map<String, String> _supersededExpertBindings;
   final SingleChatOutboxStoragePolicy _storagePolicy;
   final File _databaseFile;
   bool _closed = false;
@@ -308,9 +320,14 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
                 .getSingleOrNull();
         if (existing != null) {
           if (existing.expertId != conversation.expertId) {
-            throw StateError(
-              'Single-chat conversation expert binding has changed.',
-            );
+            final superseded =
+                _supersededExpertBindings[conversation.conversationId];
+            if (superseded != existing.expertId) {
+              throw StateError(
+                'Single-chat conversation expert binding has changed.',
+              );
+            }
+            await _migrateSupersededBinding(conversation);
           }
           continue;
         }
@@ -324,6 +341,28 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
             );
       }
     });
+  }
+
+  /// Repoints a repurposed conversation at its new expert.
+  ///
+  /// The stored history was produced by the previous expert, so it is dropped
+  /// rather than re-attributed: keeping it would show one expert's answers under
+  /// another expert's name. Runs inside [_bindConversations]' transaction.
+  Future<void> _migrateSupersededBinding(
+    SingleChatConversationProjection conversation,
+  ) async {
+    await (_database.delete(_database.singleChatMessages)..where(
+          (row) => row.conversationId.equals(conversation.conversationId),
+        ))
+        .go();
+    await (_database.update(_database.singleChatConversations)..where(
+          (row) => row.conversationId.equals(conversation.conversationId),
+        ))
+        .write(
+          SingleChatConversationsCompanion(
+            expertId: Value(conversation.expertId),
+          ),
+        );
   }
 
   Future<SingleChatMessage?> _findMessage(

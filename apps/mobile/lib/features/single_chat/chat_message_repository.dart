@@ -1852,13 +1852,21 @@ class SingleChatCatalogRepository extends InMemoryChatMessageRepository {
 const _fixtureConversations = <String, SingleChatConversationProjection>{
   'general-assistant': SingleChatConversationProjection(
     conversationId: 'general-assistant',
-    expertId: 'general',
+    expertId: 'project-manager',
     title: '通用助理',
     agentName: '通用助理',
     modelLabel: 'ToAPIs / gpt-5-mini',
     avatarLetter: '助',
     avatarImageUrl:
         'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120',
+  ),
+  'product-manager-chat': SingleChatConversationProjection(
+    conversationId: 'product-manager-chat',
+    expertId: 'product-manager',
+    title: '产品经理',
+    agentName: '产品经理',
+    modelLabel: 'Anthropic / claude-sonnet-4',
+    avatarLetter: '产',
   ),
   'data-analyst-chat': SingleChatConversationProjection(
     conversationId: 'data-analyst-chat',
@@ -1868,9 +1876,17 @@ const _fixtureConversations = <String, SingleChatConversationProjection>{
     modelLabel: 'DeepSeek / deepseek-chat',
     avatarLetter: '数',
   ),
+  'writing-advisor-chat': SingleChatConversationProjection(
+    conversationId: 'writing-advisor-chat',
+    expertId: 'content-strategist',
+    title: '写作顾问',
+    agentName: '写作顾问',
+    modelLabel: 'Anthropic / claude-sonnet-4',
+    avatarLetter: '写',
+  ),
   'calendar-assistant': SingleChatConversationProjection(
     conversationId: 'calendar-assistant',
-    expertId: 'calendar',
+    expertId: 'operations-manager',
     title: '日程管家',
     agentName: '日程管家',
     modelLabel: 'Doubao / end-to-end voice',
@@ -1899,6 +1915,14 @@ const _fixtureConversations = <String, SingleChatConversationProjection>{
     agentName: '研究员',
     modelLabel: 'Anthropic / claude-sonnet-4',
     avatarLetter: '研',
+  ),
+  'fitness-planner-chat': SingleChatConversationProjection(
+    conversationId: 'fitness-planner-chat',
+    expertId: 'fitness-planner',
+    title: '健身计划师',
+    agentName: '健身计划师',
+    modelLabel: 'Gemini / 2.5 Flash',
+    avatarLetter: '健',
   ),
 };
 

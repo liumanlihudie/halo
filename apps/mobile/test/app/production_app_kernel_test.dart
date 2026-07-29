@@ -219,6 +219,7 @@ void main() {
               required databasePath,
               required commandOutbox,
               required conversations,
+              required supersededExpertBindings,
             }) async {
               expect(databasePath, '${directory.path}/halo_single_chat.sqlite');
               commandOutbox.reserve(

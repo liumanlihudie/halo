@@ -3,6 +3,7 @@ import 'dart:async';
 // ignore_for_file: prefer_initializing_formals
 
 import 'package:flutter/foundation.dart';
+import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
@@ -13,12 +14,14 @@ class AppDependencies {
     required this.singleChatPort,
     required this.chatRepository,
     this.providerSettings,
+    this.modelRouting,
     this.allowEphemeralChatRepositoryForTesting = false,
   });
 
   final SingleChatPort singleChatPort;
   final ChatMessageRepository chatRepository;
   final ProviderSettingsController? providerSettings;
+  final ModelRoutingController? modelRouting;
   final bool allowEphemeralChatRepositoryForTesting;
 }
 

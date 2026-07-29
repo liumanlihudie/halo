@@ -113,7 +113,7 @@ void main() {
       () => port.startSingleAgentRun(
         const StartSingleAgentRunRequest(
           conversationId: 'conversation-1',
-          expertId: 'data-analyst',
+          expertId: 'user-researcher',
           text: '分析数据',
           clientCommandId: 'command-2',
         ),
