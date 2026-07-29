@@ -309,6 +309,8 @@ git commit -m "feat: add expert team and market"
 
 ### Task 6: Circle Feed And Result Detail
 
+Status: completed in the secondary-route implementation.
+
 **Files:**
 - Create: `lib/features/circle/circle_controller.dart`
 - Create: `lib/features/circle/circle_post_card.dart`
@@ -414,6 +416,8 @@ git commit -m "feat: add local provider and data settings"
 
 ### Task 8: Chat History, Group Creation And Shared Context
 
+Status: completed in the secondary-route implementation.
+
 **Files:**
 - Create: `lib/features/chat_history/chat_history_controller.dart`
 - Create: `lib/features/chat_history/chat_history_page.dart`
@@ -464,6 +468,8 @@ git commit -m "feat: add chat history and group creation"
 
 ### Task 9: Media Preview And Call Demonstration Screens
 
+Status: completed in the secondary-route implementation.
+
 **Files:**
 - Create: `lib/domain/models/media_preview_item.dart`
 - Create: `lib/features/media_preview/media_preview_page.dart`
@@ -512,6 +518,8 @@ git commit -m "feat: add media and call demonstration screens"
 ---
 
 ### Task 10: Full Route Coverage And Visual Parity Gate
+
+Status: all 23 routes covered by tests; final screenshot-by-screenshot parity audit remains ongoing.
 
 **Files:**
 - Create: `test/app/all_routes_smoke_test.dart`
