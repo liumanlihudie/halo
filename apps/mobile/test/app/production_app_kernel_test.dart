@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/app/production_app_kernel.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
+import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
+import 'package:halo_mobile/features/single_chat/drift_chat_message_repository.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
@@ -117,6 +119,146 @@ void main() {
       );
     },
   );
+
+  test('production injects a durable single-chat repository', () async {
+    final directory = await Directory.systemTemp.createTemp('halo-kernel-');
+    addTearDown(() => directory.delete(recursive: true));
+    final factory = ProductionAppKernelFactory(
+      applicationSupportDirectory: () async => directory,
+      credentials: _FakeCredentials(),
+    );
+
+    final kernel = await factory.create();
+
+    expect(
+      kernel.dependencies.chatRepository,
+      isA<DriftChatMessageRepository>(),
+    );
+    expect(
+      kernel.dependencies.chatRepository,
+      isA<DurableChatMessageRepository>(),
+    );
+    kernel.dependencies.chatRepository.commandOutbox.reserve(
+      conversationId: 'general-assistant',
+      normalizedIntent: '验证 production outbox 路径',
+      createCommandId: () => 'production-outbox-command',
+    );
+    expect(
+      File('${directory.path}/single-chat-commands.json').existsSync(),
+      isTrue,
+    );
+    expect(
+      File('${directory.path}/halo_single_chat.sqlite').existsSync(),
+      isTrue,
+    );
+    await kernel.close();
+    expect(
+      kernel.dependencies.chatRepository.load('general-assistant'),
+      throwsStateError,
+    );
+  });
+
+  test(
+    'production single-chat messages survive kernel close and reopen',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-kernel-');
+      addTearDown(() => directory.delete(recursive: true));
+      final factory = ProductionAppKernelFactory(
+        applicationSupportDirectory: () async => directory,
+        credentials: _FakeCredentials(),
+      );
+      const message = ChatMessageProjection(
+        id: 'persisted:user',
+        kind: ChatMessageKind.userText,
+        text: '跨 kernel 保留',
+      );
+
+      final first = await factory.create();
+      await first.dependencies.chatRepository.append(
+        'general-assistant',
+        message,
+      );
+      await first.close();
+
+      final reopened = await factory.create();
+      addTearDown(reopened.close);
+
+      final loaded = await reopened.dependencies.chatRepository.load(
+        'general-assistant',
+      );
+      expect(loaded, hasLength(1));
+      expect(loaded.single.id, message.id);
+      expect(loaded.single.kind, message.kind);
+      expect(loaded.single.text, message.text);
+    },
+  );
+
+  test(
+    'initialization failure closes durable chat repository and preserves error',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-kernel-');
+      addTearDown(() => directory.delete(recursive: true));
+      final settingsStore = _FakeStore();
+      final repository = _TrackingDurableChatRepository(
+        closeError: StateError('chat repository cleanup failed'),
+      );
+      final originalError = StateError('runtime store failed');
+      var storeOpens = 0;
+      final factory = ProductionAppKernelFactory(
+        applicationSupportDirectory: () async => directory,
+        openProviderStore: (_) {
+          if (++storeOpens == 1) return settingsStore;
+          throw originalError;
+        },
+        buildSettingsPersistence: (_) => _FakeSettingsPersistence(),
+        credentials: _FakeCredentials(),
+        openChatRepository:
+            ({
+              required databasePath,
+              required commandOutbox,
+              required conversations,
+            }) async {
+              expect(databasePath, '${directory.path}/halo_single_chat.sqlite');
+              commandOutbox.reserve(
+                conversationId: 'general-assistant',
+                normalizedIntent: '初始化失败前打开 outbox',
+                createCommandId: () => 'initialization-failure-command',
+              );
+              expect(
+                File(
+                  '${directory.path}/single-chat-commands.json',
+                ).existsSync(),
+                isTrue,
+              );
+              expect(conversations, contains('general-assistant'));
+              return repository;
+            },
+      );
+
+      await expectLater(factory.create(), throwsA(same(originalError)));
+
+      expect(repository.closeCount, 1);
+      expect(settingsStore.closeCount, 1);
+    },
+  );
+}
+
+final class _TrackingDurableChatRepository
+    implements DurableChatMessageRepository {
+  _TrackingDurableChatRepository({this.closeError});
+
+  final Object? closeError;
+  int closeCount = 0;
+
+  @override
+  Future<void> close() async {
+    closeCount++;
+    final error = closeError;
+    if (error != null) throw error;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 final class _FakeStore implements ProviderConfigurationStore {

@@ -10,7 +10,7 @@ void main() {
     tester,
   ) async {
     final port = _RecordingPort();
-    final repository = InMemoryChatMessageRepository(
+    final repository = _DurableRouterRepository(
       conversations: const {
         'conversation-1': SingleChatConversationProjection(
           conversationId: 'conversation-1',
@@ -22,12 +22,12 @@ void main() {
         ),
       },
     );
+    addTearDown(repository.close);
     final router = createAppRouter(
       initialLocation: '/chat/conversation-1',
       dependencies: AppDependencies(
         singleChatPort: port,
         chatRepository: repository,
-        allowEphemeralChatRepositoryForTesting: true,
       ),
     );
     addTearDown(router.dispose);
@@ -39,9 +39,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Injected conversation'), findsOneWidget);
+    expect(repository, isA<DurableChatMessageRepository>());
     expect(port.requests.single.expertId, 'product-manager');
     expect(port.requests.single.text, 'hello');
   });
+}
+
+final class _DurableRouterRepository extends InMemoryChatMessageRepository
+    implements DurableChatMessageRepository {
+  _DurableRouterRepository({required super.conversations});
+
+  @override
+  Future<void> close() async {}
 }
 
 final class _RecordingPort implements SingleChatPort {

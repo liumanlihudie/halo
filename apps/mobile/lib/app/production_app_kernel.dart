@@ -8,6 +8,7 @@ import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
+import 'package:halo_mobile/features/single_chat/drift_chat_message_repository.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
@@ -23,6 +24,12 @@ typedef ProviderStorePathOpener =
     ProviderConfigurationStore Function(String path);
 typedef ProviderSettingsPersistenceBuilder =
     ProviderSettingsPersistence Function(ProviderConfigurationStore store);
+typedef DurableChatRepositoryOpener =
+    Future<DurableChatMessageRepository> Function({
+      required String databasePath,
+      required FileSingleChatCommandOutbox commandOutbox,
+      required Map<String, SingleChatConversationProjection> conversations,
+    });
 
 final class ProductionAppKernelFactory {
   ProductionAppKernelFactory({
@@ -30,28 +37,37 @@ final class ProductionAppKernelFactory {
     ProviderStorePathOpener? openProviderStore,
     ProviderSettingsPersistenceBuilder? buildSettingsPersistence,
     SecureCredentialStore? credentials,
+    DurableChatRepositoryOpener? openChatRepository,
   }) : _applicationSupportDirectory =
            applicationSupportDirectory ?? getApplicationSupportDirectory,
        _openProviderStore =
            openProviderStore ?? SqliteProviderConfigurationStore.open,
        _buildSettingsPersistence =
            buildSettingsPersistence ?? AtomicProviderSettingsPersistence.new,
-       _credentials = credentials ?? const MethodChannelSecureCredentialStore();
+       _credentials = credentials ?? const MethodChannelSecureCredentialStore(),
+       _openChatRepository =
+           openChatRepository ?? _openDriftChatMessageRepository;
 
   final ApplicationSupportDirectoryProvider _applicationSupportDirectory;
   final ProviderStorePathOpener _openProviderStore;
   final ProviderSettingsPersistenceBuilder _buildSettingsPersistence;
   final SecureCredentialStore _credentials;
+  final DurableChatRepositoryOpener _openChatRepository;
 
   Future<ApplicationKernel> create() async {
     ProviderConfigurationStore? settingsStore;
     ProductionModelRuntimeSlot? runtimeSlot;
     ProductionSingleChatPort? singleChatPort;
+    DurableChatMessageRepository? chatRepository;
     try {
       final supportDirectory = await _applicationSupportDirectory();
       await supportDirectory.create(recursive: true);
       final databasePath =
           '${supportDirectory.path}${Platform.pathSeparator}halo_providers.sqlite';
+      final singleChatDatabasePath =
+          '${supportDirectory.path}${Platform.pathSeparator}halo_single_chat.sqlite';
+      final singleChatOutboxPath =
+          '${supportDirectory.path}${Platform.pathSeparator}single-chat-commands.json';
       settingsStore = _openProviderStore(databasePath);
       final settingsPersistence = _buildSettingsPersistence(settingsStore);
       final ProviderSettingsRecoveryPersistence recoveryPersistence;
@@ -64,6 +80,11 @@ final class ProductionAppKernelFactory {
         );
       }
       await recoveryPersistence.recoverPending(_credentials);
+      chatRepository = await _openChatRepository(
+        databasePath: singleChatDatabasePath,
+        commandOutbox: FileSingleChatCommandOutbox(singleChatOutboxPath),
+        conversations: _productionSingleChatConversations,
+      );
       final runtimeFactory = _runtimeFactory(databasePath);
       final initialRuntime = await runtimeFactory.create();
       runtimeSlot = ProductionModelRuntimeSlot(initialRuntime);
@@ -81,10 +102,11 @@ final class ProductionAppKernelFactory {
       return _ProductionAppKernel(
         dependencies: AppDependencies(
           singleChatPort: singleChatPort,
-          chatRepository: _productionChatRepository(),
+          chatRepository: chatRepository,
           providerSettings: settings,
         ),
         port: singleChatPort,
+        chatRepository: chatRepository,
         settings: settings,
         runtimeSlot: runtimeSlot,
         settingsStore: settingsStore,
@@ -92,6 +114,9 @@ final class ProductionAppKernelFactory {
     } catch (error, stackTrace) {
       try {
         await singleChatPort?.close();
+      } catch (_) {}
+      try {
+        await chatRepository?.close();
       } catch (_) {}
       try {
         await runtimeSlot?.close();
@@ -111,6 +136,16 @@ final class ProductionAppKernelFactory {
         inspectionTransport: const _UnavailableInspectionTransport(),
       );
 }
+
+Future<DurableChatMessageRepository> _openDriftChatMessageRepository({
+  required String databasePath,
+  required FileSingleChatCommandOutbox commandOutbox,
+  required Map<String, SingleChatConversationProjection> conversations,
+}) => DriftChatMessageRepository.open(
+  databasePath: databasePath,
+  commandOutbox: commandOutbox,
+  conversations: conversations,
+);
 
 Future<List<ModelDescriptor>> _loadProductionModels(
   String providerId,
@@ -165,10 +200,12 @@ final class _ProductionAppKernel implements ApplicationKernel {
   _ProductionAppKernel({
     required this.dependencies,
     required ProductionSingleChatPort port,
+    required DurableChatMessageRepository chatRepository,
     required ProviderSettingsController settings,
     required ProductionModelRuntimeSlot runtimeSlot,
     required ProviderConfigurationStore settingsStore,
   }) : _port = port,
+       _chatRepository = chatRepository,
        _settings = settings,
        _runtimeSlot = runtimeSlot,
        _settingsStore = settingsStore;
@@ -179,6 +216,7 @@ final class _ProductionAppKernel implements ApplicationKernel {
   @override
   final AppDependencies dependencies;
   final ProductionSingleChatPort _port;
+  final DurableChatMessageRepository _chatRepository;
   final ProviderSettingsController _settings;
   final ProductionModelRuntimeSlot _runtimeSlot;
   final ProviderConfigurationStore _settingsStore;
@@ -208,6 +246,7 @@ final class _ProductionAppKernel implements ApplicationKernel {
     await closeOne(_settings.close);
     await closeOne(_runtimeSlot.close);
     await closeOne(_port.close);
+    await closeOne(_chatRepository.close);
     await closeOne(_settingsStore.close);
     if (firstError != null) {
       Error.throwWithStackTrace(firstError!, firstStack!);
@@ -238,24 +277,21 @@ final class _UnavailableInspectionTransport
   );
 }
 
-ChatMessageRepository _productionChatRepository() =>
-    InMemoryChatMessageRepository(
-      conversations: const {
-        'general-assistant': SingleChatConversationProjection(
-          conversationId: 'general-assistant',
-          expertId: 'product-manager',
-          title: '产品经理',
-          agentName: '产品经理',
-          modelLabel: '已配置文字模型',
-          avatarLetter: '产',
-        ),
-        'data-analyst-chat': SingleChatConversationProjection(
-          conversationId: 'data-analyst-chat',
-          expertId: 'technical-architect',
-          title: '技术架构师',
-          agentName: '技术架构师',
-          modelLabel: '已配置文字模型',
-          avatarLetter: '技',
-        ),
-      },
-    );
+const _productionSingleChatConversations = {
+  'general-assistant': SingleChatConversationProjection(
+    conversationId: 'general-assistant',
+    expertId: 'product-manager',
+    title: '产品经理',
+    agentName: '产品经理',
+    modelLabel: '已配置文字模型',
+    avatarLetter: '产',
+  ),
+  'data-analyst-chat': SingleChatConversationProjection(
+    conversationId: 'data-analyst-chat',
+    expertId: 'technical-architect',
+    title: '技术架构师',
+    agentName: '技术架构师',
+    modelLabel: '已配置文字模型',
+    avatarLetter: '技',
+  ),
+};
