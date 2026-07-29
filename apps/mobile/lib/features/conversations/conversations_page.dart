@@ -69,39 +69,14 @@ class _ConversationRow extends StatelessWidget {
           height: 72,
           child: Row(
             children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  HaloAvatar(
-                    imageUrl: conversation.imageUrl,
-                    letter: conversation.avatarLetter,
-                  ),
-                  if (conversation.unread > 0)
-                    Positioned(
-                      right: -5,
-                      top: -5,
-                      child: DecoratedBox(
-                        decoration: const BoxDecoration(
-                          color: HaloColors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        child: SizedBox.square(
-                          dimension: 17,
-                          child: Center(
-                            child: Text(
-                              '${conversation.unread}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+              if (conversation.groupAvatarTiles case final tiles?)
+                HaloGroupAvatar(tiles: tiles)
+              else
+                HaloAvatar(
+                  imageUrl: conversation.imageUrl,
+                  letter: conversation.avatarLetter,
+                  tone: conversation.avatarTone,
+                ),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(
@@ -127,22 +102,50 @@ class _ConversationRow extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 6),
-                    Text.rich(
-                      TextSpan(
-                        children: [
-                          if (conversation.sender case final sender?)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text.rich(
                             TextSpan(
-                              text: sender,
+                              children: [
+                                if (conversation.sender case final sender?)
+                                  TextSpan(
+                                    text: sender,
+                                    style: const TextStyle(
+                                      color: Color(0xFF626A79),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                TextSpan(text: conversation.preview),
+                              ],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: HaloTextStyles.secondary,
+                          ),
+                        ),
+                        if (conversation.unread > 0) ...[
+                          const SizedBox(width: 7),
+                          Container(
+                            constraints: const BoxConstraints(minWidth: 18),
+                            height: 18,
+                            padding: const EdgeInsets.symmetric(horizontal: 5),
+                            decoration: BoxDecoration(
+                              color: HaloColors.accent,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '${conversation.unread}',
                               style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                          TextSpan(text: conversation.preview),
+                          ),
                         ],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: HaloTextStyles.secondary,
+                      ],
                     ),
                   ],
                 ),

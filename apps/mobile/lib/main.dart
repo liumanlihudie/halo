@@ -4,5 +4,9 @@ import 'package:halo_mobile/app/app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ProviderScope(child: HaloApp()));
+  const initialLocation = String.fromEnvironment(
+    'HALO_INITIAL_ROUTE',
+    defaultValue: '/conversations',
+  );
+  runApp(const ProviderScope(child: HaloApp(initialLocation: initialLocation)));
 }

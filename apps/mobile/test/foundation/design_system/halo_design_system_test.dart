@@ -47,4 +47,28 @@ void main() {
       HaloMetrics.searchHeight,
     );
   });
+
+  testWidgets('group avatar reproduces the prototype 2 by 2 tile', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: HaloGroupAvatar(
+            tiles: ['letter:产', 'letter:交', 'letter:技', 'letter:增'],
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byType(HaloGroupAvatar)), const Size(50, 50));
+    expect(
+      find.byWidgetPredicate((widget) {
+        final key = widget.key;
+        return key is ValueKey<String> &&
+            key.value.startsWith('group-avatar-tile-');
+      }, description: 'four uniquely keyed group avatar tiles'),
+      findsNWidgets(4),
+    );
+  });
 }

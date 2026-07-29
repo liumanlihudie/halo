@@ -81,8 +81,8 @@ class MediaPreviewPage extends StatelessWidget {
                         child: Image.network(
                           'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200',
                           fit: BoxFit.contain,
-                          errorBuilder: (_, _, _) => const Icon(
-                            Icons.image,
+                          errorBuilder: (_, _, _) => Icon(
+                            HaloIcon.requirePrototypeClass('ph ph-image'),
                             size: 80,
                             color: Colors.white54,
                           ),

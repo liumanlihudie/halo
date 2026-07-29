@@ -210,12 +210,15 @@ class HaloSearchField extends StatelessWidget {
   }
 }
 
+enum HaloAvatarTone { accent, red, green, purple, gold, blue, slate }
+
 class HaloAvatar extends StatelessWidget {
   const HaloAvatar({
     this.imageUrl,
     this.letter,
     this.size = HaloMetrics.avatarSize,
     this.backgroundColor,
+    this.tone = HaloAvatarTone.accent,
     super.key,
   }) : assert(imageUrl != null || letter != null);
 
@@ -223,6 +226,7 @@ class HaloAvatar extends StatelessWidget {
   final String? letter;
   final double size;
   final Color? backgroundColor;
+  final HaloAvatarTone tone;
 
   @override
   Widget build(BuildContext context) {
@@ -245,8 +249,26 @@ class HaloAvatar extends StatelessWidget {
   }
 
   Widget _letterAvatar() {
-    return ColoredBox(
-      color: backgroundColor ?? HaloColors.accent,
+    final colors = switch (tone) {
+      HaloAvatarTone.accent => const [Color(0xFF596BD9), Color(0xFF303D89)],
+      HaloAvatarTone.red => const [Color(0xFFCF5961), Color(0xFF8F3239)],
+      HaloAvatarTone.green => const [Color(0xFF2D9C83), Color(0xFF176253)],
+      HaloAvatarTone.purple => const [Color(0xFF7A68D8), Color(0xFF44388E)],
+      HaloAvatarTone.gold => const [Color(0xFFB07A39), Color(0xFF694219)],
+      HaloAvatarTone.blue => const [Color(0xFF3476B9), Color(0xFF1F456D)],
+      HaloAvatarTone.slate => const [Color(0xFF596172), Color(0xFF2E3440)],
+    };
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        gradient: backgroundColor == null
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: colors,
+              )
+            : null,
+      ),
       child: Center(
         child: Text(
           letter ?? 'H',
@@ -254,6 +276,68 @@ class HaloAvatar extends StatelessWidget {
             color: Colors.white,
             fontSize: size * 0.34,
             fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class HaloGroupAvatar extends StatelessWidget {
+  const HaloGroupAvatar({
+    required this.tiles,
+    this.size = HaloMetrics.avatarSize,
+    super.key,
+  }) : assert(tiles.length == 4);
+
+  final List<String> tiles;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final tileSize = (size - 8) / 2;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(HaloRadii.avatar),
+      child: SizedBox.square(
+        dimension: size,
+        child: ColoredBox(
+          color: const Color(0xFFE9EBF0),
+          child: Padding(
+            padding: const EdgeInsets.all(3),
+            child: Wrap(
+              spacing: 2,
+              runSpacing: 2,
+              children: [
+                for (final (index, tile) in tiles.indexed)
+                  ClipRRect(
+                    key: ValueKey('group-avatar-tile-$index'),
+                    borderRadius: BorderRadius.circular(6),
+                    child: SizedBox.square(
+                      dimension: tileSize,
+                      child: tile.startsWith('letter:')
+                          ? ColoredBox(
+                              color: const Color(0xFF6673C5),
+                              child: Center(
+                                child: Text(
+                                  tile.substring(7),
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            )
+                          : Image.network(
+                              tile,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  const ColoredBox(color: HaloColors.accent),
+                            ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -278,20 +362,25 @@ class HaloTag extends StatelessWidget {
       HaloTagTone.red => (const Color(0xFFFFEDEF), const Color(0xFFC9444B)),
       HaloTagTone.gray => (const Color(0xFFF0F1F4), const Color(0xFF7B808A)),
     };
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(HaloRadii.tag),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: foreground,
-            fontSize: 8,
-            fontWeight: FontWeight.w700,
-            height: 1,
+    return SizedBox(
+      height: 17,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(HaloRadii.tag),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 5),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 8,
+                fontWeight: FontWeight.w700,
+                height: 1,
+              ),
+            ),
           ),
         ),
       ),

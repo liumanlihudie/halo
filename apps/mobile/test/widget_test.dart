@@ -23,7 +23,7 @@ void main() {
 
     await tester.tap(find.text('专家团'));
     await tester.pumpAndSettle();
-    expect(find.text('我的专家'), findsOneWidget);
+    expect(find.text('工作型 · 5'), findsOneWidget);
 
     await tester.tap(find.text('圈层'));
     await tester.pumpAndSettle();

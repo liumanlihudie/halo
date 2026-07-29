@@ -12,6 +12,8 @@ class ConversationFixture {
     this.tagTone = HaloTagTone.accent,
     this.unread = 0,
     this.imageUrl,
+    this.groupAvatarTiles,
+    this.avatarTone = HaloAvatarTone.accent,
   });
 
   final String id;
@@ -24,6 +26,8 @@ class ConversationFixture {
   final HaloTagTone tagTone;
   final int unread;
   final String? imageUrl;
+  final List<String>? groupAvatarTiles;
+  final HaloAvatarTone avatarTone;
 }
 
 class ExpertFixture {
@@ -35,6 +39,7 @@ class ExpertFixture {
     required this.status,
     required this.avatarLetter,
     this.imageUrl,
+    this.avatarTone = HaloAvatarTone.accent,
   });
 
   final String id;
@@ -44,6 +49,7 @@ class ExpertFixture {
   final String status;
   final String avatarLetter;
   final String? imageUrl;
+  final HaloAvatarTone avatarTone;
 }
 
 class MarketExpertFixture {
@@ -70,6 +76,7 @@ class CirclePostFixture {
     required this.title,
     required this.body,
     required this.avatarLetter,
+    this.imageUrl,
     this.tone = HaloTagTone.accent,
   });
 
@@ -79,6 +86,7 @@ class CirclePostFixture {
   final String title;
   final String body;
   final String avatarLetter;
+  final String? imageUrl;
   final HaloTagTone tone;
 }
 
