@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
@@ -123,6 +124,11 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
             obscure: true,
             controller: _apiKeyController,
             onChanged: (_) => setState(() {}),
+            suffixIcon: IconButton(
+              tooltip: '粘贴 API Key',
+              onPressed: _pasteApiKey,
+              icon: Icon(HaloIcon.requirePrototypeClass('ph ph-copy')),
+            ),
           ),
           const Padding(
             padding: EdgeInsets.only(bottom: 11),
@@ -201,6 +207,22 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     }
   }
 
+  Future<void> _pasteApiKey() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text;
+      if (!mounted || text == null || text.isEmpty) return;
+      _apiKeyController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+      setState(() {});
+    } on PlatformException {
+      // iOS may deny clipboard access. Keep the field unchanged and never
+      // surface clipboard contents or platform details.
+    }
+  }
+
   Future<void> _remove() async {
     setState(() => _busy = true);
     try {
@@ -265,6 +287,7 @@ class _Field extends StatelessWidget {
     this.obscure = false,
     this.onChanged,
     this.controller,
+    this.suffixIcon,
   });
   final String label;
   final String icon;
@@ -272,6 +295,7 @@ class _Field extends StatelessWidget {
   final bool obscure;
   final ValueChanged<String>? onChanged;
   final TextEditingController? controller;
+  final Widget? suffixIcon;
 
   @override
   Widget build(BuildContext context) {
@@ -292,6 +316,7 @@ class _Field extends StatelessWidget {
             decoration: InputDecoration(
               hintText: hint,
               prefixIcon: Icon(HaloIcon.requirePrototypeClass(icon), size: 18),
+              suffixIcon: suffixIcon,
               filled: true,
               fillColor: Colors.white,
               border: const OutlineInputBorder(

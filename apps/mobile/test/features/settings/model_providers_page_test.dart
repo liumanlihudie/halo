@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/features/settings/model_providers_page.dart';
+import 'package:halo_mobile/features/settings/provider_detail_page.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
@@ -9,6 +11,51 @@ import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 
 void main() {
+  testWidgets('API Key field pastes from the clipboard explicitly', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(430, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.getData') {
+            return <String, Object?>{'text': 'toapis-secret-key'};
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    final controller = ProviderSettingsController(
+      credentials: _Credentials(),
+      persistence: _Persistence(),
+      runtime: _Reloader(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProviderDetailPage(providerId: 'toapis', controller: controller),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('粘贴 API Key'));
+    await tester.pump();
+
+    final keyField = tester
+        .widgetList<TextField>(find.byType(TextField))
+        .singleWhere((field) => field.obscureText);
+    expect(keyField.controller?.text, 'toapis-secret-key');
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '保存到本机'))
+          .onPressed,
+      isNotNull,
+    );
+  });
+
   testWidgets(
     'renders persisted supported state and disables every unsupported provider',
     (tester) async {
