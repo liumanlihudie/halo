@@ -65,6 +65,8 @@ class SelfHostedGatewayPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
+          const _NotConnectedNotice(),
+          const SizedBox(height: 12),
           const _GatewayField(
             label: 'Gateway 地址',
             hint: 'https://halo.example.com',
@@ -76,13 +78,9 @@ class SelfHostedGatewayPage extends StatelessWidget {
             icon: 'ph ph-lock-key',
             obscure: true,
           ),
-          const Text(
-            '令牌同样保存在 iOS Keychain',
-            style: TextStyle(fontSize: 9, color: HaloColors.green),
-          ),
           const SizedBox(height: 12),
-          OutlinedButton(onPressed: () {}, child: const Text('测试 Gateway')),
-          FilledButton(onPressed: () {}, child: const Text('保存配置')),
+          const OutlinedButton(onPressed: null, child: Text('测试 Gateway')),
+          const FilledButton(onPressed: null, child: Text('保存配置')),
           const SizedBox(height: 14),
           Container(
             padding: const EdgeInsets.all(13),
@@ -143,6 +141,7 @@ class _GatewayField extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           TextField(
+            enabled: false,
             obscureText: obscure,
             decoration: InputDecoration(
               hintText: hint,
@@ -152,6 +151,49 @@ class _GatewayField extends StatelessWidget {
               border: const OutlineInputBorder(
                 borderRadius: BorderRadius.all(Radius.circular(11)),
                 borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// States plainly that this screen stores nothing yet.
+///
+/// The page previously claimed the access token was kept in the iOS Keychain.
+/// Nothing here reads or writes any store, so that claim asserted a security
+/// property the app does not have.
+class _NotConnectedNotice extends StatelessWidget {
+  const _NotConnectedNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: HaloColors.paper,
+        border: Border.all(color: HaloColors.line),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            HaloIcon.requirePrototypeClass('ph ph-warning'),
+            color: HaloColors.muted,
+            size: 19,
+          ),
+          const SizedBox(width: 9),
+          const Expanded(
+            child: Text(
+              '自托管 Gateway 尚未接入。下面的地址和令牌目前不会被保存到任何地方，'
+              '也不会被使用；接入后令牌才会写入 iOS Keychain。',
+              style: TextStyle(
+                fontSize: 10,
+                height: 1.5,
+                color: HaloColors.muted,
               ),
             ),
           ),

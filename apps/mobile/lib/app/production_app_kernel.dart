@@ -375,7 +375,7 @@ const productionSingleChatConversations = {
     expertId: 'project-manager',
     title: '通用助理',
     agentName: '通用助理',
-    modelLabel: '已配置文字模型',
+    modelLabel: '文字模型',
     avatarLetter: '助',
   ),
   'product-manager-chat': SingleChatConversationProjection(
@@ -383,7 +383,7 @@ const productionSingleChatConversations = {
     expertId: 'product-manager',
     title: '产品经理',
     agentName: '产品经理',
-    modelLabel: '已配置文字模型',
+    modelLabel: '文字模型',
     avatarLetter: '产',
   ),
   'data-analyst-chat': SingleChatConversationProjection(
@@ -391,7 +391,7 @@ const productionSingleChatConversations = {
     expertId: 'data-analyst',
     title: '数据分析师',
     agentName: '数据分析师',
-    modelLabel: '已配置文字模型',
+    modelLabel: '文字模型',
     avatarLetter: '数',
   ),
   'writing-advisor-chat': SingleChatConversationProjection(
@@ -399,7 +399,7 @@ const productionSingleChatConversations = {
     expertId: 'content-strategist',
     title: '写作顾问',
     agentName: '写作顾问',
-    modelLabel: '已配置文字模型',
+    modelLabel: '文字模型',
     avatarLetter: '写',
   ),
   'calendar-assistant': SingleChatConversationProjection(
@@ -407,7 +407,7 @@ const productionSingleChatConversations = {
     expertId: 'operations-manager',
     title: '日程管家',
     agentName: '日程管家',
-    modelLabel: '已配置文字模型',
+    modelLabel: '文字模型',
     avatarLetter: '日',
   ),
   'fitness-planner-chat': SingleChatConversationProjection(
@@ -415,7 +415,7 @@ const productionSingleChatConversations = {
     expertId: 'fitness-planner',
     title: '健身计划师',
     agentName: '健身计划师',
-    modelLabel: '已配置文字模型',
+    modelLabel: '文字模型',
     avatarLetter: '健',
   ),
 };

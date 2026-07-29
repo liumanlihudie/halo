@@ -133,9 +133,19 @@ intentionally limited to ToAPIs and DeepSeek.
 
 ### Task 3: Provider-Backed Executable Agent Runtime
 
-**Status:** 尚未实现。现有 production 单聊由 `ProductionSingleChatPort` 直接调用
-`ProductionModelRuntime`；不得把底层 Model Provider Adapter 误报为已经完成的
-Provider-backed orchestration runtime。
+**Status:** 已实现但未接线（2026-07-30 核对）。
+`provider_backed_agent_runtime.dart`、`agent_execution_policy.dart`、
+`sqlite_model_call_journal.dart` 及其测试都已存在，实现了
+`IdempotentAgentRuntimeCapability`、可信输出信封、超时取消、安全失败码映射和
+计费围栏。真正的缺口是**它们在 `lib/` 里零引用**：
+`orchestration_providers.dart` 仍默认 `InMemoryRunEventStore +
+LocalPrototypeAgentRuntime`，`ProductionAppKernelFactory` 从不构造
+`OrchestrationKernelFactory.production`。现有 production 单聊仍由
+`ProductionSingleChatPort` 直接调用 `ProductionModelRuntime`。
+
+两个已知偏差需要在接线时一并处理：`_expertSystemPrompt` 不下发输出 schema 模板和
+受控 verb 白名单（真实 Provider 极可能因此返回不合规 JSON 而整轮静默丢弃），以及
+把字符预算 `maxPublicAnswerCharacters` 传给了 token 字段 `maxOutputTokens`。
 
 **Files:**
 

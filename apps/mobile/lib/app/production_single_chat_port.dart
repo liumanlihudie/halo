@@ -210,5 +210,9 @@ SingleAgentRunFailure _mapFailure(ModelRuntimeErrorCode code) => switch (code) {
   ModelRuntimeErrorCode.rateLimited => SingleAgentRunFailure.quotaLimited,
   ModelRuntimeErrorCode.contentRejected =>
     SingleAgentRunFailure.contentFiltered,
+  // A missing or unresolvable model binding is a configuration gap, not a
+  // transient send failure; telling the user to retry would never work.
+  ModelRuntimeErrorCode.invalidConfiguration =>
+    SingleAgentRunFailure.notConfigured,
   _ => SingleAgentRunFailure.retryable,
 };

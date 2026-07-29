@@ -57,6 +57,7 @@ GoRouter createAppRouter({
             conversationId: state.pathParameters['conversationId']!,
             service: current?.singleChatPort,
             repository: current?.chatRepository,
+            modelRouting: current?.modelRouting,
             allowEphemeralRepositoryForTesting:
                 current?.allowEphemeralChatRepositoryForTesting ?? false,
           );

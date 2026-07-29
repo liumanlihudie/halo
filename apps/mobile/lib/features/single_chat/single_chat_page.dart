@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/foundation/design_system/halo_wave_keys_indicator.dart';
 
 import 'chat_message_repository.dart';
@@ -17,6 +18,7 @@ class SingleChatPage extends StatefulWidget {
     this.service,
     this.repository,
     this.repositoryLoader,
+    this.modelRouting,
     this.verifier = const RejectingVerifierReceiptRegistry(),
     this.allowEphemeralRepositoryForTesting = false,
     super.key,
@@ -27,6 +29,10 @@ class SingleChatPage extends StatefulWidget {
   final SingleChatPort? service;
   final ChatMessageRepository? repository;
   final FutureOr<ChatMessageRepository> Function()? repositoryLoader;
+
+  /// Supplies the model actually bound to this expert. Absent in prototype
+  /// routes, where the seeded label is the only thing available.
+  final ModelRoutingController? modelRouting;
   final TrustedVerifierReceiptRegistry verifier;
   final bool allowEphemeralRepositoryForTesting;
 
@@ -41,6 +47,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
   SingleChatController? _chatController;
   bool _dependencyLoadFailed = false;
   int _dependencyGeneration = 0;
+  String? _modelLabel;
 
   @override
   void initState() {
@@ -154,6 +161,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
         _conversation = described;
         _chatController = controller;
       });
+      unawaited(_loadModelLabel(described.expertId));
       await controller.initialize();
     } catch (_) {
       if (mounted && generation == _dependencyGeneration) {
@@ -162,6 +170,29 @@ class _SingleChatPageState extends State<SingleChatPage> {
         });
       }
     }
+  }
+
+  /// Replaces the seeded model label with the binding actually in effect.
+  ///
+  /// The seed ships a static string, so without this the header can claim a
+  /// model is configured when none is.
+  Future<void> _loadModelLabel(String canonicalExpertId) async {
+    final routing = widget.modelRouting;
+    if (routing == null) return;
+    try {
+      await routing.load();
+      await routing.loadExpertOverride(canonicalExpertId);
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    final effective = routing.effectiveModelFor(canonicalExpertId);
+    final option = routing.optionFor(effective);
+    setState(() {
+      _modelLabel = option == null
+          ? '尚未配置模型'
+          : '${option.providerName} / ${option.ref.modelId}';
+    });
   }
 
   @override
@@ -244,19 +275,28 @@ class _SingleChatPageState extends State<SingleChatPage> {
           if (_dependencyLoadFailed) const _SystemNotice('聊天存储暂不可用，请稍后重试'),
           if (state.historyLoadFailed) const _SystemNotice('历史消息加载失败，可继续当前对话'),
           for (final message in state.messages)
-            _ProjectedMessage(message: message, conversation: _conversation),
+            _ProjectedMessage(
+              message: message,
+              conversation: _conversation,
+              modelLabel: _modelLabel,
+            ),
           if (state.status == SingleChatRunStatus.running)
             _AgentBubble(
               conversation: _conversation,
+              modelLabel: _modelLabel,
               child: _ProgressMessage(onStop: controller!.stop),
             ),
           if (_terminalMessage(state.status) case final terminal?)
             _AgentBubble(
               conversation: _conversation,
+              modelLabel: _modelLabel,
               child: _RunStatusMessage(
                 text: terminal,
                 canRetry: state.canRetry,
                 onRetry: controller!.retry,
+                onConfigure: state.status == SingleChatRunStatus.notConfigured
+                    ? () => context.push('/settings/providers')
+                    : null,
               ),
             ),
         ],
@@ -272,10 +312,15 @@ class _SingleChatPageState extends State<SingleChatPage> {
 }
 
 class _ProjectedMessage extends StatelessWidget {
-  const _ProjectedMessage({required this.message, required this.conversation});
+  const _ProjectedMessage({
+    required this.message,
+    required this.conversation,
+    this.modelLabel,
+  });
 
   final ChatMessageProjection message;
   final SingleChatConversationProjection conversation;
+  final String? modelLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -284,10 +329,12 @@ class _ProjectedMessage extends StatelessWidget {
       ChatMessageKind.userText => _MineBubble(message.text ?? ''),
       ChatMessageKind.agentText => _AgentBubble(
         conversation: conversation,
+        modelLabel: modelLabel,
         child: _AgentTextMessage(message),
       ),
       ChatMessageKind.progress => _AgentBubble(
         conversation: conversation,
+        modelLabel: modelLabel,
         child: _ProgressMessage(message: message),
       ),
       ChatMessageKind.file => _AgentBubble(
@@ -393,10 +440,18 @@ class _MineBubble extends StatelessWidget {
 }
 
 class _AgentBubble extends StatelessWidget {
-  const _AgentBubble({required this.conversation, required this.child});
+  const _AgentBubble({
+    required this.conversation,
+    required this.child,
+    this.modelLabel,
+  });
 
   final SingleChatConversationProjection conversation;
   final Widget child;
+
+  /// The binding actually in effect. Falls back to the seeded label only when
+  /// no routing controller is available (prototype routes).
+  final String? modelLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -416,7 +471,7 @@ class _AgentBubble extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${conversation.agentName} · ${conversation.modelLabel}',
+                  '${conversation.agentName} · ${modelLabel ?? conversation.modelLabel}',
                   style: HaloTextStyles.caption,
                 ),
                 const SizedBox(height: 4),
@@ -518,11 +573,16 @@ class _RunStatusMessage extends StatelessWidget {
     required this.text,
     required this.canRetry,
     required this.onRetry,
+    this.onConfigure,
   });
 
   final String text;
   final bool canRetry;
   final Future<void> Function() onRetry;
+
+  /// Present only when the run failed because nothing is configured yet, so the
+  /// user gets the one action that can actually resolve it.
+  final VoidCallback? onConfigure;
 
   @override
   Widget build(BuildContext context) {
@@ -539,6 +599,19 @@ class _RunStatusMessage extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: () => unawaited(onRetry()),
                 child: const Text('重试'),
+              ),
+            ),
+          ),
+        ],
+        if (onConfigure case final configure?) ...[
+          const SizedBox(height: 8),
+          Semantics(
+            button: true,
+            label: '配置模型服务',
+            child: ExcludeSemantics(
+              child: FilledButton(
+                onPressed: configure,
+                child: const Text('去配置模型服务'),
               ),
             ),
           ),
@@ -885,6 +958,7 @@ String? _terminalMessage(SingleChatRunStatus status) {
     SingleChatRunStatus.quotaLimited => '模型额度不足，请检查 Provider 配额',
     SingleChatRunStatus.authentication => '模型认证失败，请检查 Provider 配置',
     SingleChatRunStatus.filtered => '内容未通过安全检查',
+    SingleChatRunStatus.notConfigured => '尚未配置可用的文字模型，请先在设置里保存模型服务并选择默认模型。',
     SingleChatRunStatus.idle ||
     SingleChatRunStatus.running ||
     SingleChatRunStatus.completed => null,

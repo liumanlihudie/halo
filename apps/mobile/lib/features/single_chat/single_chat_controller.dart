@@ -39,6 +39,10 @@ enum SingleAgentRunFailure {
   quotaLimited,
   authentication,
   contentFiltered,
+
+  /// No usable model binding exists yet. Retrying can never succeed, so this
+  /// must never be reported as a transient send failure.
+  notConfigured,
 }
 
 @immutable
@@ -239,6 +243,7 @@ enum SingleChatRunStatus {
   quotaLimited,
   authentication,
   filtered,
+  notConfigured,
 }
 
 class SingleChatState {
@@ -1308,5 +1313,6 @@ SingleChatRunStatus _statusFor(SingleAgentRunFailure failure) {
     SingleAgentRunFailure.quotaLimited => SingleChatRunStatus.quotaLimited,
     SingleAgentRunFailure.authentication => SingleChatRunStatus.authentication,
     SingleAgentRunFailure.contentFiltered => SingleChatRunStatus.filtered,
+    SingleAgentRunFailure.notConfigured => SingleChatRunStatus.notConfigured,
   };
 }
