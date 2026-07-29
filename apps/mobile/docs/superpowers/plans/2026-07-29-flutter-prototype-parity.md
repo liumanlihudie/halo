@@ -24,6 +24,8 @@
 
 ### Task 1: Visual Contract, Icon Map And Shared Components
 
+Status: completed in `d5667e9`.
+
 **Files:**
 - Create: `lib/foundation/design_system/halo_tokens.dart`
 - Create: `lib/foundation/design_system/halo_icons.dart`
@@ -78,6 +80,8 @@ git commit -m "feat: add Halo visual design system"
 ---
 
 ### Task 2: Deterministic Fixtures And Four Primary Screens
+
+Status: completed in `ed10bc1`.
 
 **Files:**
 - Create: `lib/domain/models/halo_fixture_models.dart`
@@ -140,6 +144,8 @@ git commit -m "feat: reproduce Halo primary screens"
 
 ### Task 3: Single-Agent Conversation And Chat Details
 
+Status: completed in `934eeaf`.
+
 **Files:**
 - Create: `lib/domain/models/message_fixture.dart`
 - Create: `lib/features/conversations/chat_page.dart`
@@ -194,6 +200,8 @@ git commit -m "feat: add single-agent chat experience"
 
 ### Task 4: Multi-Agent Group Chat And Orchestration Presentation
 
+Status: completed in `88cb54a`.
+
 **Files:**
 - Create: `lib/domain/models/group_run_fixture.dart`
 - Create: `lib/features/group_chat/group_chat_controller.dart`
@@ -246,6 +254,8 @@ git commit -m "feat: add multi-agent group chat states"
 ---
 
 ### Task 5: Expert Team, Market, Profile And Expert Data
+
+Status: completed in `3b2f6cd`.
 
 **Files:**
 - Create: `lib/features/expert_team/expert_profile_page.dart`
@@ -347,6 +357,8 @@ git commit -m "feat: add expert circle result feed"
 ---
 
 ### Task 7: Settings, Provider Forms, Gateway And Local Data
+
+Status: completed in `ac8df70`.
 
 **Files:**
 - Create: `lib/domain/models/provider_fixture.dart`
