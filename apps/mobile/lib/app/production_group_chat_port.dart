@@ -7,7 +7,6 @@ import 'package:halo_mobile/orchestration/orchestration_models.dart';
 import 'package:halo_mobile/orchestration/provider_backed_agent_runtime.dart';
 import 'package:halo_mobile/orchestration/sqlite_model_call_journal.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
-import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/provider_registry.dart';
 
@@ -65,15 +64,26 @@ final class LiveRoutingAgentRuntime
 
   @override
   Future<String> respond(AgentTurnRequest request) async =>
-      (await _delegate()).respond(request);
+      (await _delegate(agentId: request.agentId)).respond(request);
 
   @override
   Future<String> summarize(DiscussionSummaryRequest request) async =>
-      (await _delegate()).summarize(request);
+      // The summarizer is a separate identity with no per-expert override, so
+      // it can only use the global default.
+      (await _delegate(agentId: null)).summarize(request);
 
-  Future<ProviderBackedAgentRuntime> _delegate() async {
+  /// Resolves the model exactly as single chat does — `override ?? global` —
+  /// so a group turn works whenever the equivalent single chat would, including
+  /// when only a per-expert model is set and no global default exists.
+  Future<ProviderBackedAgentRuntime> _delegate({
+    required String? agentId,
+  }) async {
     final globalDefault = await _store.loadGlobalDefaultModel();
-    if (globalDefault == null) {
+    final overrides = await _store.loadAgentModelOverrides();
+    final effective = agentId == null
+        ? globalDefault
+        : overrides[agentId] ?? globalDefault;
+    if (effective == null) {
       // Same contract as single chat: a missing binding is a configuration gap,
       // never a transient failure the runner should retry.
       throw const ModelRuntimeException(
@@ -82,17 +92,13 @@ final class LiveRoutingAgentRuntime
         retryable: false,
       );
     }
-    final overrides = await _store.loadAgentModelOverrides();
     return ProviderBackedAgentRuntime(
       modelRuntime: _modelRuntime,
       experts: _experts,
       journal: _journal,
       policy: AgentExecutionPolicy(
-        defaultModel: globalDefault,
-        // The summarizer is a separate identity, not a separate model: it must
-        // not silently run on something the user never chose.
-        summarizerModel: globalDefault,
-        expertModelOverrides: Map<String, ModelRef>.from(overrides),
+        defaultModel: effective,
+        summarizerModel: effective,
       ),
     );
   }
