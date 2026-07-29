@@ -130,6 +130,7 @@ git commit -m "feat: persist provider model catalogs"
 
 **Files:**
 - Modify: `apps/mobile/lib/model_runtime/unary_http_transport.dart`
+- Modify: `apps/mobile/lib/model_runtime/testing/fake_unary_http_adapter.dart`
 - Create: `apps/mobile/lib/model_runtime/production_provider_inspection_transport.dart`
 - Modify: `apps/mobile/lib/model_runtime/model_runtime.dart`
 - Modify: `apps/mobile/test/model_runtime/unary_http_security_test.dart`
@@ -209,6 +210,7 @@ Expected: all tests pass and analysis reports no issues.
 
 ```bash
 git add apps/mobile/lib/model_runtime/unary_http_transport.dart \
+  apps/mobile/lib/model_runtime/testing/fake_unary_http_adapter.dart \
   apps/mobile/lib/model_runtime/production_provider_inspection_transport.dart \
   apps/mobile/lib/model_runtime/model_runtime.dart \
   apps/mobile/test/model_runtime/unary_http_security_test.dart \
