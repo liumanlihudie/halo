@@ -90,6 +90,24 @@ final class SqliteProviderConfigurationStore
         PRIMARY KEY (provider_id, model_id)
       ) STRICT
     ''';
+  static const _preMetadataProviderModelsSql = '''
+      CREATE TABLE provider_models (
+        provider_id TEXT NOT NULL
+          REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+        model_id TEXT NOT NULL CHECK (length(model_id) > 0),
+        display_name TEXT NOT NULL CHECK (length(display_name) > 0),
+        text_generation INTEGER NOT NULL
+          CHECK (text_generation IN (0, 1)),
+        system_messages INTEGER NOT NULL
+          CHECK (system_messages IN (0, 1)),
+        max_output_tokens INTEGER NOT NULL
+          CHECK (max_output_tokens > 0 AND max_output_tokens <= 1000000),
+        supports_temperature INTEGER NOT NULL
+          CHECK (supports_temperature IN (0, 1)),
+        discovered_at_ms INTEGER NOT NULL CHECK (discovered_at_ms > 0),
+        PRIMARY KEY (provider_id, model_id)
+      ) STRICT
+    ''';
   static const _credentialBindingsSql = '''
       CREATE TABLE credential_bindings (
         secret_ref TEXT PRIMARY KEY,
@@ -178,6 +196,8 @@ final class SqliteProviderConfigurationStore
       } else if (version == 3) {
         _migrateV3ToV4();
         _database.execute('PRAGMA user_version = $schemaVersion');
+      } else if (version == schemaVersion && _isExactPreMetadataV4Schema()) {
+        _migratePreMetadataV4ToFinalV4();
       } else if (version != schemaVersion) {
         if (version == 1 || version == 2) {
           throw StateError(
@@ -255,6 +275,124 @@ final class SqliteProviderConfigurationStore
         [jsonEncode(snapshot), row['lease_id']],
       );
     }
+  }
+
+  bool _isExactPreMetadataV4Schema() {
+    final expected = <String, ({String type, String sql})>{
+      'provider_configs': (type: 'table', sql: _providerConfigsSql),
+      'provider_header_secret_refs': (type: 'table', sql: _headerRefsSql),
+      'model_bindings': (type: 'table', sql: _modelBindingsSql),
+      'provider_models': (type: 'table', sql: _preMetadataProviderModelsSql),
+      'credential_bindings': (type: 'table', sql: _credentialBindingsSql),
+      'credential_bindings_active_owner': (
+        type: 'index',
+        sql: _activeCredentialOwnerIndexSql,
+      ),
+      'provider_removal_leases': (type: 'table', sql: _removalLeasesSql),
+      'provider_configuration_mutations': (
+        type: 'table',
+        sql: _mutationLeasesSql,
+      ),
+    };
+    final objects = _database.select('''
+      SELECT type, name, sql FROM sqlite_master
+      WHERE name NOT LIKE 'sqlite_%'
+        AND type IN ('table', 'index', 'trigger', 'view')
+    ''');
+    if (objects.length != expected.length) return false;
+    for (final row in objects) {
+      final name = row['name'] as String?;
+      final sql = row['sql'] as String?;
+      final expectedObject = name == null ? null : expected[name];
+      if (expectedObject == null ||
+          row['type'] != expectedObject.type ||
+          sql == null ||
+          _normalizeSchemaSql(sql) != _normalizeSchemaSql(expectedObject.sql)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  String _normalizeSchemaSql(String sql) {
+    final normalized = StringBuffer();
+    var insideLiteral = false;
+    var pendingSpace = false;
+    for (var index = 0; index < sql.length; index++) {
+      final character = sql[index];
+      if (insideLiteral) {
+        normalized.write(character);
+        if (character == "'") {
+          if (index + 1 < sql.length && sql[index + 1] == "'") {
+            normalized.write(sql[++index]);
+          } else {
+            insideLiteral = false;
+          }
+        }
+        continue;
+      }
+      if (character == "'") {
+        if (pendingSpace && normalized.isNotEmpty) normalized.write(' ');
+        pendingSpace = false;
+        insideLiteral = true;
+        normalized.write(character);
+        continue;
+      }
+      final codeUnit = character.codeUnitAt(0);
+      final isWhitespace =
+          codeUnit == 0x20 ||
+          codeUnit == 0x09 ||
+          codeUnit == 0x0a ||
+          codeUnit == 0x0d;
+      if (isWhitespace) {
+        pendingSpace = normalized.isNotEmpty;
+        continue;
+      }
+      if (pendingSpace && normalized.isNotEmpty) normalized.write(' ');
+      pendingSpace = false;
+      normalized.write(character.toLowerCase());
+    }
+    return normalized.toString();
+  }
+
+  void _migratePreMetadataV4ToFinalV4() {
+    final catalogRows = _database.select('''
+      SELECT provider_id, MIN(discovered_at_ms) AS discovered_at_ms,
+             COUNT(DISTINCT discovered_at_ms) AS discovery_time_count
+      FROM provider_models
+      GROUP BY provider_id
+      ORDER BY provider_id
+    ''');
+    if (catalogRows.any((row) => row['discovery_time_count'] != 1)) {
+      throw StateError('Invalid persisted provider model catalog');
+    }
+    _database.execute(_providerModelCatalogsSql);
+    for (final row in catalogRows) {
+      _database.execute(
+        '''
+          INSERT INTO provider_model_catalogs (provider_id, discovered_at_ms)
+          VALUES (?, ?)
+        ''',
+        [row['provider_id'], row['discovered_at_ms']],
+      );
+    }
+    _database.execute(
+      'ALTER TABLE provider_models '
+      'RENAME TO provider_models_pre_metadata_v4',
+    );
+    _database.execute(_providerModelsSql);
+    _database.execute('''
+      INSERT INTO provider_models (
+        provider_id, model_id, display_name, text_generation,
+        system_messages, max_output_tokens, supports_temperature,
+        discovered_at_ms
+      )
+      SELECT provider_id, model_id, display_name, text_generation,
+             system_messages, max_output_tokens, supports_temperature,
+             discovered_at_ms
+      FROM provider_models_pre_metadata_v4
+    ''');
+    _database.execute('DROP TABLE provider_models_pre_metadata_v4');
   }
 
   void _validateSchema() {

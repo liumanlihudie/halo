@@ -202,6 +202,85 @@ void main() {
   );
 
   test(
+    'exact pre-metadata schema v4 migrates in place without data loss',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final discoveredAt = DateTime.utc(2026, 7, 29, 8, 40, 0, 654);
+      _createPreMetadataV4Database(fixture.path, discoveredAt);
+
+      final migrated = SqliteProviderConfigurationStore.open(fixture.path);
+      try {
+        final provider = (await migrated.loadProvider('deepseek'))!;
+        expect(provider.config.providerId, 'deepseek');
+        expect(provider.revision.value, 7);
+        final catalog = (await migrated.loadProviderModelCatalog('deepseek'))!;
+        expect(catalog.discoveredAt, discoveredAt);
+        expect(catalog.models.map((model) => model.ref.modelId), [
+          'deepseek-chat',
+          'deepseek-reasoner',
+        ]);
+        expect(catalog.models.last.capabilities.systemMessages, isFalse);
+        expect(catalog.models.last.capabilities.maxOutputTokens, 65536);
+        expect(
+          await migrated.loadGlobalDefaultModel(),
+          ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+        );
+        expect(
+          await migrated.loadAgentModelOverride('agent.writer'),
+          ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+        );
+      } finally {
+        await migrated.close();
+      }
+
+      final raw = sqlite3.open(fixture.path);
+      expect(raw.select('PRAGMA user_version').single.values.single, 4);
+      expect(
+        raw.select(
+          "SELECT 1 FROM sqlite_master "
+          "WHERE type = 'table' AND name = 'provider_model_catalogs'",
+        ),
+        hasLength(1),
+      );
+      expect(
+        raw.select('PRAGMA foreign_key_list(provider_models)').single['table'],
+        'provider_model_catalogs',
+      );
+      raw.close();
+
+      final validated = SqliteProviderConfigurationStore.open(fixture.path);
+      await validated.close();
+      fixture.delete();
+    },
+  );
+
+  test('tampered pre-metadata schema v4 still fails closed', () {
+    final fixture = _DatabaseFixture.create();
+    _createPreMetadataV4Database(
+      fixture.path,
+      DateTime.utc(2026, 7, 29, 8, 41),
+    );
+    final raw = sqlite3.open(fixture.path);
+    raw.execute('PRAGMA writable_schema = ON');
+    raw.execute(
+      'UPDATE sqlite_master SET sql = replace(sql, ?, ?) '
+      "WHERE name = 'provider_models'",
+      [
+        'max_output_tokens > 0 AND max_output_tokens <= 1000000',
+        'max_output_tokens >= 0 AND max_output_tokens <= 1000000',
+      ],
+    );
+    raw.execute('PRAGMA writable_schema = OFF');
+    raw.close();
+
+    expect(
+      () => SqliteProviderConfigurationStore.open(fixture.path),
+      throwsStateError,
+    );
+    fixture.delete();
+  });
+
+  test(
     'pending replacement rollback restores the exact prior catalog',
     () async {
       final fixture = _DatabaseFixture.create();
@@ -2233,6 +2312,54 @@ void _createV3Database(String path) {
     VALUES ('agent', 'agent.writer', 'deepseek', 'deepseek-reasoner')
   ''');
   raw.execute('PRAGMA user_version = 3');
+  raw.close();
+}
+
+void _createPreMetadataV4Database(String path, DateTime discoveredAt) {
+  _createV3Database(path);
+  final raw = sqlite3.open(path);
+  raw.execute('PRAGMA foreign_keys = ON');
+  raw.execute('''
+    CREATE TABLE provider_models (
+      provider_id TEXT NOT NULL
+        REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+      model_id TEXT NOT NULL CHECK (length(model_id) > 0),
+      display_name TEXT NOT NULL CHECK (length(display_name) > 0),
+      text_generation INTEGER NOT NULL
+        CHECK (text_generation IN (0, 1)),
+      system_messages INTEGER NOT NULL
+        CHECK (system_messages IN (0, 1)),
+      max_output_tokens INTEGER NOT NULL
+        CHECK (max_output_tokens > 0 AND max_output_tokens <= 1000000),
+      supports_temperature INTEGER NOT NULL
+        CHECK (supports_temperature IN (0, 1)),
+      discovered_at_ms INTEGER NOT NULL CHECK (discovered_at_ms > 0),
+      PRIMARY KEY (provider_id, model_id)
+    ) STRICT
+  ''');
+  raw.execute(
+    '''
+      INSERT INTO provider_models (
+        provider_id, model_id, display_name, text_generation,
+        system_messages, max_output_tokens, supports_temperature,
+        discovered_at_ms
+      ) VALUES ('deepseek', 'deepseek-chat', 'DeepSeek Chat',
+                1, 1, 8192, 1, ?)
+    ''',
+    [discoveredAt.millisecondsSinceEpoch],
+  );
+  raw.execute(
+    '''
+      INSERT INTO provider_models (
+        provider_id, model_id, display_name, text_generation,
+        system_messages, max_output_tokens, supports_temperature,
+        discovered_at_ms
+      ) VALUES ('deepseek', 'deepseek-reasoner', 'DeepSeek Reasoner',
+                1, 0, 65536, 0, ?)
+    ''',
+    [discoveredAt.millisecondsSinceEpoch],
+  );
+  raw.execute('PRAGMA user_version = 4');
   raw.close();
 }
 
