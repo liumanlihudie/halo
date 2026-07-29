@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:crypto/crypto.dart';
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/drift_chat_message_repository.dart';
@@ -739,6 +740,127 @@ void main() {
           (message) => message.id == '${command.commandId}:answer',
         ),
         hasLength(1),
+      );
+    },
+  );
+
+  test(
+    'expired claimed answer recovers only with matching provenance on one clock',
+    () async {
+      var nowEpochMs = 1000;
+      final outbox = InMemorySingleChatCommandOutbox(
+        nowEpochMs: () => nowEpochMs,
+      );
+      final command = outbox.reserve(
+        conversationId: 'conversation-data',
+        normalizedIntent: '崩溃窗口恢复',
+        createCommandId: () => 'command-expired-recovery',
+      );
+      final claim = outbox.claimForDispatch(
+        conversationId: 'conversation-data',
+        commandId: command.commandId,
+        ownerId: 'crashed-controller',
+        nowEpochMs: 1000,
+        leaseExpiresAtEpochMs: 2000,
+      )!;
+      final repository = InMemoryChatMessageRepository(
+        commandOutbox: outbox,
+        seed: {
+          'conversation-data': [
+            ChatMessageProjection(
+              id: '${command.commandId}:answer',
+              kind: ChatMessageKind.agentText,
+              text: '崩溃前已持久化的答案',
+              dispatchClaimOwner: claim.ownerId,
+              dispatchClaimGeneration: claim.generation,
+            ),
+          ],
+        },
+      );
+      nowEpochMs = 2000;
+      final controller = SingleChatController(
+        conversationId: 'conversation-data',
+        expertId: 'data-analyst',
+        service: _FakeConversationApplicationService(),
+        repository: repository,
+        commandIdFactory: () => 'unused-command',
+        nowEpochMs: () => nowEpochMs,
+      );
+
+      await controller.initialize();
+
+      expect(
+        outbox.read('conversation-data', command.commandId)?.status,
+        SingleChatCommandStatus.completed,
+      );
+      expect(controller.state.historyLoadFailed, isFalse);
+      expect(
+        controller.state.messages.single.id,
+        '${command.commandId}:answer',
+      );
+    },
+  );
+
+  test(
+    'reconciliation cannot terminalize an answer after its claim is reclaimed',
+    () async {
+      var nowEpochMs = 1000;
+      final outbox = InMemorySingleChatCommandOutbox(
+        nowEpochMs: () => nowEpochMs,
+      );
+      final command = outbox.reserve(
+        conversationId: 'conversation-data',
+        normalizedIntent: 'reclaimed claim',
+        createCommandId: () => 'command-reclaimed-recovery',
+      );
+      final originalClaim = outbox.claimForDispatch(
+        conversationId: 'conversation-data',
+        commandId: command.commandId,
+        ownerId: 'crashed-controller',
+        nowEpochMs: 1000,
+        leaseExpiresAtEpochMs: 2000,
+      )!;
+      final repository = InMemoryChatMessageRepository(
+        commandOutbox: outbox,
+        seed: {
+          'conversation-data': [
+            ChatMessageProjection(
+              id: '${command.commandId}:answer',
+              kind: ChatMessageKind.agentText,
+              text: '旧 claim 的答案',
+              dispatchClaimOwner: originalClaim.ownerId,
+              dispatchClaimGeneration: originalClaim.generation,
+            ),
+          ],
+        },
+      );
+      nowEpochMs = 2000;
+      outbox.claimForDispatch(
+        conversationId: 'conversation-data',
+        commandId: command.commandId,
+        ownerId: 'new-controller',
+        nowEpochMs: 2000,
+        leaseExpiresAtEpochMs: 3000,
+      );
+      final controller = SingleChatController(
+        conversationId: 'conversation-data',
+        expertId: 'data-analyst',
+        service: _FakeConversationApplicationService(),
+        repository: repository,
+        commandIdFactory: () => 'unused-command',
+        nowEpochMs: () => nowEpochMs,
+      );
+
+      await controller.initialize();
+
+      expect(
+        outbox.read('conversation-data', command.commandId)?.status,
+        SingleChatCommandStatus.pending,
+      );
+      expect(controller.state.historyLoadFailed, isFalse);
+      expect(
+        controller.state.messages.single.id,
+        '${command.commandId}:answer',
       );
     },
   );
@@ -2542,6 +2664,226 @@ void main() {
         ),
         throwsStateError,
       );
+    },
+  );
+
+  test(
+    'drift existing-id writes fail closed when their digest is corrupt',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'single-chat-drift-corrupt-existing-',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final databasePath = '${directory.path}/history.sqlite';
+      final repository = await DriftChatMessageRepository.open(
+        databasePath: databasePath,
+        commandOutbox: FileSingleChatCommandOutbox(
+          '${directory.path}/commands.json',
+        ),
+        conversations: const {},
+      );
+      const message = ChatMessageProjection(
+        id: 'corrupt-existing',
+        kind: ChatMessageKind.userText,
+        text: '不可绕过的摘要',
+      );
+      await repository.append('conversation-data', message);
+      await repository.close();
+      final database = sqlite3.open(databasePath);
+      database.execute("""
+      UPDATE single_chat_messages
+      SET projection_sha256 = '0000000000000000000000000000000000000000000000000000000000000000'
+      WHERE message_id = 'corrupt-existing'
+    """);
+      database.close();
+      final reopened = await DriftChatMessageRepository.open(
+        databasePath: databasePath,
+        commandOutbox: FileSingleChatCommandOutbox(
+          '${directory.path}/commands.json',
+        ),
+        conversations: const {},
+      );
+
+      await expectLater(
+        reopened.append('conversation-data', message),
+        throwsA(isA<FormatException>()),
+      );
+      await expectLater(
+        reopened.appendIf(
+          'conversation-data',
+          message,
+          ChatMessageCommitToken('corrupt-owner', generation: 1),
+          () => true,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+      await reopened.close();
+    },
+  );
+
+  test('drift rollback refuses stale owner generation and revision', () async {
+    final directory = Directory.systemTemp.createTempSync(
+      'single-chat-drift-stale-rollback-',
+    );
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final repository = await DriftChatMessageRepository.open(
+      databasePath: '${directory.path}/history.sqlite',
+      commandOutbox: FileSingleChatCommandOutbox(
+        '${directory.path}/commands.json',
+      ),
+      conversations: const {},
+    );
+    const message = ChatMessageProjection(
+      id: 'owned-answer',
+      kind: ChatMessageKind.agentText,
+      text: '只有拥有者可删除',
+    );
+    final commit = await repository.appendIf(
+      'conversation-data',
+      message,
+      ChatMessageCommitToken('owner-a', generation: 3),
+      () => true,
+    );
+    for (final stale in [
+      ChatMessageCommitResult(
+        messageId: commit.messageId,
+        committed: true,
+        inserted: true,
+        ownerId: 'owner-b',
+        ownerGeneration: commit.ownerGeneration,
+        storageRevision: commit.storageRevision,
+      ),
+      ChatMessageCommitResult(
+        messageId: commit.messageId,
+        committed: true,
+        inserted: true,
+        ownerId: commit.ownerId,
+        ownerGeneration: 4,
+        storageRevision: commit.storageRevision,
+      ),
+      ChatMessageCommitResult(
+        messageId: commit.messageId,
+        committed: true,
+        inserted: true,
+        ownerId: commit.ownerId,
+        ownerGeneration: commit.ownerGeneration,
+        storageRevision: commit.storageRevision! + 1,
+      ),
+    ]) {
+      expect(
+        await repository.rollbackOwned('conversation-data', stale),
+        ChatMessageRollbackDisposition.ownershipMismatch,
+      );
+    }
+    expect(
+      (await repository.load('conversation-data')).map((item) => item.id),
+      ['owned-answer'],
+    );
+    await repository.close();
+  });
+
+  test('drift repository rejects every operation after close', () async {
+    final directory = Directory.systemTemp.createTempSync(
+      'single-chat-drift-closed-',
+    );
+    addTearDown(() => directory.deleteSync(recursive: true));
+    final repository = await DriftChatMessageRepository.open(
+      databasePath: '${directory.path}/history.sqlite',
+      commandOutbox: FileSingleChatCommandOutbox(
+        '${directory.path}/commands.json',
+      ),
+      conversations: const {
+        'conversation-data': SingleChatConversationProjection(
+          conversationId: 'conversation-data',
+          expertId: 'data-analyst',
+          title: '数据分析',
+          agentName: '数据分析师',
+          modelLabel: 'Provider / model',
+          avatarLetter: '数',
+        ),
+      },
+    );
+    await repository.close();
+    const message = ChatMessageProjection(
+      id: 'closed-message',
+      kind: ChatMessageKind.userText,
+      text: '关闭后不得写入',
+    );
+    expect(() => repository.describe('conversation-data'), throwsStateError);
+    await expectLater(repository.load('conversation-data'), throwsStateError);
+    await expectLater(
+      repository.append('conversation-data', message),
+      throwsStateError,
+    );
+    await expectLater(
+      repository.appendIf(
+        'conversation-data',
+        message,
+        ChatMessageCommitToken('closed-owner', generation: 1),
+        () => true,
+      ),
+      throwsStateError,
+    );
+    await expectLater(
+      repository.rollbackOwned(
+        'conversation-data',
+        const ChatMessageCommitResult(
+          messageId: 'closed-message',
+          committed: true,
+          inserted: true,
+          ownerId: 'closed-owner',
+          ownerGeneration: 1,
+          storageRevision: 1,
+        ),
+      ),
+      throwsStateError,
+    );
+  });
+
+  test(
+    'two drift connections race an exact duplicate without double insertion',
+    () async {
+      final directory = Directory.systemTemp.createTempSync(
+        'single-chat-drift-race-',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final databasePath = '${directory.path}/history.sqlite';
+      final priorWarningSetting =
+          driftRuntimeOptions.dontWarnAboutMultipleDatabases;
+      driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+      addTearDown(
+        () => driftRuntimeOptions.dontWarnAboutMultipleDatabases =
+            priorWarningSetting,
+      );
+      final first = await DriftChatMessageRepository.open(
+        databasePath: databasePath,
+        commandOutbox: FileSingleChatCommandOutbox(
+          '${directory.path}/first.json',
+        ),
+        conversations: const {},
+      );
+      final second = await DriftChatMessageRepository.open(
+        databasePath: databasePath,
+        commandOutbox: FileSingleChatCommandOutbox(
+          '${directory.path}/second.json',
+        ),
+        conversations: const {},
+      );
+      const message = ChatMessageProjection(
+        id: 'raced-message',
+        kind: ChatMessageKind.userText,
+        text: '完全相同的竞态写入',
+      );
+
+      await Future.wait([
+        first.append('conversation-data', message),
+        second.append('conversation-data', message),
+      ]);
+
+      expect(await first.load('conversation-data'), hasLength(1));
+      expect(await second.load('conversation-data'), hasLength(1));
+      await first.close();
+      await second.close();
     },
   );
 

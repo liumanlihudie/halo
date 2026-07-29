@@ -269,6 +269,9 @@ class SingleChatState {
   }
 }
 
+int _controllerEpochMilliseconds() =>
+    DateTime.now().toUtc().millisecondsSinceEpoch;
+
 class SingleChatController extends ChangeNotifier {
   static const _dispatchClaimLease = Duration(minutes: 5);
   static const _dispatchClaimRenewalInterval = Duration(minutes: 1);
@@ -281,7 +284,9 @@ class SingleChatController extends ChangeNotifier {
     required this.repository,
     required this.commandIdFactory,
     this.verifier = const RejectingVerifierReceiptRegistry(),
-  }) : assert(expertId != '');
+    SingleChatEpochClock? nowEpochMs,
+  }) : _nowEpochMs = nowEpochMs ?? _controllerEpochMilliseconds,
+       assert(expertId != '');
 
   final String conversationId;
   final String expertId;
@@ -289,6 +294,7 @@ class SingleChatController extends ChangeNotifier {
   final ChatMessageRepository repository;
   final String Function() commandIdFactory;
   final TrustedVerifierReceiptRegistry verifier;
+  final SingleChatEpochClock _nowEpochMs;
 
   SingleChatState _state = SingleChatState();
   SingleChatState get state => _state;
@@ -349,7 +355,7 @@ class SingleChatController extends ChangeNotifier {
       final messagesById = {
         for (final message in loadedMessages) message.id: message,
       };
-      final nowEpochMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+      final nowEpochMs = _nowEpochMs();
       for (final command in repository.commandOutbox.pendingForConversation(
         conversationId,
       )) {
@@ -383,14 +389,14 @@ class SingleChatController extends ChangeNotifier {
             generation: command.dispatchClaimGeneration!,
           );
         }
+        if (dispatchClaim == null) {
+          _outboxReconciliationBlocked = true;
+          quarantinedMessageIds.add(answer.id);
+          failed = true;
+          continue;
+        }
         try {
-          repository.commandOutbox.markTerminal(
-            conversationId,
-            command.commandId,
-            SingleChatCommandStatus.completed,
-            dispatchClaim: dispatchClaim,
-            reconcilePersistedAnswer: true,
-          );
+          repository.commandOutbox.recoverPersistedCompletion(dispatchClaim);
         } catch (_) {
           final persisted = repository.commandOutbox.read(
             conversationId,
@@ -617,15 +623,13 @@ class SingleChatController extends ChangeNotifier {
         notifyListeners();
       }
 
-      final now = DateTime.now().toUtc();
+      final nowEpochMs = _nowEpochMs();
       dispatchClaim = repository.commandOutbox.claimForDispatch(
         conversationId: conversationId,
         commandId: commandId,
         ownerId: _dispatchOwnerId,
-        nowEpochMs: now.millisecondsSinceEpoch,
-        leaseExpiresAtEpochMs: now
-            .add(_dispatchClaimLease)
-            .millisecondsSinceEpoch,
+        nowEpochMs: nowEpochMs,
+        leaseExpiresAtEpochMs: nowEpochMs + _dispatchClaimLease.inMilliseconds,
       );
       if (dispatchClaim == null) {
         if (!_disposed &&
@@ -892,7 +896,7 @@ class SingleChatController extends ChangeNotifier {
         _outboxReconciliationBlocked = true;
         if (dispatchClaim != null) {
           try {
-            final nowEpochMs = DateTime.now().toUtc().millisecondsSinceEpoch;
+            final nowEpochMs = _nowEpochMs();
             repository.commandOutbox.renewDispatchClaim(
               claim: dispatchClaim,
               nowEpochMs: nowEpochMs,
@@ -1001,15 +1005,14 @@ class SingleChatController extends ChangeNotifier {
         timer.cancel();
         return;
       }
-      final now = DateTime.now().toUtc();
+      final nowEpochMs = _nowEpochMs();
       var renewed = false;
       try {
         renewed = repository.commandOutbox.renewDispatchClaim(
           claim: claim,
-          nowEpochMs: now.millisecondsSinceEpoch,
-          leaseExpiresAtEpochMs: now
-              .add(_dispatchClaimLease)
-              .millisecondsSinceEpoch,
+          nowEpochMs: nowEpochMs,
+          leaseExpiresAtEpochMs:
+              nowEpochMs + _dispatchClaimLease.inMilliseconds,
         );
       } catch (_) {
         renewed = false;

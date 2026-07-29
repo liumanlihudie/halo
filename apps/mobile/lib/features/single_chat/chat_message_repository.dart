@@ -326,6 +326,10 @@ abstract interface class SingleChatCommandOutbox {
     bool reconcilePersistedAnswer = false,
   });
 
+  /// Atomically completes a pending command for an answer that was durably
+  /// persisted before its dispatch lease expired.
+  void recoverPersistedCompletion(SingleChatDispatchClaim dispatchClaim);
+
   SingleChatCommandRecord? read(String conversationId, String commandId);
 
   List<SingleChatCommandRecord> pendingForConversation(String conversationId);
@@ -497,6 +501,30 @@ class InMemorySingleChatCommandOutbox implements SingleChatCommandOutbox {
     }
     _records[index] = current.markTerminal(
       status,
+      dispatchClaim: dispatchClaim,
+    );
+  }
+
+  @override
+  void recoverPersistedCompletion(SingleChatDispatchClaim dispatchClaim) {
+    final index = _records.indexWhere(
+      (record) =>
+          record.conversationId == dispatchClaim.conversationId &&
+          record.commandId == dispatchClaim.commandId,
+    );
+    if (index < 0) {
+      throw StateError('Single-chat command does not exist.');
+    }
+    final current = _records[index];
+    if (current.status == SingleChatCommandStatus.completed &&
+        current.wasTerminatedBy(dispatchClaim)) {
+      return;
+    }
+    if (!_ownsDispatchClaim(current, dispatchClaim)) {
+      throw StateError('Single-chat dispatch claim ownership mismatch.');
+    }
+    _records[index] = current.markTerminal(
+      SingleChatCommandStatus.completed,
       dispatchClaim: dispatchClaim,
     );
   }
@@ -753,6 +781,34 @@ class FileSingleChatCommandOutbox implements SingleChatCommandOutbox {
       }
       records[index] = current.markTerminal(
         status,
+        dispatchClaim: dispatchClaim,
+      );
+      return (snapshot.copyWith(records: records), null);
+    });
+  }
+
+  @override
+  void recoverPersistedCompletion(SingleChatDispatchClaim dispatchClaim) {
+    _withExclusiveLock((snapshot) {
+      final records = List<SingleChatCommandRecord>.of(snapshot.records);
+      final index = records.indexWhere(
+        (record) =>
+            record.conversationId == dispatchClaim.conversationId &&
+            record.commandId == dispatchClaim.commandId,
+      );
+      if (index < 0) {
+        throw StateError('Single-chat command does not exist.');
+      }
+      final current = records[index];
+      if (current.status == SingleChatCommandStatus.completed &&
+          current.wasTerminatedBy(dispatchClaim)) {
+        return (snapshot, null);
+      }
+      if (!_ownsDispatchClaim(current, dispatchClaim)) {
+        throw StateError('Single-chat dispatch claim ownership mismatch.');
+      }
+      records[index] = current.markTerminal(
+        SingleChatCommandStatus.completed,
         dispatchClaim: dispatchClaim,
       );
       return (snapshot.copyWith(records: records), null);

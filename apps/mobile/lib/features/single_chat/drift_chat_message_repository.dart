@@ -69,7 +69,7 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
     final file = File(databasePath).absolute;
     storagePolicy.prepareDirectory(file.parent);
     final database = _SingleChatDatabase(
-      NativeDatabase.createInBackground(file),
+      NativeDatabase.createInBackground(file, setup: _configureNativeDatabase),
     );
     final repository = DriftChatMessageRepository._(
       database: database,
@@ -143,7 +143,7 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
     await _database.transaction(() async {
       final existing = await _findMessage(conversationId, message.id);
       if (existing != null) {
-        if (_sameProjectionJson(existing.projectionJson, message)) {
+        if (_sameStoredMessage(existing, message)) {
           return;
         }
         throw StateError(
@@ -174,7 +174,7 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
       if (existing != null) {
         return ChatMessageCommitResult(
           messageId: message.id,
-          committed: _sameProjectionJson(existing.projectionJson, message),
+          committed: _sameStoredMessage(existing, message),
           inserted: false,
           ownerId: token.value,
           ownerGeneration: token.generation,
@@ -344,8 +344,12 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
     return projection;
   }
 
-  bool _sameProjectionJson(String encoded, ChatMessageProjection message) {
-    return encoded == encodeChatMessageProjection(message);
+  bool _sameStoredMessage(
+    SingleChatMessage stored,
+    ChatMessageProjection message,
+  ) {
+    _decodeStoredMessage(stored);
+    return stored.projectionJson == encodeChatMessageProjection(message);
   }
 
   ChatMessageCommitResult _uncommitted(
@@ -376,4 +380,10 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
       throw StateError('Single-chat history repository is closed.');
     }
   }
+}
+
+void _configureNativeDatabase(dynamic database) {
+  database.execute('PRAGMA journal_mode = WAL');
+  database.execute('PRAGMA busy_timeout = 5000');
+  database.execute('PRAGMA foreign_keys = ON');
 }
