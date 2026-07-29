@@ -144,9 +144,15 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
           ),
           const SizedBox(height: 9),
           OutlinedButton.icon(
-            onPressed: null,
+            onPressed: controller == null || !configured || _busy
+                ? null
+                : _testConnection,
             icon: Icon(HaloIcon.requirePrototypeClass('ph ph-plugs-connected')),
-            label: const Text('测试连接（暂不可用）'),
+            label: Text(
+              _connectionLabel(
+                controller?.connectionResultFor(widget.providerId),
+              ),
+            ),
           ),
           OutlinedButton.icon(
             onPressed: controller == null || !configured || _busy
@@ -213,6 +219,25 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  Future<void> _testConnection() async {
+    setState(() => _busy = true);
+    try {
+      await widget.controller!.testConnection(widget.providerId);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _connectionLabel(ProviderConnectionResult? result) => switch (result) {
+    null || ProviderConnectionResult.untested => '测试连接',
+    ProviderConnectionResult.testing => '正在测试连接…',
+    ProviderConnectionResult.reachable => '连接正常',
+    ProviderConnectionResult.notConfigured => '请先保存 Key',
+    ProviderConnectionResult.authFailed => 'Key 无效，请检查',
+    ProviderConnectionResult.quotaExceeded => '额度不足或受限',
+    ProviderConnectionResult.unreachable => '连接失败，请重试',
+  };
 
   Future<void> _pasteApiKey() async {
     try {

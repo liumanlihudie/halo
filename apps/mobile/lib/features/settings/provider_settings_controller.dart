@@ -4,12 +4,24 @@ import 'dart:math';
 // ignore_for_file: prefer_initializing_formals
 
 import 'package:flutter/foundation.dart';
+import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 
 final Object _providerSettingsMutationZoneKey = Object();
+
+/// Outcome of a read-only connection test. Never persists anything.
+enum ProviderConnectionResult {
+  untested,
+  testing,
+  reachable,
+  notConfigured,
+  authFailed,
+  quotaExceeded,
+  unreachable,
+}
 
 enum ProviderSettingsState {
   idle,
@@ -171,6 +183,9 @@ final class ProviderSettingsController extends ChangeNotifier {
   final Map<String, ProviderSettingsState> _states = {};
   ProviderSettingsState stateFor(String providerId) =>
       _states[providerId] ?? ProviderSettingsState.idle;
+  final Map<String, ProviderConnectionResult> _connectionResults = {};
+  ProviderConnectionResult connectionResultFor(String providerId) =>
+      _connectionResults[providerId] ?? ProviderConnectionResult.untested;
   bool _hasConfiguration = false;
   bool get hasConfiguration => _hasConfiguration;
   final Map<String, bool> _configured = {};
@@ -437,6 +452,41 @@ final class ProviderSettingsController extends ChangeNotifier {
       _setState(providerId, ProviderSettingsState.deleteFailed);
       throw const ProviderSettingsException('移除失败，请稍后重试');
     }
+  }
+
+  /// Read-only reachability check against the saved provider key.
+  ///
+  /// Reuses the catalog fetcher to hit `/models`, persists nothing, and never
+  /// runs through the mutation FIFO because it changes no state. Errors map to
+  /// an actionable result rather than a generic failure.
+  Future<void> testConnection(String providerId) async {
+    if (_closed) throw StateError('Provider settings are closed');
+    _connectionResults[providerId] = ProviderConnectionResult.testing;
+    notifyListeners();
+    ProviderConnectionResult result;
+    try {
+      final snapshot = await _persistence.load(providerId);
+      if (snapshot == null) {
+        result = ProviderConnectionResult.notConfigured;
+      } else {
+        await _catalogFetcher.fetch(snapshot.config);
+        result = ProviderConnectionResult.reachable;
+      }
+    } on ModelRuntimeException catch (error) {
+      result = switch (error.code) {
+        ModelRuntimeErrorCode.invalidCredential =>
+          ProviderConnectionResult.authFailed,
+        ModelRuntimeErrorCode.insufficientBalance ||
+        ModelRuntimeErrorCode.rateLimited =>
+          ProviderConnectionResult.quotaExceeded,
+        _ => ProviderConnectionResult.unreachable,
+      };
+    } catch (_) {
+      result = ProviderConnectionResult.unreachable;
+    }
+    if (_closed) return;
+    _connectionResults[providerId] = result;
+    notifyListeners();
   }
 
   ProviderConfig _buildConfig(

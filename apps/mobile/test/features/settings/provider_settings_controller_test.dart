@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
@@ -624,6 +625,59 @@ void main() {
 
     expect(controller.stateFor('deepseek'), ProviderSettingsState.ready);
     expect(credentials.setValues, ['first-key', 'second-key']);
+  });
+
+  test(
+    'connection test reports reachable, auth, quota and unreachable',
+    () async {
+      persistence.current = _snapshot('deepseek', SecretRef.parse('keychain://halo.provider/00000000-0000-4000-8000-000000000abc'));
+
+      await controller.testConnection('deepseek');
+      expect(
+        controller.connectionResultFor('deepseek'),
+        ProviderConnectionResult.reachable,
+      );
+
+      catalogFetcher.error = const ModelRuntimeException(
+        code: ModelRuntimeErrorCode.invalidCredential,
+        safeMessage: 'x',
+        retryable: false,
+      );
+      await controller.testConnection('deepseek');
+      expect(
+        controller.connectionResultFor('deepseek'),
+        ProviderConnectionResult.authFailed,
+      );
+
+      catalogFetcher.error = const ModelRuntimeException(
+        code: ModelRuntimeErrorCode.rateLimited,
+        safeMessage: 'x',
+        retryable: true,
+      );
+      await controller.testConnection('deepseek');
+      expect(
+        controller.connectionResultFor('deepseek'),
+        ProviderConnectionResult.quotaExceeded,
+      );
+
+      catalogFetcher.error = StateError('network down');
+      await controller.testConnection('deepseek');
+      expect(
+        controller.connectionResultFor('deepseek'),
+        ProviderConnectionResult.unreachable,
+      );
+    },
+  );
+
+  test('connection test on an unconfigured provider says so', () async {
+    persistence.current = null;
+    await controller.testConnection('deepseek');
+    expect(
+      controller.connectionResultFor('deepseek'),
+      ProviderConnectionResult.notConfigured,
+    );
+    // Nothing was written; a read-only probe never persists.
+    expect(events, isNot(contains('persistence:replace')));
   });
 
   test(
