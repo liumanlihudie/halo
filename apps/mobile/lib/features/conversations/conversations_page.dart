@@ -69,14 +69,25 @@ class _ConversationRow extends StatelessWidget {
           height: 72,
           child: Row(
             children: [
-              if (conversation.groupAvatarTiles case final tiles?)
-                HaloGroupAvatar(tiles: tiles)
-              else
-                HaloAvatar(
-                  imageUrl: conversation.imageUrl,
-                  letter: conversation.avatarLetter,
-                  tone: conversation.avatarTone,
-                ),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (conversation.groupAvatarTiles case final tiles?)
+                    HaloGroupAvatar(tiles: tiles)
+                  else
+                    HaloAvatar(
+                      imageUrl: conversation.imageUrl,
+                      letter: conversation.avatarLetter,
+                      tone: conversation.avatarTone,
+                    ),
+                  if (conversation.unread > 0)
+                    Positioned(
+                      top: -5,
+                      right: -6,
+                      child: _UnreadBadge(count: conversation.unread),
+                    ),
+                ],
+              ),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(
@@ -85,20 +96,32 @@ class _ConversationRow extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Flexible(
-                          child: Text(
-                            conversation.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: HaloTextStyles.rowTitle,
+                        // The title row must never squeeze the timestamp: it
+                        // stays flush right while the title ellipsizes.
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  conversation.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: HaloTextStyles.rowTitle,
+                                ),
+                              ),
+                              if (conversation.tag case final tag?) ...[
+                                const SizedBox(width: 6),
+                                HaloTag(tag, tone: conversation.tagTone),
+                              ],
+                            ],
                           ),
                         ),
-                        if (conversation.tag case final tag?) ...[
-                          const SizedBox(width: 6),
-                          HaloTag(tag, tone: conversation.tagTone),
-                        ],
-                        const Spacer(),
-                        Text(conversation.time, style: HaloTextStyles.caption),
+                        const SizedBox(width: 8),
+                        Text(
+                          conversation.time,
+                          textAlign: TextAlign.right,
+                          style: HaloTextStyles.caption,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -124,33 +147,46 @@ class _ConversationRow extends StatelessWidget {
                             style: HaloTextStyles.secondary,
                           ),
                         ),
-                        if (conversation.unread > 0) ...[
-                          const SizedBox(width: 7),
-                          Container(
-                            constraints: const BoxConstraints(minWidth: 18),
-                            height: 18,
-                            padding: const EdgeInsets.symmetric(horizontal: 5),
-                            decoration: BoxDecoration(
-                              color: HaloColors.accent,
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              '${conversation.unread}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ],
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : '$count';
+    return Semantics(
+      label: '未读 $label',
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 18),
+        height: 18,
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        decoration: BoxDecoration(
+          color: HaloColors.accent,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: HaloColors.paper, width: 1.5),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            height: 1,
           ),
         ),
       ),

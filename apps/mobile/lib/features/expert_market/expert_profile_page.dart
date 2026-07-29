@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
+import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/features/settings/model_picker_sheet.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
@@ -101,24 +102,28 @@ class ExpertProfilePage extends StatelessWidget {
               child: Text('仅访问你主动发送的文件；敏感工具按次授权。', style: HaloTextStyles.body),
             ),
           ] else ...[
-            HaloSettingsGroup(
-              children: [
-                HaloSettingsRow(
+            _ExpertActionBar(
+              actions: [
+                _ExpertAction(
                   label: '发消息',
+                  detail: installedIdentity == null ? '尚未安装' : '文字对话',
+                  prototypeIconClass: 'ph ph-chat-circle-text',
                   onTap: installedIdentity == null
                       ? null
                       : () => context.push(
                           '/chat/${installedIdentity!.conversationId}',
                         ),
                 ),
-                HaloSettingsRow(
+                _ExpertAction(
                   label: '语音通话',
                   detail: '端到端双工',
+                  prototypeIconClass: 'ph ph-phone',
                   onTap: () => context.push('/call/voice/$expertId'),
                 ),
-                HaloSettingsRow(
+                _ExpertAction(
                   label: '视频通话',
                   detail: 'Vidu',
+                  prototypeIconClass: 'ph ph-video-camera',
                   onTap: () => context.push('/call/video/$expertId'),
                 ),
               ],
@@ -156,6 +161,102 @@ class ExpertProfilePage extends StatelessWidget {
         ],
       ),
       bottom: marketMode ? _MarketBottomBar(name: name) : null,
+    );
+  }
+}
+
+@immutable
+class _ExpertAction {
+  const _ExpertAction({
+    required this.label,
+    required this.detail,
+    required this.prototypeIconClass,
+    required this.onTap,
+  });
+
+  final String label;
+  final String detail;
+  final String prototypeIconClass;
+  final VoidCallback? onTap;
+}
+
+/// The three primary ways to reach an expert, side by side.
+///
+/// A disabled action stays visible with its reason so an uninstalled expert
+/// does not silently look identical to an installed one.
+class _ExpertActionBar extends StatelessWidget {
+  const _ExpertActionBar({required this.actions});
+
+  final List<_ExpertAction> actions;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(13, 10, 13, 4),
+      child: Row(
+        children: [
+          for (final action in actions) ...[
+            if (action != actions.first) const SizedBox(width: 9),
+            Expanded(child: _ExpertActionButton(action: action)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpertActionButton extends StatelessWidget {
+  const _ExpertActionButton({required this.action});
+
+  final _ExpertAction action;
+
+  @override
+  Widget build(BuildContext context) {
+    final enabled = action.onTap != null;
+    final foreground = enabled ? HaloColors.accentDeep : HaloColors.muted;
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      label: action.label,
+      child: ExcludeSemantics(
+        child: Material(
+          color: HaloColors.paper,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: action.onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    HaloIcon.requirePrototypeClass(action.prototypeIconClass),
+                    size: 22,
+                    color: foreground,
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    action.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HaloTextStyles.rowTitle.copyWith(
+                      color: enabled ? null : HaloColors.muted,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    action.detail,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: HaloTextStyles.caption,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

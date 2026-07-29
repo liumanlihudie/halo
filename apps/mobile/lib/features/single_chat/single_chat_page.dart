@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/foundation/design_system/halo_wave_keys_indicator.dart';
 
 import 'chat_message_repository.dart';
 import 'single_chat_controller.dart';
@@ -35,6 +36,7 @@ class SingleChatPage extends StatefulWidget {
 
 class _SingleChatPageState extends State<SingleChatPage> {
   final _textController = TextEditingController();
+  final _scrollController = ScrollController();
   late SingleChatConversationProjection _conversation;
   SingleChatController? _chatController;
   bool _dependencyLoadFailed = false;
@@ -168,13 +170,31 @@ class _SingleChatPageState extends State<SingleChatPage> {
       ?..removeListener(_onChatChanged)
       ..dispose();
     _textController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
   void _onChatChanged() {
     if (mounted) {
       setState(() {});
+      _scrollToBottomSoon();
     }
+  }
+
+  /// Keeps the newest bubble visible after a send, a projected reply, or a run
+  /// status change. Scheduled post-frame because the new extent only exists
+  /// once the rebuilt list has laid out.
+  void _scrollToBottomSoon() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final target = _scrollController.position.maxScrollExtent;
+      if ((_scrollController.offset - target).abs() < 1) return;
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   void _send() {
@@ -190,6 +210,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
     if (controller.activeText == text.trim()) {
       _textController.clear();
     }
+    _scrollToBottomSoon();
   }
 
   @override
@@ -217,6 +238,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
       ],
       backgroundColor: HaloColors.soft,
       body: ListView(
+        controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
         children: [
           if (_dependencyLoadFailed) const _SystemNotice('聊天存储暂不可用，请稍后重试'),
@@ -452,15 +474,18 @@ class _ProgressMessage extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 5,
-              backgroundColor: HaloColors.line,
-              color: HaloColors.accent,
+          if (progress == null)
+            const HaloWaveKeysIndicator()
+          else
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 5,
+                backgroundColor: HaloColors.line,
+                color: HaloColors.accent,
+              ),
             ),
-          ),
           if (message?.secondaryText case final secondary?) ...[
             const SizedBox(height: 7),
             Text(secondary, style: HaloTextStyles.caption),
