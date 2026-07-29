@@ -565,6 +565,65 @@ void main() {
       isEmpty,
     );
   });
+
+  test(
+    'shutdown rejects new runs and drains a blocked selector without writes',
+    () async {
+      final selector = _BlockingSelector();
+      final store = InMemoryRunEventStore();
+      final runner = BasicDurableRunner(
+        store: store,
+        selector: selector,
+        runtime: const _EchoRuntime(),
+      );
+      final handle = await runner.startRun(
+        const StartConversationRunCommand(
+          clientCommandId: 'command-shutdown-selector',
+          conversationId: 'group-product',
+          hostAgentId: 'product-manager',
+          input: '开始分析',
+          replyMode: ConversationReplyMode.auto,
+          memberAgentIds: ['product-manager'],
+        ),
+      );
+      await runner
+          .watchRun(handle.runId)
+          .firstWhere(
+            (event) => event.stage == ConversationStage.selectingAgents,
+          );
+
+      var drained = false;
+      final shutdown = runner.shutdown().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+      await expectLater(
+        runner.startRun(
+          const StartConversationRunCommand(
+            clientCommandId: 'command-after-shutdown',
+            conversationId: 'group-product',
+            hostAgentId: 'product-manager',
+            input: '不能启动',
+            replyMode: ConversationReplyMode.auto,
+            memberAgentIds: ['product-manager'],
+          ),
+        ),
+        throwsStateError,
+      );
+
+      selector.complete(['product-manager']);
+      await shutdown.timeout(const Duration(seconds: 2));
+      final work = store.getWorkItem(handle.runId);
+      final events = store.loadEvents(handle.runId);
+      expect(work.checkpoint, RunCheckpoint.selectingAgents);
+      expect(
+        events.where(
+          (event) => event.type == OrchestrationEventType.agentsSelected,
+        ),
+        isEmpty,
+      );
+      await runner.shutdown();
+    },
+  );
 }
 
 Future<List<OrchestrationEvent>> _collectCompletedRun(

@@ -6,11 +6,13 @@ import 'package:halo_mobile/orchestration/run_event_store.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 enum SqliteFailurePoint {
+  beforeSchemaCommit,
   afterRunInserted,
   afterRunCreatedInserted,
   afterWorkItemInserted,
   afterCommandMappingInserted,
   beforeCreateCommit,
+  afterCreateCommit,
   afterTransitionEventInserted,
   afterSnapshotUpdated,
   afterWorkItemUpdated,
@@ -19,14 +21,88 @@ enum SqliteFailurePoint {
 
 typedef SqliteFailureInjector = void Function(SqliteFailurePoint point);
 
+const _versionOneColumns = <String, Set<String>>{
+  'runs': {'run_id', 'status', 'last_seq', 'executable_agent_ids'},
+  'command_runs': {'client_command_id', 'request_hash', 'run_id'},
+  'work_items': {
+    'run_id',
+    'client_command_id',
+    'request_hash',
+    'conversation_id',
+    'host_agent_id',
+    'reply_mode',
+    'member_agent_ids',
+    'mentioned_agent_ids',
+    'input_ref',
+    'context_ref',
+    'checkpoint',
+    'next_agent_index',
+  },
+  'events': {
+    'run_id',
+    'seq',
+    'event_id',
+    'type',
+    'stage',
+    'agent_id',
+    'text',
+    'text_provenance',
+    'selected_agent_ids',
+    'error_code',
+    'causation_id',
+    'dedupe_key',
+    'transition_hash',
+  },
+  'external_call_intents': {
+    'intent_id',
+    'idempotency_key',
+    'run_id',
+    'kind',
+    'agent_id',
+    'status',
+    'lease_owner',
+    'lease_expires_at',
+    'attempt',
+    'fencing_token',
+    'result_text',
+    'result_provenance',
+  },
+  'store_metadata': {'key', 'int_value'},
+};
+
+const _integerEventColumns = {
+  'last_seq',
+  'seq',
+  'next_agent_index',
+  'lease_expires_at',
+  'attempt',
+  'fencing_token',
+  'int_value',
+};
+
+const _nullableEventColumns = {
+  'input_ref',
+  'context_ref',
+  'agent_id',
+  'text',
+  'text_provenance',
+  'error_code',
+  'lease_owner',
+  'lease_expires_at',
+  'result_text',
+  'result_provenance',
+};
+
 class SqliteRuntimeConfiguration {
   const SqliteRuntimeConfiguration({
     required this.journalMode,
     required this.busyTimeoutMilliseconds,
+    required this.schemaVersion,
   });
 
   final String journalMode;
   final int busyTimeoutMilliseconds;
+  final int schemaVersion;
 }
 
 final class SqliteRunEventStore implements RunEventStore {
@@ -43,11 +119,21 @@ final class SqliteRunEventStore implements RunEventStore {
     Duration watchPollInterval = const Duration(milliseconds: 25),
     SqliteFailureInjector? failureInjector,
   }) {
-    return SqliteRunEventStore._(
-      sqlite3.open(path),
-      watchPollInterval,
-      failureInjector,
-    );
+    final database = sqlite3.open(path);
+    try {
+      return SqliteRunEventStore._(
+        database,
+        watchPollInterval,
+        failureInjector,
+      );
+    } on Object catch (error, stackTrace) {
+      try {
+        database.close();
+      } on Object {
+        // A cleanup failure must not replace the schema initialization error.
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   final Database _database;
@@ -65,14 +151,53 @@ final class SqliteRunEventStore implements RunEventStore {
     _database.execute('PRAGMA journal_mode = WAL');
     _database.execute('PRAGMA busy_timeout = 5000');
     _database.execute('PRAGMA foreign_keys = ON');
+    _database.execute('BEGIN IMMEDIATE');
+    try {
+      final version =
+          _database.select('PRAGMA user_version').first.values.first! as int;
+      if (version == 0) {
+        if (_eventSchemaIsEmpty()) {
+          _createVersionOneSchema();
+        } else {
+          _migrateRecognizedPrototype();
+        }
+        _database.execute('PRAGMA user_version = 1');
+      } else if (version == 1) {
+        _validateVersionOneSchema();
+      } else {
+        throw StateError(
+          'Unsupported run event database schema version $version',
+        );
+      }
+      _inject(SqliteFailurePoint.beforeSchemaCommit);
+      _database.execute('COMMIT');
+    } catch (_) {
+      _database.execute('ROLLBACK');
+      rethrow;
+    }
+    _validateVersionOneSchema();
     runtimeConfiguration = SqliteRuntimeConfiguration(
       journalMode:
           _database.select('PRAGMA journal_mode').first.values.first! as String,
       busyTimeoutMilliseconds:
           _database.select('PRAGMA busy_timeout').first.values.first! as int,
+      schemaVersion:
+          _database.select('PRAGMA user_version').first.values.first! as int,
     );
+  }
+
+  bool _eventSchemaIsEmpty() {
+    return _database.select('''
+      SELECT 1
+      FROM sqlite_master
+      WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+      LIMIT 1
+    ''').isEmpty;
+  }
+
+  void _createVersionOneSchema() {
     _database.execute('''
-      CREATE TABLE IF NOT EXISTS runs (
+      CREATE TABLE runs (
         run_id TEXT PRIMARY KEY,
         status TEXT NOT NULL,
         last_seq INTEGER NOT NULL,
@@ -80,14 +205,14 @@ final class SqliteRunEventStore implements RunEventStore {
       )
     ''');
     _database.execute('''
-      CREATE TABLE IF NOT EXISTS command_runs (
+      CREATE TABLE command_runs (
         client_command_id TEXT PRIMARY KEY,
         request_hash TEXT NOT NULL,
         run_id TEXT NOT NULL REFERENCES runs(run_id)
       )
     ''');
     _database.execute('''
-      CREATE TABLE IF NOT EXISTS work_items (
+      CREATE TABLE work_items (
         run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
         client_command_id TEXT NOT NULL,
         request_hash TEXT NOT NULL,
@@ -103,7 +228,11 @@ final class SqliteRunEventStore implements RunEventStore {
       )
     ''');
     _database.execute('''
-      CREATE TABLE IF NOT EXISTS events (
+      CREATE INDEX idx_work_items_input_context
+      ON work_items (input_ref, context_ref)
+    ''');
+    _database.execute('''
+      CREATE TABLE events (
         run_id TEXT NOT NULL REFERENCES runs(run_id),
         seq INTEGER NOT NULL,
         event_id TEXT NOT NULL UNIQUE,
@@ -121,19 +250,8 @@ final class SqliteRunEventStore implements RunEventStore {
         UNIQUE (run_id, dedupe_key)
       )
     ''');
-    final eventColumns = _database
-        .select('PRAGMA table_info(events)')
-        .map((row) => row['name'])
-        .toSet();
-    if (!eventColumns.contains('text_provenance')) {
-      _database.execute('ALTER TABLE events ADD COLUMN text_provenance TEXT');
-      _database.execute(
-        "UPDATE events SET text_provenance = 'trustedApplication' "
-        'WHERE text IS NOT NULL',
-      );
-    }
     _database.execute('''
-      CREATE TABLE IF NOT EXISTS external_call_intents (
+      CREATE TABLE external_call_intents (
         intent_id TEXT PRIMARY KEY,
         idempotency_key TEXT NOT NULL UNIQUE,
         run_id TEXT NOT NULL REFERENCES runs(run_id),
@@ -143,23 +261,13 @@ final class SqliteRunEventStore implements RunEventStore {
         lease_owner TEXT,
         lease_expires_at INTEGER,
         attempt INTEGER NOT NULL,
-        fencing_token INTEGER NOT NULL,
+        fencing_token INTEGER NOT NULL DEFAULT 0,
         result_text TEXT,
         result_provenance TEXT
       )
     ''');
-    final intentColumns = _database
-        .select('PRAGMA table_info(external_call_intents)')
-        .map((row) => row['name'])
-        .toSet();
-    if (!intentColumns.contains('fencing_token')) {
-      _database.execute(
-        'ALTER TABLE external_call_intents '
-        'ADD COLUMN fencing_token INTEGER NOT NULL DEFAULT 0',
-      );
-    }
     _database.execute('''
-      CREATE TABLE IF NOT EXISTS store_metadata (
+      CREATE TABLE store_metadata (
         key TEXT PRIMARY KEY,
         int_value INTEGER NOT NULL
       )
@@ -170,6 +278,189 @@ final class SqliteRunEventStore implements RunEventStore {
     ''');
   }
 
+  void _migrateRecognizedPrototype() {
+    _validatePrototypeTables();
+    final eventColumns = _columns('events');
+    if (!eventColumns.contains('text_provenance')) {
+      _database.execute('ALTER TABLE events ADD COLUMN text_provenance TEXT');
+      _database.execute(
+        "UPDATE events SET text_provenance = 'trustedApplication' "
+        'WHERE text IS NOT NULL',
+      );
+    }
+    final intentColumns = _columns('external_call_intents');
+    if (!intentColumns.contains('fencing_token')) {
+      _database.execute(
+        'ALTER TABLE external_call_intents '
+        'ADD COLUMN fencing_token INTEGER NOT NULL DEFAULT 0',
+      );
+    }
+    _database.execute('''
+      CREATE INDEX IF NOT EXISTS idx_work_items_input_context
+      ON work_items (input_ref, context_ref)
+    ''');
+    _validateVersionOneSchema();
+  }
+
+  void _validatePrototypeTables() {
+    final actualTables = _database
+        .select(
+          "SELECT name FROM sqlite_master "
+          "WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        )
+        .map((row) => row['name']! as String)
+        .toSet();
+    if (actualTables.length != _versionOneColumns.length ||
+        !actualTables.containsAll(_versionOneColumns.keys)) {
+      throw StateError('Unknown or partial run event database schema');
+    }
+    for (final entry in _versionOneColumns.entries) {
+      final allowed = Set<String>.of(entry.value);
+      if (entry.key == 'events') allowed.remove('text_provenance');
+      if (entry.key == 'external_call_intents') {
+        allowed.remove('fencing_token');
+      }
+      final actual = _columns(entry.key);
+      final isCurrent =
+          actual.length == entry.value.length &&
+          actual.containsAll(entry.value);
+      final isPrototype =
+          actual.length == allowed.length && actual.containsAll(allowed);
+      if (!isCurrent && !isPrototype) {
+        throw StateError('Unknown prototype table ${entry.key}');
+      }
+    }
+    _validateStoreMetadata();
+  }
+
+  void _validateVersionOneSchema() {
+    for (final entry in _versionOneColumns.entries) {
+      final rows = _database.select('PRAGMA table_info(${entry.key})');
+      final actual = rows.map((row) => row['name']! as String).toSet();
+      if (actual.length != entry.value.length ||
+          !actual.containsAll(entry.value)) {
+        throw StateError('Invalid run event database table ${entry.key}');
+      }
+      for (final row in rows) {
+        final name = row['name']! as String;
+        final expectedType = _integerEventColumns.contains(name)
+            ? 'INTEGER'
+            : 'TEXT';
+        final expectedPk = _eventPrimaryKey(entry.key, name);
+        final expectedNotNull = expectedPk > 0 && entry.key != 'events'
+            ? 0
+            : (_nullableEventColumns.contains(name) ? 0 : 1);
+        final expectedDefault =
+            entry.key == 'external_call_intents' && name == 'fencing_token'
+            ? '0'
+            : null;
+        if (row['type'] != expectedType ||
+            row['pk'] != expectedPk ||
+            row['notnull'] != expectedNotNull ||
+            row['dflt_value'] != expectedDefault) {
+          throw StateError(
+            'Invalid run event database column ${entry.key}.$name',
+          );
+        }
+      }
+    }
+    final index = _database
+        .select('PRAGMA index_list(work_items)')
+        .where((row) => row['name'] == 'idx_work_items_input_context')
+        .toList();
+    final indexColumns = _database
+        .select('PRAGMA index_info(idx_work_items_input_context)')
+        .map((row) => row['name'])
+        .toList();
+    if (index.length != 1 ||
+        index.single['unique'] != 0 ||
+        indexColumns.length != 2 ||
+        indexColumns[0] != 'input_ref' ||
+        indexColumns[1] != 'context_ref') {
+      throw StateError('Invalid run event database reference index');
+    }
+    _requireUniqueIndex('events', const ['event_id']);
+    _requireUniqueIndex('events', const ['run_id', 'dedupe_key']);
+    _requireUniqueIndex('external_call_intents', const ['idempotency_key']);
+    _validateEventForeignKeys();
+    _validateStoreMetadata();
+  }
+
+  int _eventPrimaryKey(String table, String column) => switch (table) {
+    'runs' when column == 'run_id' => 1,
+    'command_runs' when column == 'client_command_id' => 1,
+    'work_items' when column == 'run_id' => 1,
+    'events' when column == 'run_id' => 1,
+    'events' when column == 'seq' => 2,
+    'external_call_intents' when column == 'intent_id' => 1,
+    'store_metadata' when column == 'key' => 1,
+    _ => 0,
+  };
+
+  void _validateEventForeignKeys() {
+    for (final entry in const {
+      'command_runs': 'run_id',
+      'work_items': 'run_id',
+      'events': 'run_id',
+      'external_call_intents': 'run_id',
+    }.entries) {
+      final rows = _database.select('PRAGMA foreign_key_list(${entry.key})');
+      if (rows.length != 1 ||
+          rows.single['table'] != 'runs' ||
+          rows.single['from'] != entry.value ||
+          rows.single['to'] != 'run_id' ||
+          rows.single['on_update'] != 'NO ACTION' ||
+          rows.single['on_delete'] != 'NO ACTION' ||
+          rows.single['match'] != 'NONE') {
+        throw StateError('Invalid run event foreign key ${entry.key}');
+      }
+    }
+    for (final table in const ['runs', 'store_metadata']) {
+      if (_database.select('PRAGMA foreign_key_list($table)').isNotEmpty) {
+        throw StateError('Unexpected run event foreign key $table');
+      }
+    }
+  }
+
+  void _requireUniqueIndex(String table, List<String> expectedColumns) {
+    final indexes = _database
+        .select('PRAGMA index_list($table)')
+        .where((row) => row['unique'] == 1);
+    final found = indexes.any((index) {
+      final name = index['name']! as String;
+      final columns = _database
+          .select('PRAGMA index_info($name)')
+          .map((row) => row['name'])
+          .toList();
+      return columns.length == expectedColumns.length &&
+          List.generate(
+            columns.length,
+            (i) => columns[i] == expectedColumns[i],
+          ).every((matches) => matches);
+    });
+    if (!found) {
+      throw StateError(
+        'Missing unique run event index on $table($expectedColumns)',
+      );
+    }
+  }
+
+  Set<String> _columns(String table) => _database
+      .select('PRAGMA table_info($table)')
+      .map((row) => row['name']! as String)
+      .toSet();
+
+  void _validateStoreMetadata() {
+    final rows = _database.select(
+      "SELECT int_value FROM store_metadata WHERE key = 'next_run_number'",
+    );
+    if (rows.length != 1 ||
+        rows.single['int_value'] is! int ||
+        (rows.single['int_value']! as int) < 1) {
+      throw StateError('Run event database metadata is invalid');
+    }
+  }
+
   @override
   ({RunSnapshot snapshot, bool created}) createRun(
     StartConversationRunCommand command,
@@ -178,7 +469,7 @@ final class SqliteRunEventStore implements RunEventStore {
     if (command.inputRef == null || command.inputRef!.trim().isEmpty) {
       throw ArgumentError('Durable runs require a non-empty input reference');
     }
-    return _transaction(() {
+    final creation = _transaction(() {
       final existing = _database.select(
         '''
           SELECT request_hash, run_id
@@ -283,6 +574,8 @@ final class SqliteRunEventStore implements RunEventStore {
       _inject(SqliteFailurePoint.beforeCreateCommit);
       return (snapshot: snapshot, created: true);
     });
+    _inject(SqliteFailurePoint.afterCreateCommit);
+    return creation;
   }
 
   @override
@@ -552,6 +845,25 @@ final class SqliteRunEventStore implements RunEventStore {
   RunWorkItem getWorkItem(String runId) {
     _ensureOpen();
     return _readWorkItem(runId);
+  }
+
+  @override
+  bool hasRunInputReference(String inputRef, String contextRef) {
+    _ensureOpen();
+    return _database
+            .select(
+              '''
+            SELECT EXISTS(
+              SELECT 1
+              FROM work_items
+              WHERE input_ref = ? AND context_ref = ?
+              LIMIT 1
+            ) AS found
+          ''',
+              [inputRef, contextRef],
+            )
+            .first['found'] ==
+        1;
   }
 
   @override

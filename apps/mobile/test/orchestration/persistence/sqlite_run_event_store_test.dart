@@ -6,8 +6,111 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/orchestration/orchestration_models.dart';
 import 'package:halo_mobile/orchestration/persistence/sqlite_run_event_store.dart';
 import 'package:halo_mobile/orchestration/run_event_store.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 void main() {
+  test('rejects v1 reference index with wrong column order', () async {
+    final fixture = _DatabaseFixture.create();
+    final store = SqliteRunEventStore.open(fixture.path);
+    await store.close();
+    final database = sqlite3.open(fixture.path);
+    database.execute('DROP INDEX idx_work_items_input_context');
+    database.execute('''
+      CREATE INDEX idx_work_items_input_context
+      ON work_items (context_ref, input_ref)
+    ''');
+    database.close();
+
+    expect(() => SqliteRunEventStore.open(fixture.path), throwsStateError);
+    fixture.delete();
+  });
+
+  test('rejects a fake v0 prototype with a wrong known index', () async {
+    final fixture = _DatabaseFixture.create();
+    final store = SqliteRunEventStore.open(fixture.path);
+    await store.close();
+    final database = sqlite3.open(fixture.path);
+    database.execute('DROP INDEX idx_work_items_input_context');
+    database.execute('''
+      CREATE INDEX idx_work_items_input_context
+      ON work_items (context_ref, input_ref)
+    ''');
+    database.execute('PRAGMA user_version = 0');
+    database.close();
+
+    expect(() => SqliteRunEventStore.open(fixture.path), throwsStateError);
+    fixture.delete();
+  });
+
+  test('rejects a future event schema without downgrading it', () {
+    final fixture = _DatabaseFixture.create();
+    final database = sqlite3.open(fixture.path);
+    database.execute('PRAGMA user_version = 2');
+    database.close();
+
+    expect(() => SqliteRunEventStore.open(fixture.path), throwsStateError);
+
+    final reopened = sqlite3.open(fixture.path);
+    expect(reopened.select('PRAGMA user_version').single.values.first, 2);
+    reopened.close();
+    fixture.delete();
+  });
+
+  test(
+    'prototype migration is atomic and failed open releases its handle',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final current = SqliteRunEventStore.open(fixture.path);
+      await current.close();
+      final prototype = sqlite3.open(fixture.path);
+      prototype.execute('ALTER TABLE events DROP COLUMN text_provenance');
+      prototype.execute(
+        'ALTER TABLE external_call_intents DROP COLUMN fencing_token',
+      );
+      prototype.execute('PRAGMA user_version = 0');
+      prototype.close();
+
+      expect(
+        () => SqliteRunEventStore.open(
+          fixture.path,
+          failureInjector: (point) {
+            if (point == SqliteFailurePoint.beforeSchemaCommit) {
+              throw StateError('migration interrupted');
+            }
+          },
+        ),
+        throwsStateError,
+      );
+
+      final afterFailure = sqlite3.open(fixture.path);
+      expect(afterFailure.select('PRAGMA user_version').single.values.first, 0);
+      expect(
+        afterFailure
+            .select('PRAGMA table_info(events)')
+            .map((row) => row['name']),
+        isNot(contains('text_provenance')),
+      );
+      afterFailure.close();
+
+      final migrated = SqliteRunEventStore.open(fixture.path);
+      await migrated.close();
+      final verified = sqlite3.open(fixture.path);
+      expect(verified.select('PRAGMA user_version').single.values.first, 1);
+      expect(
+        verified.select('PRAGMA table_info(events)').map((row) => row['name']),
+        contains('text_provenance'),
+      );
+      expect(
+        verified
+            .select('PRAGMA table_info(external_call_intents)')
+            .map((row) => row['name']),
+        contains('fencing_token'),
+      );
+      verified.close();
+      fixture.delete();
+    },
+  );
+
   test('createRun atomically creates snapshot event and work item', () async {
     final fixture = _DatabaseFixture.create();
     final store = SqliteRunEventStore.open(fixture.path);
@@ -48,7 +151,7 @@ void main() {
     }
   });
 
-  test('recovery records never persist the full command input', () async {
+  test('createRun path does not directly persist command input', () async {
     const privateInput = 'FULL_PRIVATE_PROMPT_SENTINEL_7f4e6c';
     final fixture = _DatabaseFixture.create();
     final store = SqliteRunEventStore.open(fixture.path);

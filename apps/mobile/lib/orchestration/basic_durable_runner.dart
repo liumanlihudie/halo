@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:halo_mobile/orchestration/command_validation.dart';
 import 'package:halo_mobile/orchestration/orchestration_kernel.dart';
 import 'package:halo_mobile/orchestration/orchestration_models.dart';
 import 'package:halo_mobile/orchestration/run_event_store.dart';
@@ -137,13 +138,17 @@ class BasicDurableRunner implements OrchestrationKernel {
   final DurableRunnerFailureInjector? _failureInjector;
   final _stopRequested = <String>{};
   final _activeRuns = <String>{};
+  final _scheduledTasks = <String, Future<void>>{};
   final _ephemeralCommands = <String, StartConversationRunCommand>{};
+  Future<void>? _shutdownFuture;
+  var _shuttingDown = false;
 
   @override
   Future<RunHandle> startRun(StartConversationRunCommand command) async {
+    _ensureAcceptingRuns();
     _ensureRuntimeCapability();
     final frozenCommand = _freeze(command);
-    _validateCommand(frozenCommand);
+    StartConversationCommandValidator.validate(frozenCommand);
     if (_store.requiresRecoveryReferences &&
         (_inputResolver == null ||
             frozenCommand.inputRef == null ||
@@ -162,16 +167,29 @@ class BasicDurableRunner implements OrchestrationKernel {
   }
 
   void _schedule(String runId, StartConversationRunCommand command) {
+    if (_shuttingDown) return;
     if (!_activeRuns.add(runId)) return;
-    unawaited(
-      Future<void>(() async {
-        try {
-          await _execute(runId, command);
-        } finally {
-          _activeRuns.remove(runId);
-        }
-      }),
-    );
+    final task = _runScheduled(runId, command);
+    _scheduledTasks[runId] = task;
+    unawaited(task);
+  }
+
+  Future<void> _runScheduled(
+    String runId,
+    StartConversationRunCommand command,
+  ) async {
+    try {
+      if (_shuttingDown) return;
+      await _execute(runId, command);
+    } on Object {
+      // This is the final boundary for an intentionally unawaited task.
+      // _execute persists safe failures while the runner is live; shutdown
+      // must never leak a late asynchronous error.
+      return;
+    } finally {
+      _activeRuns.remove(runId);
+      _scheduledTasks.remove(runId);
+    }
   }
 
   Future<void> _execute(
@@ -179,6 +197,7 @@ class BasicDurableRunner implements OrchestrationKernel {
     StartConversationRunCommand command,
   ) async {
     try {
+      if (_shuttingDown) return;
       var work = _store.getWorkItem(runId);
       if (work.checkpoint == RunCheckpoint.terminal || _isStopped(runId)) {
         return;
@@ -204,6 +223,7 @@ class BasicDurableRunner implements OrchestrationKernel {
             command.memberAgentIds,
           ),
         };
+        if (_shuttingDown) return;
         if (_isStopped(runId)) return;
         final responseStage = _responseStage(command.replyMode);
         _commit(
@@ -227,6 +247,7 @@ class BasicDurableRunner implements OrchestrationKernel {
 
       if (work.checkpoint == RunCheckpoint.responding) {
         await _continueResponses(runId, command, work);
+        if (_shuttingDown) return;
         work = _store.getWorkItem(runId);
       }
 
@@ -237,6 +258,7 @@ class BasicDurableRunner implements OrchestrationKernel {
           command,
           List.unmodifiable(outcomes),
         );
+        if (_shuttingDown) return;
         if (summary == null) return;
         if (_isStopped(runId)) return;
         _commit(
@@ -267,6 +289,7 @@ class BasicDurableRunner implements OrchestrationKernel {
     } on TransitionConflict {
       return;
     } on Object {
+      if (_shuttingDown) return;
       if (_isStopped(runId)) return;
       final snapshot = _store.getRun(runId);
       if (snapshot.status != OrchestrationRunStatus.running) return;
@@ -318,6 +341,7 @@ class BasicDurableRunner implements OrchestrationKernel {
                 .map((outcome) => outcome.text!),
           ),
         );
+        if (_shuttingDown) return;
         if (response == null) return;
         if (_isStopped(runId)) return;
         outcomes.add(AgentTurnOutcome(agentId: agentId, text: response.value));
@@ -336,6 +360,7 @@ class BasicDurableRunner implements OrchestrationKernel {
       } on ExternalCallLeaseLost {
         rethrow;
       } on Object {
+        if (_shuttingDown) return;
         if (_isStopped(runId)) return;
         outcomes.add(
           AgentTurnOutcome(agentId: agentId, errorCode: 'agent_runtime_failed'),
@@ -468,6 +493,7 @@ class BasicDurableRunner implements OrchestrationKernel {
   }
 
   bool _isStopped(String runId) {
+    if (_shuttingDown) return true;
     if (_stopRequested.contains(runId)) return true;
     return _store.getRun(runId).status == OrchestrationRunStatus.stopped;
   }
@@ -486,41 +512,12 @@ class BasicDurableRunner implements OrchestrationKernel {
     );
   }
 
-  void _validateCommand(StartConversationRunCommand command) {
-    if (command.clientCommandId.trim().isEmpty ||
-        command.conversationId.trim().isEmpty ||
-        command.input.trim().isEmpty) {
-      throw ArgumentError('Command identifiers and input must not be empty');
-    }
-    if (command.inputRef != null && command.inputRef!.trim().isEmpty) {
-      throw ArgumentError('Input reference must not be empty');
-    }
-    if (command.memberAgentIds.isEmpty || command.memberAgentIds.length > 8) {
-      throw ArgumentError('A run requires between 1 and 8 group members');
-    }
-    if (command.memberAgentIds.toSet().length !=
-        command.memberAgentIds.length) {
-      throw ArgumentError('Group member IDs must be unique');
-    }
-    if (!command.memberAgentIds.contains(command.hostAgentId)) {
-      throw ArgumentError('Host Agent must be a current group member');
-    }
-    if (command.replyMode == ConversationReplyMode.mentioned) {
-      final mentioned = command.mentionedAgentIds.toSet();
-      if (mentioned.isEmpty || mentioned.length > 4) {
-        throw ArgumentError('Mentioned mode requires between 1 and 4 agents');
-      }
-      if (!mentioned.every(command.memberAgentIds.contains)) {
-        throw ArgumentError('Mentioned agents must be current group members');
-      }
-    }
-  }
-
   @override
   Future<RunSnapshot> getRun(String runId) async => _store.getRun(runId);
 
   @override
   Future<void> requestStop(String runId) async {
+    _ensureAcceptingRuns();
     final snapshot = _store.getRun(runId);
     if (snapshot.status != OrchestrationRunStatus.running) return;
     _stopRequested.add(runId);
@@ -540,6 +537,7 @@ class BasicDurableRunner implements OrchestrationKernel {
 
   @override
   Future<ResumeResult> resumeRun(String runId) async {
+    _ensureAcceptingRuns();
     _ensureRuntimeCapability();
     final snapshot = _store.getRun(runId);
     if (snapshot.status != OrchestrationRunStatus.running ||
@@ -558,6 +556,9 @@ class BasicDurableRunner implements OrchestrationKernel {
         inputRef: inputRef,
         contextRef: work.contextRef,
       );
+      if (_shuttingDown) {
+        return ResumeResult(runId: runId, resumed: false);
+      }
       command = StartConversationRunCommand(
         clientCommandId: work.clientCommandId,
         conversationId: work.conversationId,
@@ -618,6 +619,7 @@ class BasicDurableRunner implements OrchestrationKernel {
         idempotencyKey: intentId,
       ),
     );
+    if (_shuttingDown) return null;
     _failureInjector?.call(
       DurableRunnerFailurePoint.afterExternalCallReturnedBeforeReceipt,
     );
@@ -661,6 +663,7 @@ class BasicDurableRunner implements OrchestrationKernel {
         idempotencyKey: intentId,
       ),
     );
+    if (_shuttingDown) return null;
     _failureInjector?.call(
       DurableRunnerFailurePoint.afterExternalCallReturnedBeforeReceipt,
     );
@@ -671,6 +674,25 @@ class BasicDurableRunner implements OrchestrationKernel {
           result: PublicEventText.fromModelOutput(raw),
         )
         .result;
+  }
+
+  Future<void> shutdown() {
+    _shuttingDown = true;
+    return _shutdownFuture ??= _drainScheduledTasks();
+  }
+
+  Future<void> _drainScheduledTasks() async {
+    while (_scheduledTasks.isNotEmpty) {
+      await Future.wait<void>(List<Future<void>>.of(_scheduledTasks.values));
+    }
+    _ephemeralCommands.clear();
+    _stopRequested.clear();
+  }
+
+  void _ensureAcceptingRuns() {
+    if (_shuttingDown) {
+      throw StateError('BasicDurableRunner is shut down');
+    }
   }
 
   void _ensureRuntimeCapability() {

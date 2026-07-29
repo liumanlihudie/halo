@@ -36,6 +36,8 @@ abstract interface class RunEventStore {
 
   RunWorkItem getWorkItem(String runId);
 
+  bool hasRunInputReference(String inputRef, String contextRef);
+
   List<OrchestrationEvent> loadEvents(String runId, {int afterSeq = 0});
 
   Stream<OrchestrationEvent> watch(String runId, {int afterSeq = 0});
@@ -880,6 +882,14 @@ class InMemoryRunEventStore implements RunEventStore {
     final work = _workItems[runId];
     if (work == null) throw StateError('Unknown run: $runId');
     return work;
+  }
+
+  @override
+  bool hasRunInputReference(String inputRef, String contextRef) {
+    _ensureOpen();
+    return _workItems.values.any(
+      (work) => work.inputRef == inputRef && work.contextRef == contextRef,
+    );
   }
 
   @override
