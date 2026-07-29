@@ -167,46 +167,44 @@ void main() {
       );
     }
 
-    final structural = ExpertCatalogBatchOne.executableById(
-      'content-strategist',
-      gateway: const ExpertOutputValidationGateway(),
-    )!;
+    final structural = StructuralExpertOutputValidator(
+      profile: ExpertCatalogBatchOne.byId('content-strategist')!,
+      verificationRegistry: null,
+    );
     expect(
-      structural.validateOutput(const {
+      structural.preflight(const {
         'Analysis': 'A bounded analysis.',
-        'Recommendations': ['A recommendation.'],
+        'Recommendations': [
+          {
+            'verb': 'review',
+            'target': 'content-plan',
+            'conditions': <String>[],
+          },
+        ],
         'Risks': ['A risk.'],
+        'Verification': {
+          'claimType': 'advice',
+          'tense': 'proposed',
+          'verified': false,
+          'source': 'none',
+          'proposedActions': [
+            {
+              'verb': 'review',
+              'target': 'content-plan',
+              'conditions': <String>[],
+            },
+          ],
+          'executedFacts': <String>[],
+        },
       }),
       isTrue,
     );
 
-    final trustedWithoutRegistry = ExpertCatalogBatchOne.executableById(
-      'legal-risk-advisor',
+    final authorizedRegistry = ExecutableExpertRegistry(
       gateway: const ExpertOutputValidationGateway(),
-    )!;
-    const abstained = {
-      'Claim': 'A legal-risk claim.',
-      'Evidence': <Object?>[],
-      'Verdict': 'abstain',
-      'Confidence': 0,
-    };
-    expect(
-      trustedWithoutRegistry.validateOutput(abstained),
-      isFalse,
-      reason: 'trusted policy must fail closed without a context',
     );
-    expect(
-      trustedWithoutRegistry.validateOutput(
-        abstained,
-        context: ExpertValidationContext(
-          runId: 'run-legal',
-          turnId: 'turn-1',
-          outputId: 'output-1',
-        ),
-      ),
-      isFalse,
-      reason: 'trusted policy must fail closed without a registry',
-    );
+    expect(authorizedRegistry.singleChatById('legal-risk-advisor'), isNull);
+    expect(authorizedRegistry.groupChatById('legal-risk-advisor'), isNull);
   });
 
   test('research, finance, and legal profiles require trusted evidence', () {
@@ -260,29 +258,40 @@ void main() {
         utf8.encode('0123456789abcdef0123456789abcdef'),
         clock: _FixedEvidenceClock(DateTime.utc(2026, 7, 29, 10)),
       );
-      final executable = ExpertCatalogBatchOne.executableById(
-        id,
-        gateway: ExpertOutputValidationGateway(trustRegistry: registry),
-      )!;
+      final validator = TrustedExpertOutputValidator(
+        schema: profile.outputSchema,
+        trustRegistry: registry,
+        expertId: profile.id,
+        schemaId: profile.outputSchema.schemaId,
+        profileVersion: profile.version,
+      );
       final context = ExpertValidationContext(
         runId: 'run-$id',
         turnId: 'turn-1',
         outputId: 'output-1',
       );
-      expect(
-        executable.validateOutput(fabricated),
-        isFalse,
-        reason: '$id must fail closed without a validation context',
-      );
-      expect(
-        executable.validateOutput(fabricated, context: context),
-        isFalse,
-        reason: id,
-      );
+      expect(validator.validate(fabricated, context), isFalse, reason: id);
 
+      final unsignedOutput = {
+        'Claim': claim,
+        'Evidence': [
+          {
+            'sourceId': 'trusted-source',
+            'ref': 'artifact://trusted/report',
+            'quoteOrSummary': 'A traceable supporting statement.',
+            'stance': EvidenceStance.supports.name,
+          },
+        ],
+        'Verdict': 'supported',
+        'Confidence': 70,
+      };
       final receipt = registry.issue(
+        expertId: profile.id,
+        schemaId: profile.outputSchema.schemaId,
+        profileVersion: profile.version,
         context: context,
         validFor: const Duration(minutes: 5),
+        outputDigest: expertOutputDigestFor(unsignedOutput),
         claimDigest: claimDigestFor(claim),
         sourceId: 'trusted-source',
         ref: 'artifact://trusted/report',
@@ -298,14 +307,14 @@ void main() {
         stance: EvidenceStance.supports,
       );
       expect(
-        executable.validateOutput({
+        validator.validate({
           'Claim': claim,
           'Evidence': [trustedEvidence.toJson()],
           'Verdict': 'supported',
           'Confidence': 70,
-        }, context: context),
+        }, context),
         isTrue,
-        reason: '$id must accept a trusted receipt through the catalog gateway',
+        reason: '$id must accept a trusted receipt through its validator',
       );
     }
   });

@@ -4,6 +4,10 @@ import 'dart:math' as math;
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
+import 'built_in_experts.dart';
+import 'expert_catalog_batch_one.dart';
+import 'expert_catalog_batch_two.dart';
+
 enum PromptGuard {
   roleIntegrity,
   evidenceBoundaries,
@@ -15,7 +19,15 @@ enum ToolDecision { allowed, requiresApproval, denied }
 
 enum RoutingOutcome { match, noMatch, needsClarification }
 
-enum OutputValueType { string, stringList, evidenceList, integer, boolean }
+enum OutputValueType {
+  string,
+  stringList,
+  evidenceList,
+  integer,
+  boolean,
+  proposedActionList,
+  verificationEnvelope,
+}
 
 enum MemoryScope {
   conversationContext,
@@ -46,6 +58,17 @@ class EvidenceReceipt {
   String toString() => 'EvidenceReceipt(receiptId: $receiptId)';
 }
 
+@immutable
+class VerificationReceipt {
+  const VerificationReceipt._(this.receiptId, this.token);
+
+  final String receiptId;
+  final String token;
+
+  @override
+  String toString() => 'VerificationReceipt(receiptId: $receiptId)';
+}
+
 abstract interface class EvidenceClock {
   DateTime now();
 }
@@ -74,6 +97,211 @@ class ExpertValidationContext {
   final String outputId;
 
   String get _audience => jsonEncode([runId, turnId, outputId]);
+}
+
+/// Trusted application-side attestations for structural verification results.
+///
+/// Model output can name a source but cannot create a matching record. An
+/// attestation is bound to the expert, schema/version, validation context,
+/// complete canonical output digest, and source.
+class VerificationRegistry {
+  VerificationRegistry._(List<int> key, this._random, this._clock)
+    : _key = List<int>.unmodifiable(key);
+
+  factory VerificationRegistry.secure({
+    EvidenceClock clock = const SystemEvidenceClock(),
+  }) {
+    final random = math.Random.secure();
+    return VerificationRegistry._(
+      List<int>.generate(32, (_) => random.nextInt(256)),
+      random,
+      clock,
+    );
+  }
+
+  @visibleForTesting
+  factory VerificationRegistry.forTesting(
+    List<int> key, {
+    required EvidenceClock clock,
+  }) {
+    if (key.length < 16) {
+      throw ArgumentError.value(key, 'key', 'Must contain at least 16 bytes.');
+    }
+    return VerificationRegistry._(key, math.Random(0), clock);
+  }
+
+  final List<int> _key;
+  final math.Random _random;
+  final EvidenceClock _clock;
+  final Map<String, _VerificationRecord> _recordsById = {};
+
+  VerificationReceipt issue({
+    required String expertId,
+    required String schemaId,
+    required int profileVersion,
+    required ExpertValidationContext context,
+    required Map<String, Object?> output,
+    required String source,
+    required Duration validFor,
+  }) {
+    _validateIdentifier(expertId, 'verification.expertId');
+    _validateIdentifier(schemaId, 'verification.schemaId');
+    if (profileVersion <= 0) {
+      throw ArgumentError.value(profileVersion, 'profileVersion');
+    }
+    _validateText(source, 'verification.source', maximumLength: 2048);
+    if (source == 'none') {
+      throw ArgumentError.value(source, 'source', 'Must identify a source.');
+    }
+    final snapshot = _ExpertOutputSnapshot.tryParse(output);
+    if (snapshot == null) {
+      throw ArgumentError.value(output, 'output', 'Must be canonical JSON.');
+    }
+    final envelope = snapshot.value['Verification'];
+    if (envelope is! Map ||
+        envelope['verified'] != true ||
+        envelope['source'] != source) {
+      throw ArgumentError(
+        'Verification output must be verified and match its trusted source.',
+      );
+    }
+    if (validFor <= Duration.zero) {
+      throw ArgumentError.value(validFor, 'validFor', 'Must be positive.');
+    }
+    final issuedAt = _clock.now().toUtc();
+    final expiresAt = issuedAt.add(validFor);
+    final outputDigest = snapshot.digest;
+    final receiptId = 'vrcpt_${_randomBase64Url(16)}';
+    final binding = _verificationBinding(
+      expertId: expertId,
+      schemaId: schemaId,
+      profileVersion: profileVersion,
+      audience: context._audience,
+      outputDigest: outputDigest,
+      source: source,
+    );
+    final token = base64Url
+        .encode(
+          Hmac(sha256, _key)
+              .convert(
+                utf8.encode(
+                  jsonEncode([
+                    receiptId,
+                    binding,
+                    issuedAt.microsecondsSinceEpoch,
+                    expiresAt.microsecondsSinceEpoch,
+                  ]),
+                ),
+              )
+              .bytes,
+        )
+        .replaceAll('=', '');
+    _recordsById[receiptId] = _VerificationRecord(
+      receiptId: receiptId,
+      token: token,
+      binding: binding,
+      issuedAt: issuedAt,
+      expiresAt: expiresAt,
+    );
+    return VerificationReceipt._(receiptId, token);
+  }
+
+  bool verifyAndConsume({
+    required String expertId,
+    required String schemaId,
+    required int profileVersion,
+    required ExpertValidationContext context,
+    required Map<String, Object?> output,
+    required String receiptId,
+    required String receiptToken,
+  }) {
+    final snapshot = _ExpertOutputSnapshot.tryParse(output);
+    if (snapshot == null) return false;
+    final envelope = snapshot.value['Verification'];
+    if (envelope is! Map) return false;
+    final source = envelope['source'];
+    if (source is! String || source == 'none') return false;
+    return _verifySnapshotAndConsume(
+      expertId: expertId,
+      schemaId: schemaId,
+      profileVersion: profileVersion,
+      context: context,
+      outputDigest: snapshot.digest,
+      source: source,
+      receiptId: receiptId,
+      receiptToken: receiptToken,
+    );
+  }
+
+  bool _verifySnapshotAndConsume({
+    required String expertId,
+    required String schemaId,
+    required int profileVersion,
+    required ExpertValidationContext context,
+    required String outputDigest,
+    required String source,
+    required String receiptId,
+    required String receiptToken,
+  }) {
+    final binding = _verificationBinding(
+      expertId: expertId,
+      schemaId: schemaId,
+      profileVersion: profileVersion,
+      audience: context._audience,
+      outputDigest: outputDigest,
+      source: source,
+    );
+    final record = _recordsById[receiptId];
+    if (record == null) return false;
+    final now = _clock.now().toUtc();
+    if (record.consumed ||
+        record.binding != binding ||
+        !_constantTimeEquals(record.token, receiptToken) ||
+        now.isBefore(record.issuedAt) ||
+        !now.isBefore(record.expiresAt)) {
+      return false;
+    }
+    final expectedToken = base64Url
+        .encode(
+          Hmac(sha256, _key)
+              .convert(
+                utf8.encode(
+                  jsonEncode([
+                    record.receiptId,
+                    record.binding,
+                    record.issuedAt.microsecondsSinceEpoch,
+                    record.expiresAt.microsecondsSinceEpoch,
+                  ]),
+                ),
+              )
+              .bytes,
+        )
+        .replaceAll('=', '');
+    if (!_constantTimeEquals(expectedToken, record.token)) return false;
+    record.consumed = true;
+    return true;
+  }
+
+  String _randomBase64Url(int byteCount) => base64Url
+      .encode(List<int>.generate(byteCount, (_) => _random.nextInt(256)))
+      .replaceAll('=', '');
+}
+
+class _VerificationRecord {
+  _VerificationRecord({
+    required this.receiptId,
+    required this.token,
+    required this.binding,
+    required this.issuedAt,
+    required this.expiresAt,
+  });
+
+  final String receiptId;
+  final String token;
+  final String binding;
+  final DateTime issuedAt;
+  final DateTime expiresAt;
+  bool consumed = false;
 }
 
 /// Trust boundary: model-produced JSON is untrusted. This registry must be
@@ -111,14 +339,24 @@ class EvidenceTrustRegistry {
   final Map<String, _EvidenceTrustRecord> _records = {};
 
   EvidenceReceipt issue({
+    required String expertId,
+    required String schemaId,
+    required int profileVersion,
     required ExpertValidationContext context,
     required Duration validFor,
+    required String outputDigest,
     required String claimDigest,
     required String sourceId,
     required String ref,
     required EvidenceStance stance,
     required String quoteOrSummary,
   }) {
+    _validateIdentifier(expertId, 'receipt.expertId');
+    _validateIdentifier(schemaId, 'receipt.schemaId');
+    if (profileVersion <= 0) {
+      throw ArgumentError.value(profileVersion, 'profileVersion');
+    }
+    _validateClaimDigest(outputDigest, 'receipt.outputDigest');
     _validateClaimDigest(claimDigest, 'receipt.claimDigest');
     _validateIdentifier(sourceId, 'receipt.sourceId');
     _validateEvidenceRef(ref);
@@ -138,6 +376,10 @@ class EvidenceTrustRegistry {
       audience: context._audience,
       issuedAt: issuedAt,
       expiresAt: expiresAt,
+      expertId: expertId,
+      schemaId: schemaId,
+      profileVersion: profileVersion,
+      outputDigest: outputDigest,
       claimDigest: claimDigest,
       sourceId: sourceId,
       ref: ref,
@@ -150,11 +392,18 @@ class EvidenceTrustRegistry {
       audience: context._audience,
       issuedAt: issuedAt,
       expiresAt: expiresAt,
+      expertId: expertId,
+      schemaId: schemaId,
+      profileVersion: profileVersion,
+      outputDigest: outputDigest,
     );
     return EvidenceReceipt._(receiptId, token);
   }
 
   bool verifyAndConsume({
+    required String expertId,
+    required String schemaId,
+    required int profileVersion,
     required List<EvidenceItem> evidence,
     required String claimDigest,
     required ExpertValidationContext context,
@@ -170,11 +419,14 @@ class EvidenceTrustRegistry {
       final record = _records[item.receiptId];
       if (record == null ||
           !receiptIds.add(item.receiptId) ||
+          record.consumed ||
+          record.expertId != expertId ||
+          record.schemaId != schemaId ||
+          record.profileVersion != profileVersion ||
+          record.outputDigest != outputDigest ||
           record.audience != context._audience ||
           now.isBefore(record.issuedAt) ||
           !now.isBefore(record.expiresAt) ||
-          (record.consumedOutputDigest != null &&
-              record.consumedOutputDigest != outputDigest) ||
           (requiredStance != null && item.stance != requiredStance) ||
           !_constantTimeEquals(record.token, item.receiptToken)) {
         return false;
@@ -184,6 +436,10 @@ class EvidenceTrustRegistry {
         audience: record.audience,
         issuedAt: record.issuedAt,
         expiresAt: record.expiresAt,
+        expertId: record.expertId,
+        schemaId: record.schemaId,
+        profileVersion: record.profileVersion,
+        outputDigest: record.outputDigest,
         claimDigest: claimDigest,
         sourceId: item.sourceId,
         ref: item.ref,
@@ -194,7 +450,7 @@ class EvidenceTrustRegistry {
       records.add(record);
     }
     for (final record in records) {
-      record.consumedOutputDigest = outputDigest;
+      record.consumed = true;
     }
     return true;
   }
@@ -204,6 +460,10 @@ class EvidenceTrustRegistry {
     required String audience,
     required DateTime issuedAt,
     required DateTime expiresAt,
+    required String expertId,
+    required String schemaId,
+    required int profileVersion,
+    required String outputDigest,
     required String claimDigest,
     required String sourceId,
     required String ref,
@@ -211,13 +471,17 @@ class EvidenceTrustRegistry {
     required String quoteOrSummary,
   }) {
     final contentDigest = sha256
-        .convert(utf8.encode(_normalizeEvidenceContent(quoteOrSummary)))
+        .convert(utf8.encode(quoteOrSummary))
         .toString();
     final payload = jsonEncode([
       receiptId,
       audience,
       issuedAt.microsecondsSinceEpoch,
       expiresAt.microsecondsSinceEpoch,
+      expertId,
+      schemaId,
+      profileVersion,
+      outputDigest,
       claimDigest,
       sourceId,
       ref,
@@ -244,6 +508,10 @@ class _EvidenceTrustRecord {
     required this.audience,
     required this.issuedAt,
     required this.expiresAt,
+    required this.expertId,
+    required this.schemaId,
+    required this.profileVersion,
+    required this.outputDigest,
   });
 
   final String receiptId;
@@ -251,7 +519,11 @@ class _EvidenceTrustRecord {
   final String audience;
   final DateTime issuedAt;
   final DateTime expiresAt;
-  String? consumedOutputDigest;
+  final String expertId;
+  final String schemaId;
+  final int profileVersion;
+  final String outputDigest;
+  bool consumed = false;
 }
 
 @immutable
@@ -587,7 +859,8 @@ class OutputSchema {
   /// Checks only JSON shape and value types.
   ///
   /// This is not an authorization or evidence-trust decision. Production
-  /// catalog output must be accepted through [ExecutableExpert.validateOutput].
+  /// output must be accepted and projected atomically through
+  /// [ExecutableExpert.validateAndProject].
   bool unsafeShapeOnly(Map<String, Object?> output) {
     if (!output.keys.toSet().containsAll(fields.keys)) return false;
     if (!allowAdditionalFields &&
@@ -605,6 +878,10 @@ class OutputSchema {
           value is List && value.every(_isValidEvidenceValue),
         OutputValueType.integer => value is int,
         OutputValueType.boolean => value is bool,
+        OutputValueType.proposedActionList => _isValidProposedActionList(value),
+        OutputValueType.verificationEnvelope => _isValidVerificationEnvelope(
+          value,
+        ),
       };
       if (!valid) return false;
     }
@@ -649,10 +926,16 @@ class TrustedExpertOutputValidator {
   const TrustedExpertOutputValidator({
     required this.schema,
     required this.trustRegistry,
+    required this.expertId,
+    required this.schemaId,
+    required this.profileVersion,
   });
 
   final OutputSchema schema;
   final EvidenceTrustRegistry trustRegistry;
+  final String expertId;
+  final String schemaId;
+  final int profileVersion;
 
   bool validate(Map<String, Object?> output, ExpertValidationContext context) {
     if (!schema.unsafeShapeOnly(output)) return false;
@@ -682,10 +965,13 @@ class TrustedExpertOutputValidator {
       return false;
     }
     return trustRegistry.verifyAndConsume(
+      expertId: expertId,
+      schemaId: schemaId,
+      profileVersion: profileVersion,
       evidence: evidence,
       claimDigest: claimDigestFor(claim),
       context: context,
-      outputDigest: _expertOutputDigest(output),
+      outputDigest: expertOutputDigestFor(output),
       requiredStance: requiredStance,
     );
   }
@@ -693,52 +979,302 @@ class TrustedExpertOutputValidator {
 
 /// The application-level output validation composition root.
 ///
-/// A gateway may omit [trustRegistry] for structural-only catalogs. Experts
-/// whose policy requires trusted evidence still bind, but their executable
-/// validator fails closed.
+/// Binding is library-private and used only by [ExecutableExpertRegistry];
+/// catalog metadata and trusted-evidence profiles cannot be promoted through
+/// this API.
 class ExpertOutputValidationGateway {
-  const ExpertOutputValidationGateway({this.trustRegistry});
+  const ExpertOutputValidationGateway({this.verificationRegistry});
 
-  final EvidenceTrustRegistry? trustRegistry;
+  final VerificationRegistry? verificationRegistry;
 
-  ExecutableExpert bind(ExpertProfile profile) {
-    final registry = trustRegistry;
-    final trustedValidator =
-        profile.validationPolicy == ExpertValidationPolicy.trustedEvidence &&
-            registry != null
-        ? TrustedExpertOutputValidator(
-            schema: profile.outputSchema,
-            trustRegistry: registry,
-          )
-        : null;
-    return ExecutableExpert._(profile, trustedValidator);
+  ExecutableExpert _bind(ExpertProfile profile) {
+    if (profile.validationPolicy != ExpertValidationPolicy.structural) {
+      throw StateError('Only structural launch profiles are executable.');
+    }
+    return ExecutableExpert._(
+      profile,
+      StructuralExpertOutputValidator(
+        profile: profile,
+        verificationRegistry: verificationRegistry,
+      ),
+    );
+  }
+}
+
+class StructuralExpertOutputValidator {
+  const StructuralExpertOutputValidator({
+    required this.profile,
+    required this.verificationRegistry,
+  });
+
+  final ExpertProfile profile;
+  final VerificationRegistry? verificationRegistry;
+
+  bool preflight(Map<String, Object?> output) {
+    final snapshot = _ExpertOutputSnapshot.tryParse(output);
+    return snapshot != null && _validateSnapshot(snapshot);
+  }
+
+  bool _validateSnapshot(
+    _ExpertOutputSnapshot snapshot, {
+    ExpertValidationContext? context,
+    VerificationReceipt? verificationReceipt,
+  }) {
+    final output = snapshot.value;
+    if (!profile.outputSchema.unsafeShapeOnly(output)) return false;
+    if (profile.outputSchema.fields['Verification'] !=
+        OutputValueType.verificationEnvelope) {
+      return false;
+    }
+    final envelope = output['Verification'];
+    if (envelope is! Map) return false;
+    final topLevelRecommendations = output['Recommendations'];
+    if (topLevelRecommendations != null) {
+      final envelopeRecommendations = envelope['proposedActions'];
+      if (topLevelRecommendations is! List ||
+          envelopeRecommendations is! List ||
+          expertOutputDigestFor({'actions': topLevelRecommendations}) !=
+              expertOutputDigestFor({'actions': envelopeRecommendations})) {
+        return false;
+      }
+    }
+    final verified = envelope['verified'];
+    if (verified == false) return true;
+    if (verified != true) return false;
+    final registry = verificationRegistry;
+    return context != null &&
+        registry != null &&
+        verificationReceipt != null &&
+        registry._verifySnapshotAndConsume(
+          expertId: profile.id,
+          schemaId: profile.outputSchema.schemaId,
+          profileVersion: profile.version,
+          context: context,
+          outputDigest: snapshot.digest,
+          source: envelope['source']! as String,
+          receiptId: verificationReceipt.receiptId,
+          receiptToken: verificationReceipt.token,
+        );
   }
 }
 
 /// An expert profile bound to its executable output-validation policy.
 ///
-/// Production callers should validate catalog output only through
-/// [validateOutput]. Shape-only checks are intentionally not exposed here.
+/// Production presentation must use [validateAndProject], which validates and
+/// returns a controlled immutable string in one operation. Shape-only checks
+/// are intentionally not exposed here.
 class ExecutableExpert {
-  const ExecutableExpert._(this.profile, this._trustedValidator);
+  const ExecutableExpert._(this.profile, this._structuralValidator);
 
   final ExpertProfile profile;
-  final TrustedExpertOutputValidator? _trustedValidator;
+  final StructuralExpertOutputValidator _structuralValidator;
 
-  bool validateOutput(
+  /// Non-consuming structural preflight for offline contract evaluation.
+  ///
+  /// Completed claims always fail here because only [validateAndProject] may
+  /// consume a verification receipt.
+  bool preflightOutput(Map<String, Object?> output) =>
+      profile.validationPolicy == ExpertValidationPolicy.structural &&
+      _structuralValidator.preflight(output);
+
+  /// Returns the only structural text safe for direct user presentation.
+  ///
+  /// Raw model fields such as `Analysis` are deliberately excluded. Advice is
+  /// rendered only from typed proposed actions; completed facts
+  /// are rendered only after consuming a matching verification receipt.
+  String? validateAndProject(
     Map<String, Object?> output, {
     ExpertValidationContext? context,
+    VerificationReceipt? verificationReceipt,
   }) {
-    return switch (profile.validationPolicy) {
-      ExpertValidationPolicy.structural => profile.outputSchema.unsafeShapeOnly(
-        output,
-      ),
-      ExpertValidationPolicy.trustedEvidence =>
-        context != null &&
-            _trustedValidator != null &&
-            _trustedValidator.validate(output, context),
-    };
+    final snapshot = _ExpertOutputSnapshot.tryParse(output);
+    if (snapshot == null ||
+        profile.validationPolicy != ExpertValidationPolicy.structural ||
+        !_structuralValidator._validateSnapshot(
+          snapshot,
+          context: context,
+          verificationReceipt: verificationReceipt,
+        )) {
+      return null;
+    }
+    final snapshotOutput = snapshot.value;
+    final envelope = snapshotOutput['Verification'];
+    if (envelope is! Map) return null;
+    if (envelope['claimType'] == 'execution') {
+      final facts = envelope['executedFacts'];
+      final projected = facts is List
+          ? facts.whereType<String>().join('\n')
+          : '';
+      return projected.isEmpty ? null : projected;
+    }
+    final actions = envelope['proposedActions'];
+    final projected = actions is List
+        ? actions.map(_renderProposedAction).join('\n')
+        : '';
+    return projected.isEmpty ? null : projected;
   }
+}
+
+/// Central authorization boundary for executable expert capabilities.
+///
+/// Catalog APIs expose metadata only. The private gateway binding below is
+/// invoked solely for explicit launch allowlists in this registry.
+class ExecutableExpertRegistry {
+  factory ExecutableExpertRegistry({
+    required ExpertOutputValidationGateway gateway,
+  }) {
+    final profiles = <ExpertProfile>[
+      ...BuiltInExperts.all,
+      ...ExpertCatalogBatchOne.all,
+      ...ExpertCatalogBatchTwo.all,
+    ];
+    final profilesById = <String, ExpertProfile>{};
+    for (final profile in profiles) {
+      if (profilesById.containsKey(profile.id)) {
+        throw StateError('Duplicate canonical expert ID: ${profile.id}');
+      }
+      profilesById[profile.id] = profile;
+    }
+    final authorizedIds = {..._singleChatIds, ..._groupChatIds};
+    final executableById = <String, ExecutableExpert>{
+      for (final id in authorizedIds)
+        id: gateway._bind(
+          profilesById[id] ??
+              (throw StateError('Unknown authorized expert ID: $id')),
+        ),
+    };
+    return ExecutableExpertRegistry._(
+      all: List<ExpertProfile>.unmodifiable(profiles),
+      profilesById: Map<String, ExpertProfile>.unmodifiable(profilesById),
+      executableById: Map<String, ExecutableExpert>.unmodifiable(
+        executableById,
+      ),
+      routingCards: Map<String, RoutingCard>.unmodifiable({
+        for (final profile in profiles) profile.id: profile.routingCard,
+      }),
+      availableForSingleChat: _resolveRequired(executableById, _singleChatIds),
+      productDeliveryGroup: _resolveRequired(
+        executableById,
+        _productDeliveryGroupIds,
+      ),
+      mobileReviewGroup: _resolveRequired(
+        executableById,
+        _mobileReviewGroupIds,
+      ),
+      availableForGroupChat: _resolveRequired(executableById, _groupChatIds),
+    );
+  }
+
+  const ExecutableExpertRegistry._({
+    required this.all,
+    required this._profilesById,
+    required this._executableById,
+    required this.routingCards,
+    required this.availableForSingleChat,
+    required this.availableForGroupChat,
+    required this.productDeliveryGroup,
+    required this.mobileReviewGroup,
+  });
+
+  static const _singleChatIds = <String>[
+    'product-manager',
+    'technical-architect',
+    'ux-designer',
+    'project-manager',
+    'qa-test-engineer',
+    'ios-engineer',
+    'flutter-engineer',
+  ];
+
+  static const _productDeliveryGroupIds = <String>[
+    'product-manager',
+    'technical-architect',
+    'ux-designer',
+    'project-manager',
+    'qa-test-engineer',
+  ];
+
+  static const _mobileReviewGroupIds = <String>[
+    'product-manager',
+    'technical-architect',
+    'ios-engineer',
+    'flutter-engineer',
+    'qa-test-engineer',
+  ];
+
+  static const _groupChatIds = <String>[
+    'product-manager',
+    'technical-architect',
+    'ux-designer',
+    'project-manager',
+    'qa-test-engineer',
+    'ios-engineer',
+    'flutter-engineer',
+  ];
+
+  static const marketIdMappings = <String, String>{
+    'market-5': 'project-manager',
+    'market-9': 'automation-engineer',
+    'market-10': 'user-researcher',
+    'market-11': 'industry-researcher',
+    'market-15': 'fact-checker',
+    'market-20': 'editor-proofreader',
+    'market-24': 'localization-specialist',
+    'market-27': 'data-analyst',
+    'market-28': 'database-engineer',
+    'market-35': 'legal-risk-advisor',
+    'market-36': 'finance-tax-analyst',
+  };
+
+  final List<ExpertProfile> all;
+  final Map<String, ExpertProfile> _profilesById;
+  final Map<String, ExecutableExpert> _executableById;
+  final Map<String, RoutingCard> routingCards;
+  final List<ExecutableExpert> availableForSingleChat;
+  final List<ExecutableExpert> availableForGroupChat;
+  final List<ExecutableExpert> productDeliveryGroup;
+  final List<ExecutableExpert> mobileReviewGroup;
+
+  ExpertProfile? catalogById(String canonicalExpertId) =>
+      _profilesById[canonicalExpertId];
+
+  String? canonicalIdForMarketId(String marketId) => marketIdMappings[marketId];
+
+  ExecutableExpert? singleChatById(String canonicalExpertId) =>
+      _singleChatIds.contains(canonicalExpertId)
+      ? _executableById[canonicalExpertId]
+      : null;
+
+  ExecutableExpert? singleChatByMarketId(String marketId) {
+    final canonicalId = canonicalIdForMarketId(marketId);
+    return canonicalId == null ? null : singleChatById(canonicalId);
+  }
+
+  ExecutableExpert? groupChatById(String canonicalExpertId) =>
+      _groupChatIds.contains(canonicalExpertId)
+      ? _executableById[canonicalExpertId]
+      : null;
+
+  List<ExecutableExpert>? resolveTeam(String teamId) => switch (teamId) {
+    'product-delivery' => productDeliveryGroup,
+    'mobile-review' => mobileReviewGroup,
+    _ => null,
+  };
+}
+
+List<ExecutableExpert> _resolveRequired(
+  Map<String, ExecutableExpert> executableById,
+  List<String> canonicalIds,
+) {
+  final resolved = <ExecutableExpert>[];
+  for (final id in canonicalIds) {
+    final expert = executableById[id];
+    if (expert == null) {
+      throw StateError('Unknown canonical expert ID in chat policy: $id');
+    }
+    resolved.add(expert);
+  }
+  return List<ExecutableExpert>.unmodifiable(resolved);
 }
 
 @immutable
@@ -1143,6 +1679,99 @@ bool _isValidEvidenceValue(Object? value) {
   return _decodeEvidenceValue(value) != null;
 }
 
+bool _isValidVerificationEnvelope(Object? value) {
+  if (value is! Map || value.keys.any((key) => key is! String)) return false;
+  const expectedKeys = {
+    'claimType',
+    'tense',
+    'verified',
+    'source',
+    'proposedActions',
+    'executedFacts',
+  };
+  final keys = value.keys.toSet();
+  if (!keys.containsAll(expectedKeys) ||
+      keys.difference(expectedKeys).isNotEmpty) {
+    return false;
+  }
+  final claimType = value['claimType'];
+  final tense = value['tense'];
+  final verified = value['verified'];
+  final source = value['source'];
+  final proposedActions = value['proposedActions'];
+  final executedFacts = value['executedFacts'];
+  if (verified is! bool ||
+      source is! String ||
+      source.trim().isEmpty ||
+      !_isValidProposedActionList(proposedActions) ||
+      executedFacts is! List ||
+      executedFacts.any((item) => item is! String || item.trim().isEmpty)) {
+    return false;
+  }
+  if (claimType == 'advice' && tense == 'proposed') {
+    return !verified &&
+        source == 'none' &&
+        (proposedActions as List).isNotEmpty &&
+        executedFacts.isEmpty;
+  }
+  if (claimType == 'execution' && tense == 'completed') {
+    return verified &&
+        source != 'none' &&
+        (proposedActions as List).isEmpty &&
+        executedFacts.isNotEmpty;
+  }
+  return false;
+}
+
+const _proposedActionVerbs = {
+  'analyze',
+  'compare',
+  'document',
+  'implement',
+  'measure',
+  'plan',
+  'query',
+  'review',
+  'test',
+  'train',
+  'verify',
+};
+
+bool _isValidProposedActionList(Object? value) =>
+    value is List &&
+    value.every((item) {
+      if (item is! Map || item.keys.any((key) => key is! String)) return false;
+      const expectedKeys = {'verb', 'target', 'conditions'};
+      final keys = item.keys.toSet();
+      if (!keys.containsAll(expectedKeys) ||
+          keys.difference(expectedKeys).isNotEmpty) {
+        return false;
+      }
+      final verb = item['verb'];
+      final target = item['target'];
+      final conditions = item['conditions'];
+      return verb is String &&
+          _proposedActionVerbs.contains(verb) &&
+          target is String &&
+          _identifierPattern.hasMatch(target) &&
+          conditions is List &&
+          conditions.every(
+            (condition) =>
+                condition is String && _identifierPattern.hasMatch(condition),
+          );
+    });
+
+String _renderProposedAction(Object? raw) {
+  final action = raw as Map;
+  final verb = action['verb'] as String;
+  final target = action['target'] as String;
+  final conditions = (action['conditions'] as List).cast<String>();
+  final conditionClause = conditions.isEmpty
+      ? ''
+      : ' when ${conditions.join(' and ')}';
+  return 'Proposed action: $verb $target$conditionClause.';
+}
+
 EvidenceItem? _decodeEvidenceValue(Object? value) {
   if (value is EvidenceItem) return value;
   if (value is! Map || value.keys.any((key) => key is! String)) return null;
@@ -1175,9 +1804,6 @@ void _validateReceiptToken(String value) {
   }
 }
 
-String _normalizeEvidenceContent(String value) =>
-    value.trim().replaceAll(RegExp(r'\s+'), ' ');
-
 bool _constantTimeEquals(String left, String right) {
   final leftBytes = utf8.encode(left);
   final rightBytes = utf8.encode(right);
@@ -1191,15 +1817,80 @@ bool _constantTimeEquals(String left, String right) {
   return difference == 0;
 }
 
-String _expertOutputDigest(Map<String, Object?> output) {
-  final canonicalJson = jsonEncode(_canonicalJsonValue(output));
-  return sha256.convert(utf8.encode(canonicalJson)).toString();
+class _ExpertOutputSnapshot {
+  const _ExpertOutputSnapshot._(this.value, this.digest);
+
+  static _ExpertOutputSnapshot? tryParse(Map<String, Object?> raw) {
+    try {
+      final parsed = _deepSnapshotJson(raw);
+      if (parsed is! Map<String, Object?>) return null;
+      final canonicalJson = jsonEncode(_canonicalJsonValue(parsed));
+      return _ExpertOutputSnapshot._(
+        parsed,
+        sha256.convert(utf8.encode(canonicalJson)).toString(),
+      );
+    } on Object {
+      return null;
+    }
+  }
+
+  final Map<String, Object?> value;
+  final String digest;
 }
+
+Object? _deepSnapshotJson(Object? raw) {
+  if (raw == null || raw is String || raw is num || raw is bool) return raw;
+  if (raw is EvidenceItem) return _deepSnapshotJson(raw.toJson());
+  if (raw is Map) {
+    final parsed = <String, Object?>{};
+    for (final entry in raw.entries) {
+      final key = entry.key;
+      if (key is! String || parsed.containsKey(key)) {
+        throw const FormatException('Invalid JSON object key.');
+      }
+      parsed[key] = _deepSnapshotJson(entry.value);
+    }
+    return Map<String, Object?>.unmodifiable(parsed);
+  }
+  if (raw is List) {
+    return List<Object?>.unmodifiable(raw.map(_deepSnapshotJson));
+  }
+  throw const FormatException('Unsupported JSON value.');
+}
+
+String expertOutputDigestFor(Map<String, Object?> output) {
+  final snapshot = _ExpertOutputSnapshot.tryParse(output);
+  if (snapshot == null) {
+    throw ArgumentError.value(output, 'output', 'Must be canonical JSON.');
+  }
+  return snapshot.digest;
+}
+
+String _verificationBinding({
+  required String expertId,
+  required String schemaId,
+  required int profileVersion,
+  required String audience,
+  required String outputDigest,
+  required String source,
+}) => jsonEncode([
+  expertId,
+  schemaId,
+  profileVersion,
+  audience,
+  outputDigest,
+  source,
+]);
 
 Object? _canonicalJsonValue(Object? value) {
   if (value is EvidenceItem) return _canonicalJsonValue(value.toJson());
   if (value is Map) {
-    final keys = value.keys.whereType<String>().toList()..sort();
+    final keys =
+        value.keys
+            .whereType<String>()
+            .where((key) => key != 'receiptId' && key != 'receiptToken')
+            .toList()
+          ..sort();
     return {for (final key in keys) key: _canonicalJsonValue(value[key])};
   }
   if (value is List) return value.map(_canonicalJsonValue).toList();

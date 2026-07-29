@@ -97,16 +97,22 @@ void main() {
         receiptToken: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
         stance: EvidenceStance.supports,
       );
-      final executable = const ExpertOutputValidationGateway().bind(trusted);
+      final validator = _trustedValidator(
+        directionalSchema,
+        EvidenceTrustRegistry.forTesting(
+          utf8.encode('0123456789abcdef0123456789abcdef'),
+          clock: _MutableEvidenceClock(DateTime.utc(2026, 7, 29, 10)),
+        ),
+      );
       expect(
-        executable.validateOutput(
+        validator.validate(
           {
             'Claim': 'A claim.',
             'Evidence': [fakeEvidence.toJson()],
             'Verdict': 'supported',
             'Confidence': 60,
           },
-          context: ExpertValidationContext(
+          ExpertValidationContext(
             runId: 'run-policy',
             turnId: 'turn-1',
             outputId: 'output-1',
@@ -125,6 +131,7 @@ void main() {
         fields: const {
           'Evidence': OutputValueType.stringList,
           'Verdict': OutputValueType.string,
+          'Verification': OutputValueType.verificationEnvelope,
         },
       ),
       validationPolicy: ExpertValidationPolicy.structural,
@@ -132,9 +139,26 @@ void main() {
 
     expect(profile.validationPolicy, ExpertValidationPolicy.structural);
     expect(
-      const ExpertOutputValidationGateway().bind(profile).validateOutput(const {
+      StructuralExpertOutputValidator(
+        profile: profile,
+        verificationRegistry: null,
+      ).preflight(const {
         'Evidence': ['The heading is inconsistent.'],
         'Verdict': 'Revise the heading.',
+        'Verification': {
+          'claimType': 'advice',
+          'tense': 'proposed',
+          'verified': false,
+          'source': 'none',
+          'proposedActions': [
+            {
+              'verb': 'review',
+              'target': 'document-heading',
+              'conditions': <String>[],
+            },
+          ],
+          'executedFacts': <String>[],
+        },
       }),
       isTrue,
     );
@@ -235,6 +259,7 @@ void main() {
       claim: claim,
       ref: 'https://docs.acme.com/releases/42',
       quoteOrSummary: 'Version 42 shipped.',
+      confidence: 90,
     );
     final evidence = issued.evidence;
 
@@ -283,6 +308,7 @@ void main() {
       claim: claim,
       ref: 'https://docs.acme.com/releases/42',
       quoteOrSummary: 'Version 42 shipped.',
+      confidence: 90,
     );
     final evidence = issued.evidence;
     final decoded =
@@ -441,9 +467,9 @@ void main() {
     };
     expect(_factSchema().unsafeShapeOnly(output), isTrue);
     expect(
-      TrustedExpertOutputValidator(
-        schema: _factSchema(),
-        trustRegistry: EvidenceTrustRegistry.forTesting(
+      _trustedValidator(
+        _factSchema(),
+        EvidenceTrustRegistry.forTesting(
           utf8.encode('0123456789abcdef0123456789abcdef'),
           clock: _MutableEvidenceClock(DateTime.utc(2026, 7, 29, 10)),
         ),
@@ -618,6 +644,7 @@ void main() {
         claim: claim,
         ref: 'https://fabricated.example.net/releases/42',
         quoteOrSummary: 'A purported release statement.',
+        confidence: 80,
       );
       final valid = issued.evidence;
       final schema = _factSchema();
@@ -632,9 +659,9 @@ void main() {
       };
 
       expect(
-        TrustedExpertOutputValidator(
-          schema: schema,
-          trustRegistry: EvidenceTrustRegistry.forTesting(
+        _trustedValidator(
+          schema,
+          EvidenceTrustRegistry.forTesting(
             utf8.encode('0123456789abcdef0123456789abcdef'),
             clock: _MutableEvidenceClock(DateTime.utc(2026, 7, 29, 10)),
           ),
@@ -687,8 +714,8 @@ void main() {
             ),
           ]),
         ),
-        isTrue,
-        reason: 'canonical whitespace must share the content digest',
+        isFalse,
+        reason: 'raw canonical UTF-8 must preserve whitespace differences',
       );
     },
   );
@@ -700,6 +727,8 @@ void main() {
       ref: 'artifact://release-notes/42',
       quoteOrSummary: 'The release status is disputed.',
       stance: EvidenceStance.contradicts,
+      verdict: 'abstain',
+      confidence: 0,
     );
     final output = {
       'Claim': claim,
@@ -737,12 +766,16 @@ void main() {
       claim: claim,
       ref: 'artifact://release-notes/42',
       quoteOrSummary: 'The release was cancelled.',
+      verdict: 'contradicted',
+      confidence: 80,
     );
     final contradicts = _issueEvidence(
       claim: claim,
       ref: 'artifact://release-notes/42',
       quoteOrSummary: 'The release was cancelled.',
       stance: EvidenceStance.contradicts,
+      verdict: 'contradicted',
+      confidence: 80,
     );
 
     expect(supports.validate(schema, output(supports.evidence)), isFalse);
@@ -761,9 +794,26 @@ void main() {
       utf8.encode('0123456789abcdef0123456789abcdef'),
       clock: clock,
     );
+    final unsignedOutput = {
+      'Claim': claim,
+      'Evidence': [
+        {
+          'sourceId': 'release-notes',
+          'ref': 'artifact://release-notes/42',
+          'quoteOrSummary': 'Version 42 shipped.',
+          'stance': EvidenceStance.supports.name,
+        },
+      ],
+      'Verdict': 'supported',
+      'Confidence': 95,
+    };
     final receipt = registry.issue(
+      expertId: 'fact-checker',
+      schemaId: 'claim-verification.v1',
+      profileVersion: 1,
       context: context,
       validFor: const Duration(minutes: 5),
+      outputDigest: expertOutputDigestFor(unsignedOutput),
       claimDigest: claimDigestFor(claim),
       sourceId: 'release-notes',
       ref: 'artifact://release-notes/42',
@@ -796,10 +846,7 @@ void main() {
     expect(registry.toString(), isNot(contains('0123456789abcdef')));
     expect(receipt.toString(), isNot(contains(receipt.token)));
     expect(
-      TrustedExpertOutputValidator(
-        schema: _factSchema(),
-        trustRegistry: registry,
-      ).validate(output, context),
+      _trustedValidator(_factSchema(), registry).validate(output, context),
       isTrue,
     );
   });
@@ -818,9 +865,26 @@ void main() {
         clock: clock,
       );
       const claim = 'Version 42 shipped.';
+      final unsignedOutput = {
+        'Claim': claim,
+        'Evidence': [
+          {
+            'sourceId': 'release-notes',
+            'ref': 'artifact://release-notes/42',
+            'quoteOrSummary': 'Version 42 shipped.',
+            'stance': EvidenceStance.supports.name,
+          },
+        ],
+        'Verdict': 'supported',
+        'Confidence': 95,
+      };
       final receipt = registry.issue(
+        expertId: 'fact-checker',
+        schemaId: 'claim-verification.v1',
+        profileVersion: 1,
         context: context,
         validFor: const Duration(minutes: 5),
+        outputDigest: expertOutputDigestFor(unsignedOutput),
         claimDigest: claimDigestFor(claim),
         sourceId: 'release-notes',
         ref: 'artifact://release-notes/42',
@@ -841,13 +905,10 @@ void main() {
         'Verdict': 'supported',
         'Confidence': 95,
       };
-      final validator = TrustedExpertOutputValidator(
-        schema: _factSchema(),
-        trustRegistry: registry,
-      );
+      final validator = _trustedValidator(_factSchema(), registry);
 
       expect(validator.validate(output, context), isTrue);
-      expect(validator.validate(output, context), isTrue);
+      expect(validator.validate(output, context), isFalse);
       expect(
         validator.validate({...output, 'Confidence': 94}, context),
         isFalse,
@@ -883,9 +944,9 @@ void main() {
         clock: clock,
       );
       expect(
-        TrustedExpertOutputValidator(
-          schema: _factSchema(),
-          trustRegistry: wrongRegistry,
+        _trustedValidator(
+          _factSchema(),
+          wrongRegistry,
         ).validate(output, context),
         isFalse,
       );
@@ -919,10 +980,7 @@ class _IssuedEvidence {
   final ExpertValidationContext context;
 
   bool validate(OutputSchema schema, Map<String, Object?> output) =>
-      TrustedExpertOutputValidator(
-        schema: schema,
-        trustRegistry: registry,
-      ).validate(output, context);
+      _trustedValidator(schema, registry).validate(output, context);
 }
 
 _IssuedEvidence _issueEvidence({
@@ -931,6 +989,8 @@ _IssuedEvidence _issueEvidence({
   required String quoteOrSummary,
   String sourceId = 'release-notes',
   EvidenceStance stance = EvidenceStance.supports,
+  String verdict = 'supported',
+  int confidence = 95,
 }) {
   final clock = _MutableEvidenceClock(DateTime.utc(2026, 7, 29, 10));
   final context = ExpertValidationContext(
@@ -942,9 +1002,26 @@ _IssuedEvidence _issueEvidence({
     utf8.encode('0123456789abcdef0123456789abcdef'),
     clock: clock,
   );
+  final unsignedOutput = {
+    'Claim': claim,
+    'Evidence': [
+      {
+        'sourceId': sourceId,
+        'ref': ref,
+        'quoteOrSummary': quoteOrSummary,
+        'stance': stance.name,
+      },
+    ],
+    'Verdict': verdict,
+    'Confidence': confidence,
+  };
   final receipt = registry.issue(
+    expertId: 'fact-checker',
+    schemaId: 'claim-verification.v1',
+    profileVersion: 1,
     context: context,
     validFor: const Duration(minutes: 5),
+    outputDigest: expertOutputDigestFor(unsignedOutput),
     claimDigest: claimDigestFor(claim),
     sourceId: sourceId,
     ref: ref,
@@ -994,6 +1071,17 @@ OutputSchema _factSchema() => OutputSchema(
   evidenceField: 'Evidence',
   verdictField: 'Verdict',
   abstainVerdict: 'abstain',
+);
+
+TrustedExpertOutputValidator _trustedValidator(
+  OutputSchema schema,
+  EvidenceTrustRegistry registry,
+) => TrustedExpertOutputValidator(
+  schema: schema,
+  trustRegistry: registry,
+  expertId: 'fact-checker',
+  schemaId: schema.schemaId,
+  profileVersion: 1,
 );
 
 ExpertProfile _profile({

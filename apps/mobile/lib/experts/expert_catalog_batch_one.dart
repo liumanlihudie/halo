@@ -261,14 +261,6 @@ abstract final class ExpertCatalogBatchOne {
     return null;
   }
 
-  static ExecutableExpert? executableById(
-    String id, {
-    required ExpertOutputValidationGateway gateway,
-  }) {
-    final profile = byId(id);
-    return profile == null ? null : gateway.bind(profile);
-  }
-
   static ExpertRoutingResult route(
     String request, {
     Set<String> requiredCapabilities = const {},
@@ -321,8 +313,9 @@ ExpertProfile _standardProfile({
       schemaId: schemaId,
       fields: const {
         'Analysis': OutputValueType.string,
-        'Recommendations': OutputValueType.stringList,
+        'Recommendations': OutputValueType.proposedActionList,
         'Risks': OutputValueType.stringList,
+        'Verification': OutputValueType.verificationEnvelope,
       },
     ),
     guards: const {
@@ -334,6 +327,8 @@ ExpertProfile _standardProfile({
     extraConstraints: const [
       '结论必须区分输入事实、合理假设和待验证信息。',
       '不声称访问过未提供的资料、系统、用户、数据或工具结果。',
+      '建议必须放入 Verification.proposedActions，并使用受控 verb、target、conditions 结构及 claimType=advice、tense=proposed、verified=false、source=none。',
+      '已执行事实只能放入 Verification.executedFacts，并使用 claimType=execution、tense=completed、verified=true 和可信 receipt 来源。',
     ],
     positiveInput: positiveInput,
     negativeInput: negativeInput,
