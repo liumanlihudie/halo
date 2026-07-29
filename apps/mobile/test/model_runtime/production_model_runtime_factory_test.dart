@@ -36,6 +36,7 @@ void main() {
           ),
         ),
       );
+      await seed.markProviderMutationRuntimePublished(created);
       await seed.finalizeProviderMutation(created);
       await seed.close();
       var fallbackCalls = 0;
@@ -109,6 +110,7 @@ void main() {
               ),
             ),
           );
+          await seed.markProviderMutationRuntimePublished(created);
           await seed.finalizeProviderMutation(created);
         } else {
           await seed.upsert(ProviderConfig.deepSeek());
@@ -513,6 +515,49 @@ void main() {
       expect(
         await slot.resolveConfiguredModel(),
         ModelRef(providerId: 'toapis', modelId: 'new'),
+      );
+      expect(oldStore.closeCount, 1);
+      await slot.close();
+    },
+  );
+
+  test(
+    'late old-runtime close failure keeps the new runtime published',
+    () async {
+      final oldStore = _MemoryConfigurationStore(
+        configs: [ProviderConfig.toApis()],
+        globalDefault: ModelRef(providerId: 'toapis', modelId: 'old'),
+        closeError: StateError('sensitive retirement failure'),
+      );
+      final slot = ProductionModelRuntimeSlot(
+        await _factory(
+          oldStore,
+          catalogs: {
+            'toapis': [_model('toapis', 'old')],
+          },
+        ).create(),
+      );
+      final newStore = _MemoryConfigurationStore(
+        configs: [ProviderConfig.toApis()],
+        globalDefault: ModelRef(providerId: 'toapis', modelId: 'new'),
+      );
+
+      await slot.replaceWith(
+        _factory(
+          newStore,
+          catalogs: {
+            'toapis': [_model('toapis', 'new')],
+          },
+        ),
+      );
+
+      expect(
+        await slot.resolveConfiguredModel(),
+        ModelRef(providerId: 'toapis', modelId: 'new'),
+      );
+      expect(
+        slot.retirementState,
+        ProductionRuntimeRetirementState.cleanupFailed,
       );
       expect(oldStore.closeCount, 1);
       await slot.close();
@@ -1096,6 +1141,7 @@ final class _MemoryConfigurationStore implements ProviderConfigurationStore {
     this.loadGate,
     this.loadStarted,
     this.closeGate,
+    this.closeError,
   });
 
   final List<ProviderConfig> configs;
@@ -1104,6 +1150,7 @@ final class _MemoryConfigurationStore implements ProviderConfigurationStore {
   final Completer<void>? loadGate;
   final Completer<void>? loadStarted;
   final Completer<void>? closeGate;
+  final Object? closeError;
   int closeCount = 0;
 
   @override
@@ -1127,6 +1174,8 @@ final class _MemoryConfigurationStore implements ProviderConfigurationStore {
   Future<void> close() async {
     closeCount++;
     await closeGate?.future;
+    final error = closeError;
+    if (error != null) throw error;
   }
 
   @override
@@ -1173,12 +1222,22 @@ final class _MemoryConfigurationStore implements ProviderConfigurationStore {
       throw UnimplementedError();
 
   @override
+  Future<void> markProviderRemovalRuntimePublished(
+    ProviderRemovalLease lease,
+  ) => throw UnimplementedError();
+
+  @override
   Future<void> rollbackProviderMutation(
     ProviderConfigurationMutationLease lease,
   ) => throw UnimplementedError();
 
   @override
   Future<void> finalizeProviderMutation(
+    ProviderConfigurationMutationLease lease,
+  ) => throw UnimplementedError();
+
+  @override
+  Future<void> markProviderMutationRuntimePublished(
     ProviderConfigurationMutationLease lease,
   ) => throw UnimplementedError();
 

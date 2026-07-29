@@ -27,7 +27,7 @@ final class SqliteProviderConfigurationStore
     }
   }
 
-  static const schemaVersion = 4;
+  static const schemaVersion = 5;
   static const _providerConfigsSql = '''
       CREATE TABLE provider_configs (
         provider_id TEXT PRIMARY KEY,
@@ -151,7 +151,9 @@ final class SqliteProviderConfigurationStore
         provider_id TEXT NOT NULL UNIQUE,
         removed_revision INTEGER NOT NULL CHECK (removed_revision > 0),
         created_at_ms INTEGER NOT NULL CHECK (created_at_ms > 0),
-        snapshot_json TEXT NOT NULL
+        snapshot_json TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'staged'
+          CHECK (state IN ('staged', 'runtimePublished'))
       ) STRICT
     ''';
   static const _mutationLeasesSql = '''
@@ -170,7 +172,9 @@ final class SqliteProviderConfigurationStore
         created_at_ms INTEGER NOT NULL CHECK (created_at_ms > 0),
         previous_snapshot_json TEXT NOT NULL,
         applied_config_json TEXT NOT NULL,
-        applied_bindings_json TEXT NOT NULL
+        applied_bindings_json TEXT NOT NULL,
+        state TEXT NOT NULL DEFAULT 'staged'
+          CHECK (state IN ('staged', 'runtimePublished'))
       ) STRICT
     ''';
 
@@ -195,9 +199,14 @@ final class SqliteProviderConfigurationStore
         _database.execute('PRAGMA user_version = $schemaVersion');
       } else if (version == 3) {
         _migrateV3ToV4();
+        _migrateV4ToV5();
         _database.execute('PRAGMA user_version = $schemaVersion');
-      } else if (version == schemaVersion && _isExactPreMetadataV4Schema()) {
-        _migratePreMetadataV4ToFinalV4();
+      } else if (version == 4) {
+        if (_isExactPreMetadataV4Schema()) {
+          _migratePreMetadataV4ToFinalV4();
+        }
+        _migrateV4ToV5();
+        _database.execute('PRAGMA user_version = $schemaVersion');
       } else if (version != schemaVersion) {
         if (version == 1 || version == 2) {
           throw StateError(
@@ -277,7 +286,29 @@ final class SqliteProviderConfigurationStore
     }
   }
 
+  void _migrateV4ToV5() {
+    _database.execute(
+      "ALTER TABLE provider_removal_leases ADD COLUMN state TEXT NOT NULL "
+      "DEFAULT 'staged' CHECK (state IN ('staged', 'runtimePublished'))",
+    );
+    _database.execute(
+      "ALTER TABLE provider_configuration_mutations "
+      "ADD COLUMN state TEXT NOT NULL DEFAULT 'staged' "
+      "CHECK (state IN ('staged', 'runtimePublished'))",
+    );
+  }
+
   bool _isExactPreMetadataV4Schema() {
+    final v4RemovalLeasesSql = _removalLeasesSql.replaceFirst(
+      ",\n        state TEXT NOT NULL DEFAULT 'staged'\n"
+          "          CHECK (state IN ('staged', 'runtimePublished'))",
+      '',
+    );
+    final v4MutationLeasesSql = _mutationLeasesSql.replaceFirst(
+      ",\n        state TEXT NOT NULL DEFAULT 'staged'\n"
+          "          CHECK (state IN ('staged', 'runtimePublished'))",
+      '',
+    );
     final expected = <String, ({String type, String sql})>{
       'provider_configs': (type: 'table', sql: _providerConfigsSql),
       'provider_header_secret_refs': (type: 'table', sql: _headerRefsSql),
@@ -288,10 +319,10 @@ final class SqliteProviderConfigurationStore
         type: 'index',
         sql: _activeCredentialOwnerIndexSql,
       ),
-      'provider_removal_leases': (type: 'table', sql: _removalLeasesSql),
+      'provider_removal_leases': (type: 'table', sql: v4RemovalLeasesSql),
       'provider_configuration_mutations': (
         type: 'table',
-        sql: _mutationLeasesSql,
+        sql: v4MutationLeasesSql,
       ),
     };
     final objects = _database.select('''
@@ -483,6 +514,7 @@ final class SqliteProviderConfigurationStore
         ('removed_revision', 'INTEGER', 1, 0),
         ('created_at_ms', 'INTEGER', 1, 0),
         ('snapshot_json', 'TEXT', 1, 0),
+        ('state', 'TEXT', 1, 0),
       ],
       'provider_configuration_mutations': [
         ('lease_id', 'TEXT', 1, 1),
@@ -494,6 +526,7 @@ final class SqliteProviderConfigurationStore
         ('previous_snapshot_json', 'TEXT', 1, 0),
         ('applied_config_json', 'TEXT', 1, 0),
         ('applied_bindings_json', 'TEXT', 1, 0),
+        ('state', 'TEXT', 1, 0),
       ],
     };
     for (final entry in columns.entries) {
@@ -508,7 +541,11 @@ final class SqliteProviderConfigurationStore
             row['type'] != expected.$2 ||
             row['notnull'] != expected.$3 ||
             row['pk'] != expected.$4 ||
-            row['dflt_value'] != null ||
+            (expected.$1 == 'state' &&
+                    (entry.key == 'provider_removal_leases' ||
+                        entry.key == 'provider_configuration_mutations')
+                ? row['dflt_value'] != "'staged'"
+                : row['dflt_value'] != null) ||
             row['hidden'] != 0) {
           throw StateError('Invalid provider configuration schema');
         }
@@ -789,6 +826,17 @@ final class SqliteProviderConfigurationStore
         ''',
         [hexA, hexB],
       );
+      _expectConstraintFailure(
+        '''
+          INSERT INTO provider_configuration_mutations (
+            lease_id, operation_id, provider_id, operation_kind,
+            new_revision, created_at_ms, previous_snapshot_json,
+            applied_config_json, applied_bindings_json, state
+          ) VALUES (?, ?, 'mutation-bad-state', 'create', 1, 1,
+                    '{}', '{}', '[]', 'pending')
+        ''',
+        ['5' * 64, '6' * 64],
+      );
       for (final invalidLease in [
         '',
         'a' * 63,
@@ -893,6 +941,15 @@ final class SqliteProviderConfigurationStore
           ) VALUES (?, ?, 'removal-valid', 1, 1, '{}')
         ''',
         [hexC, hexD],
+      );
+      _expectConstraintFailure(
+        '''
+          INSERT INTO provider_removal_leases (
+            lease_id, operation_id, provider_id, removed_revision,
+            created_at_ms, snapshot_json, state
+          ) VALUES (?, ?, 'removal-bad-state', 1, 1, '{}', 'pending')
+        ''',
+        ['7' * 64, '8' * 64],
       );
       for (final (index, invalidLeaseId) in [
         '',
@@ -1642,6 +1699,7 @@ final class SqliteProviderConfigurationStore
         _database.execute('BEGIN IMMEDIATE');
         try {
           final leaseRow = _requireRemovalLease(lease);
+          _requirePendingState(leaseRow, PendingProviderOperationState.staged);
           if (_database.select(
             'SELECT 1 FROM provider_configs WHERE provider_id = ?',
             [lease.providerId],
@@ -1678,6 +1736,44 @@ final class SqliteProviderConfigurationStore
       });
 
   @override
+  Future<void> markProviderRemovalRuntimePublished(
+    ProviderRemovalLease lease,
+  ) => Future.sync(() {
+    _requireOpen();
+    if (lease is! _SqliteProviderRemovalLease) {
+      throw const ProviderConfigurationMutationException(
+        ProviderConfigurationMutationErrorCode.invalidLease,
+      );
+    }
+    _database.execute('BEGIN IMMEDIATE');
+    try {
+      _requireRemovalLease(lease);
+      _database.execute(
+        '''
+          UPDATE provider_removal_leases SET state = 'runtimePublished'
+          WHERE lease_id = ? AND operation_id = ? AND state = 'staged'
+        ''',
+        [lease._leaseId, lease.operationId.value],
+      );
+      if (_database.updatedRows != 1) {
+        throw const ProviderConfigurationMutationException(
+          ProviderConfigurationMutationErrorCode.invalidLease,
+        );
+      }
+      _recoveredOperations.remove(lease.operationId.value);
+      _database.execute('COMMIT');
+    } on ProviderConfigurationMutationException {
+      _database.execute('ROLLBACK');
+      rethrow;
+    } on Object {
+      _database.execute('ROLLBACK');
+      throw const ProviderConfigurationMutationException(
+        ProviderConfigurationMutationErrorCode.conflict,
+      );
+    }
+  });
+
+  @override
   Future<void> finalizeProviderRemoval(ProviderRemovalLease lease) =>
       Future.sync(() {
         _requireOpen();
@@ -1688,7 +1784,11 @@ final class SqliteProviderConfigurationStore
         }
         _database.execute('BEGIN IMMEDIATE');
         try {
-          _requireRemovalLease(lease);
+          final leaseRow = _requireRemovalLease(lease);
+          _requirePendingState(
+            leaseRow,
+            PendingProviderOperationState.runtimePublished,
+          );
           if (_database.select(
             'SELECT 1 FROM provider_configs WHERE provider_id = ?',
             [lease.providerId],
@@ -1735,6 +1835,7 @@ final class SqliteProviderConfigurationStore
     _database.execute('BEGIN IMMEDIATE');
     try {
       final row = _requireProviderMutationLease(lease);
+      _requirePendingState(row, PendingProviderOperationState.staged);
       final currentRows = _database.select(
         '''
           SELECT provider_id, kind, protocol, display_name, base_uri, enabled,
@@ -1813,6 +1914,45 @@ final class SqliteProviderConfigurationStore
   });
 
   @override
+  Future<void> markProviderMutationRuntimePublished(
+    ProviderConfigurationMutationLease lease,
+  ) => Future.sync(() {
+    _requireOpen();
+    if (lease is! _SqliteProviderMutationLease) {
+      throw const ProviderConfigurationMutationException(
+        ProviderConfigurationMutationErrorCode.invalidLease,
+      );
+    }
+    _database.execute('BEGIN IMMEDIATE');
+    try {
+      _requireProviderMutationLease(lease);
+      _database.execute(
+        '''
+          UPDATE provider_configuration_mutations
+          SET state = 'runtimePublished'
+          WHERE lease_id = ? AND operation_id = ? AND state = 'staged'
+        ''',
+        [lease._leaseId, lease.operationId.value],
+      );
+      if (_database.updatedRows != 1) {
+        throw const ProviderConfigurationMutationException(
+          ProviderConfigurationMutationErrorCode.invalidLease,
+        );
+      }
+      _recoveredOperations.remove(lease.operationId.value);
+      _database.execute('COMMIT');
+    } on ProviderConfigurationMutationException {
+      _database.execute('ROLLBACK');
+      rethrow;
+    } on Object {
+      _database.execute('ROLLBACK');
+      throw const ProviderConfigurationMutationException(
+        ProviderConfigurationMutationErrorCode.conflict,
+      );
+    }
+  });
+
+  @override
   Future<void> finalizeProviderMutation(
     ProviderConfigurationMutationLease lease,
   ) => Future.sync(() {
@@ -1825,6 +1965,7 @@ final class SqliteProviderConfigurationStore
     _database.execute('BEGIN IMMEDIATE');
     try {
       final row = _requireProviderMutationLease(lease);
+      _requirePendingState(row, PendingProviderOperationState.runtimePublished);
       final current = _database.select(
         '''
           SELECT provider_id, kind, protocol, display_name, base_uri, enabled,
@@ -1877,14 +2018,14 @@ final class SqliteProviderConfigurationStore
         <PendingProviderOperationDescriptor>[
           for (final row in _database.select('''
         SELECT operation_id, provider_id, operation_kind, new_revision,
-               created_at_ms, previous_snapshot_json, applied_config_json,
+               created_at_ms, state, previous_snapshot_json, applied_config_json,
                applied_bindings_json
         FROM provider_configuration_mutations
       '''))
             _decodePendingMutationDescriptor(row),
           for (final row in _database.select('''
         SELECT operation_id, provider_id, removed_revision, created_at_ms,
-               snapshot_json
+               state, snapshot_json
         FROM provider_removal_leases
       '''))
             _decodePendingRemovalDescriptor(row),
@@ -1926,7 +2067,7 @@ final class SqliteProviderConfigurationStore
       final mutationRows = _database.select(
         '''
           SELECT lease_id, operation_id, provider_id, operation_kind,
-                 new_revision, created_at_ms, previous_snapshot_json,
+                 new_revision, created_at_ms, state, previous_snapshot_json,
                  applied_config_json, applied_bindings_json
           FROM provider_configuration_mutations WHERE operation_id = ?
         ''',
@@ -1935,7 +2076,7 @@ final class SqliteProviderConfigurationStore
       final removalRows = _database.select(
         '''
           SELECT lease_id, operation_id, provider_id, removed_revision,
-                 created_at_ms, snapshot_json
+                 created_at_ms, state, snapshot_json
           FROM provider_removal_leases WHERE operation_id = ?
         ''',
         [operationId.value],
@@ -2686,7 +2827,7 @@ final class SqliteProviderConfigurationStore
     final rows = _database.select(
       '''
         SELECT operation_id, provider_id, removed_revision, created_at_ms,
-               snapshot_json
+               state, snapshot_json
         FROM provider_removal_leases WHERE lease_id = ?
       ''',
       [lease._leaseId],
@@ -2700,6 +2841,14 @@ final class SqliteProviderConfigurationStore
       );
     }
     return rows.single;
+  }
+
+  void _requirePendingState(Row row, PendingProviderOperationState expected) {
+    if (row['state'] != expected.name) {
+      throw const ProviderConfigurationMutationException(
+        ProviderConfigurationMutationErrorCode.invalidLease,
+      );
+    }
   }
 
   String _encodeAllModelBindings() => jsonEncode([
@@ -2793,12 +2942,16 @@ final class SqliteProviderConfigurationStore
           nextConfig.providerId != row['provider_id']) {
         throw const FormatException();
       }
+      final state = PendingProviderOperationState.values.byName(
+        row['state']! as String,
+      );
       return PendingProviderOperationDescriptor(
         operationId: PendingProviderOperationId.parse(
           row['operation_id']! as String,
         ),
         providerId: row['provider_id']! as String,
         kind: kind,
+        state: state,
         revision: ProviderConfigurationRevision(row['new_revision']! as int),
         createdAt: DateTime.fromMillisecondsSinceEpoch(
           row['created_at_ms']! as int,
@@ -2812,10 +2965,9 @@ final class SqliteProviderConfigurationStore
             ? const {}
             : providerCredentialBindings(previous.config!),
         nextCredentialRefs: providerCredentialBindings(nextConfig),
-        allowedActions: const {
-          PendingProviderTerminalAction.finalize,
-          PendingProviderTerminalAction.rollback,
-        },
+        allowedActions: state == PendingProviderOperationState.staged
+            ? const {PendingProviderTerminalAction.rollback}
+            : const {PendingProviderTerminalAction.finalize},
       );
     } on Object {
       throw StateError('Invalid pending provider mutation');
@@ -2834,12 +2986,16 @@ final class SqliteProviderConfigurationStore
             binding.modelId,
           ),
       ];
+      final state = PendingProviderOperationState.values.byName(
+        row['state']! as String,
+      );
       return PendingProviderOperationDescriptor(
         operationId: PendingProviderOperationId.parse(
           row['operation_id']! as String,
         ),
         providerId: row['provider_id']! as String,
         kind: PendingProviderOperationKind.remove,
+        state: state,
         revision: ProviderConfigurationRevision(
           row['removed_revision']! as int,
         ),
@@ -2853,10 +3009,9 @@ final class SqliteProviderConfigurationStore
         nextBindings: ProviderModelBindingSnapshot(),
         previousCredentialRefs: providerCredentialBindings(previous.config),
         nextCredentialRefs: const {},
-        allowedActions: const {
-          PendingProviderTerminalAction.finalize,
-          PendingProviderTerminalAction.restore,
-        },
+        allowedActions: state == PendingProviderOperationState.staged
+            ? const {PendingProviderTerminalAction.restore}
+            : const {PendingProviderTerminalAction.finalize},
       );
     } on Object {
       throw StateError('Invalid pending provider removal');
@@ -3047,7 +3202,8 @@ final class SqliteProviderConfigurationStore
     final rows = _database.select(
       '''
         SELECT operation_id, provider_id, operation_kind, new_revision,
-               created_at_ms, previous_snapshot_json, applied_config_json,
+               created_at_ms, state, previous_snapshot_json,
+               applied_config_json,
                applied_bindings_json
         FROM provider_configuration_mutations WHERE lease_id = ?
       ''',

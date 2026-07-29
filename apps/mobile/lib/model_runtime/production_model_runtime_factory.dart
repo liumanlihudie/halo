@@ -349,6 +349,8 @@ final class _ProductionProviderRegistryView implements ProviderRegistryView {
   Future<ChatResponse> chat(ChatRequest request) => _registry.chat(request);
 }
 
+enum ProductionRuntimeRetirementState { clean, cleanupFailed }
+
 final class ProductionModelRuntimeSlot {
   ProductionModelRuntimeSlot(ProductionModelRuntime initial)
     : _runtime = initial;
@@ -356,6 +358,9 @@ final class ProductionModelRuntimeSlot {
   ProductionModelRuntime? _runtime;
   int _generation = 0;
   bool _closed = false;
+  ProductionRuntimeRetirementState _retirementState =
+      ProductionRuntimeRetirementState.clean;
+  ProductionRuntimeRetirementState get retirementState => _retirementState;
   Future<void>? _closeFuture;
   final Map<int, _PendingRuntimeCreation> _pending = {};
 
@@ -392,7 +397,14 @@ final class ProductionModelRuntimeSlot {
     }
     final previous = _runtime!;
     _runtime = next;
-    await previous.close();
+    try {
+      await previous.close();
+      _retirementState = previous.shutdownForced
+          ? ProductionRuntimeRetirementState.cleanupFailed
+          : ProductionRuntimeRetirementState.clean;
+    } on Object {
+      _retirementState = ProductionRuntimeRetirementState.cleanupFailed;
+    }
   }
 
   Future<ModelRef> resolveConfiguredModel({String? agentId}) =>

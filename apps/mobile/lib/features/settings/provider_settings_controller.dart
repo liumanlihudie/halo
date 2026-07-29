@@ -41,7 +41,7 @@ class ProviderSettingsSnapshot {
   const ProviderSettingsSnapshot({required this.config, required this.catalog});
 
   final ProviderConfig config;
-  final PersistedProviderModelCatalog catalog;
+  final PersistedProviderModelCatalog? catalog;
 }
 
 abstract interface class ProviderModelCatalogFetcher {
@@ -65,6 +65,11 @@ abstract interface class ProviderSettingsPersistence {
     ProviderSettingsSnapshot next,
   );
 
+  Future<void> markReplaceRuntimePublished(
+    ProviderSettingsSnapshot? previous,
+    ProviderSettingsSnapshot next,
+  );
+
   Future<void> finalizeReplace(
     ProviderSettingsSnapshot? previous,
     ProviderSettingsSnapshot next,
@@ -73,6 +78,8 @@ abstract interface class ProviderSettingsPersistence {
   Future<void> remove(ProviderSettingsSnapshot snapshot);
 
   Future<void> restore(ProviderSettingsSnapshot snapshot);
+
+  Future<void> markRemovalRuntimePublished(ProviderSettingsSnapshot snapshot);
 
   Future<void> finalizeRemoval(ProviderSettingsSnapshot snapshot);
 }
@@ -231,6 +238,15 @@ final class ProviderSettingsController extends ChangeNotifier {
         throw const ProviderSettingsException('保存失败，原配置仍然有效');
       }
 
+      try {
+        await _persistence.markReplaceRuntimePublished(previous, next);
+      } catch (_) {
+        preserveNewRefForRecovery = true;
+        _setConfigured(draft.providerId, true);
+        _setSnapshot(draft.providerId, next);
+        _setState(draft.providerId, ProviderSettingsState.recoveryPending);
+        throw const ProviderSettingsException('配置恢复中，请稍后重试');
+      }
       _setConfigured(draft.providerId, true);
       _setSnapshot(draft.providerId, next);
       try {
@@ -320,6 +336,14 @@ final class ProviderSettingsController extends ChangeNotifier {
       throw const ProviderSettingsException('刷新失败，原模型目录仍然有效');
     }
 
+    try {
+      await _persistence.markReplaceRuntimePublished(previous, next);
+    } catch (_) {
+      _setConfigured(providerId, true);
+      _setSnapshot(providerId, next);
+      _setState(providerId, ProviderSettingsState.recoveryPending);
+      throw const ProviderSettingsException('配置恢复中，请稍后重试');
+    }
     _setConfigured(providerId, true);
     _setSnapshot(providerId, next);
     try {
@@ -350,10 +374,6 @@ final class ProviderSettingsController extends ChangeNotifier {
       final oldRef = previous.config.secretRef;
       try {
         await _runtime.reload();
-        if (oldRef != null) {
-          final deleted = await _credentials.delete(oldRef);
-          if (!deleted) throw StateError('Credential was not deleted');
-        }
       } catch (_) {
         try {
           await _persistence.restore(previous);
@@ -366,6 +386,24 @@ final class ProviderSettingsController extends ChangeNotifier {
           _setState(providerId, ProviderSettingsState.orphanedCredential);
         }
         throw const ProviderSettingsException('移除失败，请稍后重试');
+      }
+      try {
+        await _persistence.markRemovalRuntimePublished(previous);
+      } catch (_) {
+        _setState(providerId, ProviderSettingsState.recoveryPending);
+        throw const ProviderSettingsException('配置恢复中，请稍后重试');
+      }
+      if (oldRef != null) {
+        try {
+          final deleted = await _credentials.delete(oldRef);
+          if (!deleted) {
+            _setState(providerId, ProviderSettingsState.cleanupPending);
+            return;
+          }
+        } catch (_) {
+          _setState(providerId, ProviderSettingsState.cleanupPending);
+          return;
+        }
       }
       try {
         await _persistence.finalizeRemoval(previous);

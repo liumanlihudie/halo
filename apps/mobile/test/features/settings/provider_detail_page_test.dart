@@ -238,6 +238,12 @@ final class _Persistence implements ProviderSettingsPersistence {
   ) async {}
 
   @override
+  Future<void> markReplaceRuntimePublished(
+    ProviderSettingsSnapshot? previous,
+    ProviderSettingsSnapshot next,
+  ) async {}
+
+  @override
   Future<void> remove(ProviderSettingsSnapshot snapshot) async {
     current = null;
   }
@@ -246,6 +252,11 @@ final class _Persistence implements ProviderSettingsPersistence {
   Future<void> restore(ProviderSettingsSnapshot snapshot) async {
     current = snapshot;
   }
+
+  @override
+  Future<void> markRemovalRuntimePublished(
+    ProviderSettingsSnapshot snapshot,
+  ) async {}
 
   @override
   Future<void> finalizeRemoval(ProviderSettingsSnapshot snapshot) async {}

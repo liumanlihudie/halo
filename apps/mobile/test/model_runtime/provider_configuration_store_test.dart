@@ -22,6 +22,7 @@ void main() {
         modelCatalog: _deepSeekCatalog(discoveredAt),
       ),
     );
+    await store.markProviderMutationRuntimePublished(created);
     await store.finalizeProviderMutation(created);
     await store.close();
 
@@ -69,6 +70,7 @@ void main() {
     final directAll = await store.loadAllProviderModelCatalogs();
     expect(directAll, hasLength(1));
     expect(directAll.single.discoveredAt, discoveredAt);
+    await store.markProviderMutationRuntimePublished(created);
     await store.finalizeProviderMutation(created);
     await store.close();
 
@@ -101,6 +103,7 @@ void main() {
           modelCatalog: _emptyDeepSeekCatalog(originalDiscoveredAt),
         ),
       );
+      await store.markProviderMutationRuntimePublished(created);
       await store.finalizeProviderMutation(created);
       final before = (await store.loadProvider('deepseek'))!;
       final replacement = await store.replaceProviderConfiguration(
@@ -139,6 +142,7 @@ void main() {
             modelCatalog: _emptyDeepSeekCatalog(discoveredAt),
           ),
         );
+        await store.markProviderMutationRuntimePublished(created);
         await store.finalizeProviderMutation(created);
         final before = (await store.loadProvider('deepseek'))!;
         final removal = await store.removeProviderAtomically(
@@ -195,7 +199,7 @@ void main() {
       }
 
       final raw = sqlite3.open(fixture.path);
-      expect(raw.select('PRAGMA user_version').single.values.single, 4);
+      expect(raw.select('PRAGMA user_version').single.values.single, 5);
       raw.close();
       fixture.delete();
     },
@@ -207,6 +211,18 @@ void main() {
       final fixture = _DatabaseFixture.create();
       final discoveredAt = DateTime.utc(2026, 7, 29, 8, 40, 0, 654);
       _createPreMetadataV4Database(fixture.path, discoveredAt);
+      final beforeMigration = sqlite3.open(fixture.path);
+      beforeMigration.execute(
+        '''
+          INSERT INTO provider_configuration_mutations (
+            lease_id, operation_id, provider_id, operation_kind,
+            new_revision, created_at_ms, previous_snapshot_json,
+            applied_config_json, applied_bindings_json
+          ) VALUES (?, ?, 'pending-v4', 'create', 1, 1, '{}', '{}', '[]')
+        ''',
+        ['9' * 64, '0' * 64],
+      );
+      beforeMigration.close();
 
       final migrated = SqliteProviderConfigurationStore.open(fixture.path);
       try {
@@ -234,7 +250,28 @@ void main() {
       }
 
       final raw = sqlite3.open(fixture.path);
-      expect(raw.select('PRAGMA user_version').single.values.single, 4);
+      expect(raw.select('PRAGMA user_version').single.values.single, 5);
+      expect(
+        raw
+            .select('PRAGMA table_xinfo(provider_configuration_mutations)')
+            .map((row) => row['name']),
+        contains('state'),
+      );
+      expect(
+        raw
+            .select(
+              'SELECT state FROM provider_configuration_mutations '
+              "WHERE provider_id = 'pending-v4'",
+            )
+            .single['state'],
+        'staged',
+      );
+      expect(
+        raw
+            .select('PRAGMA table_xinfo(provider_removal_leases)')
+            .map((row) => row['name']),
+        contains('state'),
+      );
       expect(
         raw.select(
           "SELECT 1 FROM sqlite_master "
@@ -245,6 +282,10 @@ void main() {
       expect(
         raw.select('PRAGMA foreign_key_list(provider_models)').single['table'],
         'provider_model_catalogs',
+      );
+      raw.execute(
+        "DELETE FROM provider_configuration_mutations "
+        "WHERE provider_id = 'pending-v4'",
       );
       raw.close();
 
@@ -294,6 +335,7 @@ void main() {
             modelCatalog: _deepSeekCatalog(originalDiscoveredAt),
           ),
         );
+        await store.markProviderMutationRuntimePublished(created);
         await store.finalizeProviderMutation(created);
         final before = (await store.loadProvider('deepseek'))!;
 
@@ -357,6 +399,7 @@ void main() {
           modelCatalog: _deepSeekCatalog(discoveredAt),
         ),
       );
+      await store.markProviderMutationRuntimePublished(created);
       await store.finalizeProviderMutation(created);
       final before = (await store.loadProvider('deepseek'))!;
 
@@ -393,6 +436,7 @@ void main() {
             modelCatalog: _deepSeekCatalog(DateTime.utc(2026, 7, 28, 11)),
           ),
         );
+        await store.markProviderMutationRuntimePublished(created);
         await store.finalizeProviderMutation(created);
         await store.upsert(ProviderConfig.openAI());
         await store.setGlobalDefaultModel(
@@ -442,6 +486,7 @@ void main() {
           await store.loadAgentModelOverride('agent.other'),
           ModelRef(providerId: 'openai', modelId: 'gpt-5'),
         );
+        await store.markProviderMutationRuntimePublished(replacement);
         await store.finalizeProviderMutation(replacement);
       } finally {
         await store.close();
@@ -901,6 +946,16 @@ void main() {
         'removed_revision >= 0',
       ),
       ('provider_removal_leases', 'created_at_ms > 0', 'created_at_ms >= 0'),
+      (
+        'provider_configuration_mutations',
+        "state IN ('staged', 'runtimePublished')",
+        "state IN ('staged', 'runtimePublished', 'pending')",
+      ),
+      (
+        'provider_removal_leases',
+        "state IN ('staged', 'runtimePublished')",
+        "state IN ('staged', 'runtimePublished', 'pending')",
+      ),
     ];
     for (final (table, original, weakened) in cases) {
       final fixture = _DatabaseFixture.create();
@@ -1027,7 +1082,7 @@ void main() {
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();
     final raw = sqlite3.open(fixture.path);
-    raw.execute('PRAGMA user_version = 5');
+    raw.execute('PRAGMA user_version = 6');
     raw.close();
 
     expect(
@@ -1036,7 +1091,7 @@ void main() {
     );
 
     final reopened = sqlite3.open(fixture.path);
-    expect(reopened.select('PRAGMA user_version').single.values.first, 5);
+    expect(reopened.select('PRAGMA user_version').single.values.first, 6);
     reopened.close();
     fixture.delete();
   });
@@ -1141,6 +1196,7 @@ void main() {
             modelCatalog: null,
           ),
         );
+        await store.markProviderMutationRuntimePublished(recreated);
         await store.finalizeProviderMutation(recreated);
         await expectLater(
           store.finalizeProviderMutation(recreated),
@@ -1222,7 +1278,7 @@ void main() {
         final descriptor = pending.single;
         expect(descriptor.operationId, operationId);
         expect(descriptor.kind, PendingProviderOperationKind.create);
-        expect(descriptor.state, PendingProviderOperationState.pending);
+        expect(descriptor.state, PendingProviderOperationState.staged);
         expect(descriptor.createdAt.isUtc, isTrue);
         expect(descriptor.providerId, 'openai');
         expect(descriptor.previousConfiguration, isNull);
@@ -1233,13 +1289,9 @@ void main() {
           descriptor.nextBindings.globalDefault,
           ModelRef(providerId: 'openai', modelId: 'gpt-5'),
         );
-        expect(
-          descriptor.allowedActions,
-          containsAll({
-            PendingProviderTerminalAction.rollback,
-            PendingProviderTerminalAction.finalize,
-          }),
-        );
+        expect(descriptor.allowedActions, {
+          PendingProviderTerminalAction.rollback,
+        });
         expect(descriptor.toString(), isNot(contains(operationId.value)));
         expect(descriptor.toString(), isNot(contains(ref.locator.toString())));
 
@@ -1250,6 +1302,108 @@ void main() {
         );
         await reopened.rollbackProviderMutation(recovery.mutationLease!);
         expect(await reopened.loadProvider('openai'), isNull);
+        expect(await reopened.listPendingProviderOperations(), isEmpty);
+      } finally {
+        await reopened.close();
+        fixture.delete();
+      }
+    },
+  );
+
+  test(
+    'mutation publication phase is durable one-way and exact-lease bound',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      late final PendingProviderOperationId operationId;
+      {
+        final first = SqliteProviderConfigurationStore.open(fixture.path);
+        final lease = await first.replaceProviderConfiguration(
+          expectedRevision: null,
+          replacement: ProviderConfigurationReplacement(
+            config: ProviderConfig.openAI(),
+            modelCatalog: null,
+          ),
+        );
+        operationId = lease.operationId;
+        await expectLater(
+          first.finalizeProviderMutation(lease),
+          throwsA(isA<ProviderConfigurationMutationException>()),
+        );
+        await first.markProviderMutationRuntimePublished(lease);
+        await expectLater(
+          first.markProviderMutationRuntimePublished(lease),
+          throwsA(isA<ProviderConfigurationMutationException>()),
+        );
+        await first.close();
+      }
+
+      final reopened = SqliteProviderConfigurationStore.open(fixture.path);
+      try {
+        final descriptor =
+            (await reopened.listPendingProviderOperations()).single;
+        expect(descriptor.operationId, operationId);
+        expect(
+          descriptor.state,
+          PendingProviderOperationState.runtimePublished,
+        );
+        expect(descriptor.allowedActions, {
+          PendingProviderTerminalAction.finalize,
+        });
+        final recovery = await reopened.recoverPendingProviderOperation(
+          operationId: operationId,
+          expectedProviderId: 'openai',
+          expectedKind: PendingProviderOperationKind.create,
+        );
+        await reopened.finalizeProviderMutation(recovery.mutationLease!);
+        expect(await reopened.listPendingProviderOperations(), isEmpty);
+      } finally {
+        await reopened.close();
+        fixture.delete();
+      }
+    },
+  );
+
+  test(
+    'removal publication phase survives restart and rejects stale lease',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      late final ProviderRemovalLease staleLease;
+      late final PendingProviderOperationId operationId;
+      {
+        final first = SqliteProviderConfigurationStore.open(fixture.path);
+        await first.upsert(ProviderConfig.openAI());
+        final before = (await first.loadProvider('openai'))!;
+        staleLease = await first.removeProviderAtomically(
+          providerId: 'openai',
+          expectedRevision: before.revision,
+        );
+        operationId = staleLease.operationId;
+        await expectLater(
+          first.finalizeProviderRemoval(staleLease),
+          throwsA(isA<ProviderConfigurationMutationException>()),
+        );
+        await first.close();
+      }
+
+      final reopened = SqliteProviderConfigurationStore.open(fixture.path);
+      try {
+        final recovery = await reopened.recoverPendingProviderOperation(
+          operationId: operationId,
+          expectedProviderId: 'openai',
+          expectedKind: PendingProviderOperationKind.remove,
+        );
+        await expectLater(
+          reopened.markProviderRemovalRuntimePublished(staleLease),
+          throwsA(isA<ProviderConfigurationMutationException>()),
+        );
+        await reopened.markProviderRemovalRuntimePublished(
+          recovery.removalLease!,
+        );
+        expect(
+          (await reopened.listPendingProviderOperations()).single.state,
+          PendingProviderOperationState.runtimePublished,
+        );
+        await reopened.finalizeProviderRemoval(recovery.removalLease!);
         expect(await reopened.listPendingProviderOperations(), isEmpty);
       } finally {
         await reopened.close();
@@ -1310,6 +1464,9 @@ void main() {
         ]);
         expect(identical(recoveries.first, recoveries.last), isTrue);
 
+        await reopened.markProviderMutationRuntimePublished(
+          recoveries.first.mutationLease!,
+        );
         await reopened.finalizeProviderMutation(
           recoveries.first.mutationLease!,
         );
@@ -1447,6 +1604,9 @@ void main() {
           expectedProviderId: 'openai',
           expectedKind: PendingProviderOperationKind.remove,
         );
+        await reopened.markProviderRemovalRuntimePublished(
+          recovery.removalLease!,
+        );
         await reopened.finalizeProviderRemoval(recovery.removalLease!);
         expect(await reopened.listPendingProviderOperations(), isEmpty);
         expect(await reopened.loadProvider('openai'), isNull);
@@ -1544,6 +1704,9 @@ void main() {
             expectedKind: PendingProviderOperationKind.create,
           ),
         ]);
+        await second.markProviderMutationRuntimePublished(
+          recoveries.last.mutationLease!,
+        );
         await expectLater(
           first.finalizeProviderMutation(recoveries.first.mutationLease!),
           throwsA(
@@ -1565,6 +1728,7 @@ void main() {
             modelCatalog: null,
           ),
         );
+        await first.markProviderMutationRuntimePublished(next);
         await first.finalizeProviderMutation(next);
       } finally {
         await first.close();
@@ -1720,6 +1884,7 @@ void main() {
           throwsA(isA<ProviderConfigurationMutationException>()),
         );
         expect((await store.loadProvider('openai'))!.config.secretRef, newRef);
+        await store.markProviderMutationRuntimePublished(retry);
         await store.finalizeProviderMutation(retry);
       } finally {
         await store.close();
@@ -1954,6 +2119,7 @@ void main() {
             modelCatalog: null,
           ),
         );
+        await store.markProviderMutationRuntimePublished(next);
         await store.finalizeProviderMutation(next);
         await store.setGlobalDefaultModel(
           ModelRef(providerId: 'openai', modelId: 'gpt-5'),

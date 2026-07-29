@@ -297,6 +297,82 @@ void main() {
       expect(adapter.records.single.toString(), isNot(contains('secret')));
     },
   );
+
+  test(
+    'reopened catalog-less configs can be repaired or removed without defaults',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-kernel-');
+      addTearDown(() => directory.delete(recursive: true));
+      final databasePath = '${directory.path}/halo_providers.sqlite';
+      final toApisRef = SecretRef.parse(
+        'keychain://halo.provider/00000000-0000-4000-8000-000000000031',
+      );
+      final deepSeekRef = SecretRef.parse(
+        'keychain://halo.provider/00000000-0000-4000-8000-000000000032',
+      );
+      final seed = SqliteProviderConfigurationStore.open(databasePath);
+      await seed.upsert(
+        ProviderConfig.toApis(enabled: false, secretRef: toApisRef),
+      );
+      await seed.upsert(
+        ProviderConfig.deepSeek(enabled: false, secretRef: deepSeekRef),
+      );
+      await seed.close();
+      final credentials = _FakeCredentials()
+        ..values[toApisRef] = 'legacy-toapis'
+        ..values[deepSeekRef] = 'legacy-deepseek';
+      final adapter = FakeUnaryHttpAdapter(retainRequestContentForTesting: true)
+        ..enqueueJson(
+          statusCode: 200,
+          body: {
+            'object': 'list',
+            'data': [
+              {'id': 'discovered-only', 'object': 'model'},
+            ],
+          },
+        );
+      addTearDown(adapter.dispose);
+      final kernel = await ProductionAppKernelFactory(
+        applicationSupportDirectory: () async => directory,
+        credentials: credentials,
+        unaryHttpAdapter: adapter,
+      ).create();
+
+      expect(
+        (await kernel.dependencies.providerSettings!.load('toapis'))!.catalog,
+        isNull,
+      );
+      await kernel.dependencies.providerSettings!.save(
+        const ProviderSettingsDraft(
+          providerId: 'toapis',
+          apiKey: 'repaired-secret',
+          enabled: true,
+        ),
+      );
+      expect(
+        (await kernel.dependencies.providerSettings!.load('deepseek'))!.catalog,
+        isNull,
+      );
+      await kernel.dependencies.providerSettings!.remove('deepseek');
+      await kernel.close();
+
+      final reopened = SqliteProviderConfigurationStore.open(databasePath);
+      addTearDown(reopened.close);
+      expect(
+        (await reopened.loadProviderModelCatalog(
+          'toapis',
+        ))!.models.map((model) => model.ref.modelId),
+        ['discovered-only'],
+      );
+      expect(await reopened.loadProvider('deepseek'), isNull);
+      expect(
+        (await reopened.loadAllProviderModelCatalogs())
+            .expand((catalog) => catalog.models)
+            .map((model) => model.ref.modelId),
+        isNot(contains('gpt-5-mini')),
+      );
+    },
+  );
 }
 
 final class _TrackingDurableChatRepository
@@ -372,6 +448,11 @@ final class _FakeSettingsPersistence
   Future<void> finalizeRemoval(ProviderSettingsSnapshot snapshot) async {}
 
   @override
+  Future<void> markRemovalRuntimePublished(
+    ProviderSettingsSnapshot snapshot,
+  ) async {}
+
+  @override
   Future<ProviderSettingsSnapshot?> load(String providerId) async => null;
 
   @override
@@ -391,6 +472,12 @@ final class _FakeSettingsPersistence
 
   @override
   Future<void> finalizeReplace(
+    ProviderSettingsSnapshot? previous,
+    ProviderSettingsSnapshot next,
+  ) async {}
+
+  @override
+  Future<void> markReplaceRuntimePublished(
     ProviderSettingsSnapshot? previous,
     ProviderSettingsSnapshot next,
   ) async {}

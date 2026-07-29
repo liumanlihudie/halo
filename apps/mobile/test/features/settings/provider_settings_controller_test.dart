@@ -51,7 +51,7 @@ void main() {
 
       expect(credentials.setValues.single, 'new-secret');
       expect(persistence.current!.config.secretRef, refs.issued.last);
-      expect(persistence.current!.catalog.models, hasLength(2));
+      expect(persistence.current!.catalog!.models, hasLength(2));
       expect(runtime.reloadCount, 1);
       expect(controller.state, ProviderSettingsState.ready);
       expect(events, [
@@ -59,6 +59,7 @@ void main() {
         'catalog:fetch',
         'persistence:replace',
         'runtime:reload',
+        'persistence:markReplaceRuntimePublished',
         'persistence:finalizeReplace',
         'credential:delete:old',
       ]);
@@ -232,9 +233,63 @@ void main() {
       'catalog:fetch',
       'persistence:replace',
       'runtime:reload',
+      'persistence:markReplaceRuntimePublished',
       'persistence:finalizeReplace',
     ]);
   });
+
+  test(
+    'publication mark failure preserves both Keys for restart recovery',
+    () async {
+      final oldRef = refs.next();
+      persistence.current = _snapshot('toapis', oldRef);
+      persistence.markPublishedError = StateError('durable mark failed');
+
+      await expectLater(
+        controller.save(
+          const ProviderSettingsDraft(
+            providerId: 'toapis',
+            apiKey: 'replacement',
+            enabled: true,
+          ),
+        ),
+        throwsA(isA<ProviderSettingsException>()),
+      );
+
+      expect(credentials.deletedRefs, isEmpty);
+      expect(persistence.calls, isNot(contains('finalizeReplace')));
+      expect(controller.state, ProviderSettingsState.recoveryPending);
+    },
+  );
+
+  test(
+    'late old-runtime retirement failure does not rollback or delete new Key',
+    () async {
+      final oldRef = refs.next();
+      persistence.current = _snapshot('toapis', oldRef);
+      runtime.onReload = () async {
+        events.add('runtime:retirementCleanupFailed');
+      };
+
+      await controller.save(
+        const ProviderSettingsDraft(
+          providerId: 'toapis',
+          apiKey: 'replacement',
+          enabled: true,
+        ),
+      );
+
+      final newRef = credentials.setRefs.single;
+      expect(persistence.calls, [
+        'replace',
+        'markReplaceRuntimePublished',
+        'finalizeReplace',
+      ]);
+      expect(credentials.deletedRefs, [oldRef]);
+      expect(credentials.deletedRefs, isNot(contains(newRef)));
+      expect(controller.state, ProviderSettingsState.ready);
+    },
+  );
 
   test(
     'old ref cleanup failure keeps new config and reports safe cleanup state',
@@ -277,30 +332,30 @@ void main() {
   );
 
   test(
-    'delete removes DB first and restores it when Keychain delete fails',
+    'published delete keeps DB removed when Keychain cleanup fails',
     () async {
       final oldRef = refs.next();
       final old = _snapshot('deepseek', oldRef);
       persistence.current = old;
       credentials.deleteErrors[oldRef] = StateError('delete failed');
 
-      await expectLater(
-        controller.remove('deepseek'),
-        throwsA(isA<ProviderSettingsException>()),
-      );
+      await controller.remove('deepseek');
 
-      expect(persistence.calls.take(2), ['remove', 'restore']);
-      expect(persistence.current, same(old));
-      expect(controller.state, ProviderSettingsState.deleteFailed);
+      expect(persistence.calls.take(2), [
+        'remove',
+        'markRemovalRuntimePublished',
+      ]);
+      expect(persistence.current, isNull);
+      expect(controller.state, ProviderSettingsState.cleanupPending);
     },
   );
 
   test(
-    'delete double failure leaves orphan Key and never reports success',
+    'reload and restore double failure never reports delete success',
     () async {
       final oldRef = refs.next();
       persistence.current = _snapshot('toapis', oldRef);
-      credentials.deleteErrors[oldRef] = StateError('delete failed');
+      runtime.error = StateError('reload failed');
       persistence.restoreError = StateError('restore failed');
 
       await expectLater(
@@ -312,6 +367,21 @@ void main() {
       expect(controller.hasConfiguration, isFalse);
     },
   );
+
+  test('removal publication mark failure preserves old Key', () async {
+    final oldRef = refs.next();
+    persistence.current = _snapshot('toapis', oldRef);
+    persistence.markPublishedError = StateError('durable mark failed');
+
+    await expectLater(
+      controller.remove('toapis'),
+      throwsA(isA<ProviderSettingsException>()),
+    );
+
+    expect(credentials.deletedRefs, isEmpty);
+    expect(persistence.calls, ['remove', 'markRemovalRuntimePublished']);
+    expect(controller.state, ProviderSettingsState.recoveryPending);
+  });
 
   test('close rejects new work and drains in-flight work', () async {
     persistence.loadGate = Completer<void>();
@@ -393,7 +463,7 @@ void main() {
       expect(
         controller
             .snapshotFor('deepseek')!
-            .catalog
+            .catalog!
             .models
             .map((model) => model.ref.modelId),
         ['deepseek-chat', 'deepseek-reasoner'],
@@ -402,8 +472,32 @@ void main() {
         'catalog:fetch',
         'persistence:replace',
         'runtime:reload',
+        'persistence:markReplaceRuntimePublished',
         'persistence:finalizeReplace',
       ]);
+    },
+  );
+
+  test(
+    'refresh publication mark failure leaves catalog recovery pending',
+    () async {
+      final oldRef = refs.next();
+      final old = _snapshot('deepseek', oldRef, modelIds: ['deepseek-chat']);
+      persistence.current = old;
+      persistence.markPublishedError = StateError('durable mark failed');
+      catalogFetcher.catalog = _catalog('deepseek', const [
+        'deepseek-chat',
+        'deepseek-reasoner',
+      ]);
+
+      await expectLater(
+        controller.refreshCatalog('deepseek'),
+        throwsA(isA<ProviderSettingsException>()),
+      );
+
+      expect(credentials.deletedRefs, isEmpty);
+      expect(persistence.calls, ['replace', 'markReplaceRuntimePublished']);
+      expect(controller.state, ProviderSettingsState.recoveryPending);
     },
   );
 
@@ -658,6 +752,7 @@ final class _FakePersistence implements ProviderSettingsPersistence {
   Object? replaceError;
   Object? restoreError;
   Object? finalizeError;
+  Object? markPublishedError;
   Completer<void>? loadGate;
   final loadGates = <String, Completer<void>>{};
   final loadErrors = <String, Object>{};
@@ -707,6 +802,17 @@ final class _FakePersistence implements ProviderSettingsPersistence {
   }
 
   @override
+  Future<void> markReplaceRuntimePublished(
+    ProviderSettingsSnapshot? previous,
+    ProviderSettingsSnapshot next,
+  ) async {
+    events.add('persistence:markReplaceRuntimePublished');
+    calls.add('markReplaceRuntimePublished');
+    final error = markPublishedError;
+    if (error != null) throw error;
+  }
+
+  @override
   Future<void> remove(ProviderSettingsSnapshot snapshot) async {
     calls.add('remove');
     current = null;
@@ -718,6 +824,15 @@ final class _FakePersistence implements ProviderSettingsPersistence {
     final error = restoreError;
     if (error != null) throw error;
     current = snapshot;
+  }
+
+  @override
+  Future<void> markRemovalRuntimePublished(
+    ProviderSettingsSnapshot snapshot,
+  ) async {
+    calls.add('markRemovalRuntimePublished');
+    final error = markPublishedError;
+    if (error != null) throw error;
   }
 
   @override

@@ -48,7 +48,7 @@ final class PendingProviderOperationId {
 
 enum PendingProviderOperationKind { create, replace, rotate, remove }
 
-enum PendingProviderOperationState { pending }
+enum PendingProviderOperationState { staged, runtimePublished }
 
 enum PendingProviderTerminalAction { finalize, rollback, restore }
 
@@ -73,6 +73,7 @@ final class PendingProviderOperationDescriptor {
     required this.operationId,
     required this.providerId,
     required this.kind,
+    required this.state,
     required this.revision,
     required this.createdAt,
     required this.previousConfiguration,
@@ -112,15 +113,23 @@ final class PendingProviderOperationDescriptor {
         !sameRefs(this.nextCredentialRefs, expectedNextRefs)) {
       throw ArgumentError('Invalid pending provider operation descriptor');
     }
-    final expectedActions = kind == PendingProviderOperationKind.remove
-        ? const {
-            PendingProviderTerminalAction.finalize,
-            PendingProviderTerminalAction.restore,
-          }
-        : const {
-            PendingProviderTerminalAction.finalize,
-            PendingProviderTerminalAction.rollback,
-          };
+    final expectedActions = switch ((kind, state)) {
+      (
+        PendingProviderOperationKind.remove,
+        PendingProviderOperationState.staged,
+      ) =>
+        const {PendingProviderTerminalAction.restore},
+      (
+        PendingProviderOperationKind.create ||
+            PendingProviderOperationKind.replace ||
+            PendingProviderOperationKind.rotate,
+        PendingProviderOperationState.staged,
+      ) =>
+        const {PendingProviderTerminalAction.rollback},
+      (_, PendingProviderOperationState.runtimePublished) => const {
+        PendingProviderTerminalAction.finalize,
+      },
+    };
     if (allowedActions.length != expectedActions.length ||
         !allowedActions.containsAll(expectedActions)) {
       throw ArgumentError.value(allowedActions, 'allowedActions');
@@ -130,8 +139,7 @@ final class PendingProviderOperationDescriptor {
   final PendingProviderOperationId operationId;
   final String providerId;
   final PendingProviderOperationKind kind;
-  final PendingProviderOperationState state =
-      PendingProviderOperationState.pending;
+  final PendingProviderOperationState state;
   final ProviderConfigurationRevision revision;
   final DateTime createdAt;
   final ProviderConfig? previousConfiguration;
@@ -327,9 +335,15 @@ abstract interface class ProviderConfigurationStore {
 
   Future<void> restoreRemovedProvider(ProviderRemovalLease lease);
 
+  Future<void> markProviderRemovalRuntimePublished(ProviderRemovalLease lease);
+
   Future<void> finalizeProviderRemoval(ProviderRemovalLease lease);
 
   Future<void> rollbackProviderMutation(
+    ProviderConfigurationMutationLease lease,
+  );
+
+  Future<void> markProviderMutationRuntimePublished(
     ProviderConfigurationMutationLease lease,
   );
 

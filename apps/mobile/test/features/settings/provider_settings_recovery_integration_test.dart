@@ -13,7 +13,7 @@ import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.da
 
 void main() {
   test(
-    'rollback failure survives restart and trusted recovery finalizes staged ref',
+    'rollback failure survives restart and staged recovery restores old ref',
     () async {
       final directory = await Directory.systemTemp.createTemp('halo-recovery-');
       addTearDown(() => directory.delete(recursive: true));
@@ -27,6 +27,7 @@ void main() {
         catalog: _catalog(),
       );
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
       final credentials = _Credentials({oldRef: 'old-key'});
       final controller = ProviderSettingsController(
@@ -58,8 +59,8 @@ void main() {
       await persistence.recoverPending(credentials);
 
       expect(credentials.getCalls, 0);
-      expect(credentials.deleted, [oldRef]);
-      expect((await persistence.load('toapis'))?.config.secretRef, newRef);
+      expect(credentials.deleted, [newRef]);
+      expect((await persistence.load('toapis'))?.config.secretRef, oldRef);
       expect(await store.listPendingProviderOperations(), isEmpty);
     },
   );

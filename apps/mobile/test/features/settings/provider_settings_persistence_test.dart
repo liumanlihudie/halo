@@ -25,11 +25,12 @@ void main() {
       final first = _snapshot(_ref(1));
 
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
       final loaded = await persistence.load('toapis');
       expect(loaded?.config.secretRef, first.config.secretRef);
       expect(
-        loaded?.catalog.models.map((model) => model.ref.modelId),
+        loaded?.catalog?.models.map((model) => model.ref.modelId),
         unorderedEquals(['gpt-5-mini', 'gpt-5']),
       );
 
@@ -43,6 +44,7 @@ void main() {
 
       final current = await persistence.load('toapis');
       await persistence.replace(current, replacement);
+      await persistence.markReplaceRuntimePublished(current, replacement);
       await persistence.finalizeReplace(current, replacement);
       expect(
         (await persistence.load('toapis'))?.config.secretRef,
@@ -63,6 +65,7 @@ void main() {
       final persistence = AtomicProviderSettingsPersistence(store);
       final first = _snapshot(_ref(22));
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
       await store.setGlobalDefaultModel(
         ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
@@ -81,6 +84,7 @@ void main() {
       );
 
       await persistence.replace(previous, refreshed);
+      await persistence.markReplaceRuntimePublished(previous, refreshed);
       await persistence.finalizeReplace(previous, refreshed);
 
       expect(await store.loadGlobalDefaultModel(), isNull);
@@ -90,8 +94,8 @@ void main() {
       );
       final loaded = (await persistence.load('toapis'))!;
       expect(loaded.config.secretRef, previous.config.secretRef);
-      expect(loaded.catalog.discoveredAt, DateTime.utc(2026, 7, 29, 13));
-      expect(loaded.catalog.models.map((model) => model.ref.modelId), [
+      expect(loaded.catalog!.discoveredAt, DateTime.utc(2026, 7, 29, 13));
+      expect(loaded.catalog!.models.map((model) => model.ref.modelId), [
         'gpt-5',
       ]);
     },
@@ -109,6 +113,7 @@ void main() {
       final persistence = AtomicProviderSettingsPersistence(store);
       final first = _snapshot(_ref(3));
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
 
       final loaded = (await persistence.load('toapis'))!;
@@ -118,42 +123,116 @@ void main() {
 
       final reloaded = (await persistence.load('toapis'))!;
       await persistence.remove(reloaded);
+      await persistence.markRemovalRuntimePublished(reloaded);
       await persistence.finalizeRemoval(reloaded);
       expect(await persistence.load('toapis'), isNull);
     },
   );
 
-  test('restart resumes staged rotation without reading either Key', () async {
-    final directory = await Directory.systemTemp.createTemp('halo-settings-');
-    addTearDown(() => directory.delete(recursive: true));
-    final path = '${directory.path}/providers.sqlite';
-    var store = SqliteProviderConfigurationStore.open(path);
-    var persistence = AtomicProviderSettingsPersistence(store);
-    final first = _snapshot(_ref(4));
-    await persistence.replace(null, first);
-    await persistence.finalizeReplace(null, first);
-    final loaded = (await persistence.load('toapis'))!;
-    final replacement = _snapshot(_ref(5));
-    await persistence.replace(loaded, replacement);
-    await store.close();
+  test(
+    'reopened legacy config without catalog loads and can be removed',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-settings-');
+      addTearDown(() => directory.delete(recursive: true));
+      final path = '${directory.path}/providers.sqlite';
+      var store = SqliteProviderConfigurationStore.open(path);
+      await store.upsert(
+        ProviderConfig.deepSeek(enabled: false, secretRef: _ref(24)),
+      );
+      await store.close();
 
-    store = SqliteProviderConfigurationStore.open(path);
-    addTearDown(store.close);
-    persistence = AtomicProviderSettingsPersistence(store);
-    final credentials = _RecoveryCredentials({
-      first.config.secretRef!,
-      replacement.config.secretRef!,
-    });
-    await persistence.recoverPending(credentials);
+      store = SqliteProviderConfigurationStore.open(path);
+      addTearDown(store.close);
+      final persistence = AtomicProviderSettingsPersistence(store);
+      final legacy = (await persistence.load('deepseek'))!;
 
-    expect(credentials.getCalls, 0);
-    expect(credentials.deleted, [first.config.secretRef]);
-    expect(await store.listPendingProviderOperations(), isEmpty);
-    expect(
-      (await persistence.load('toapis'))?.config.secretRef,
-      replacement.config.secretRef,
-    );
-  });
+      expect(legacy.catalog, isNull);
+      expect(await store.loadProviderModelCatalog('deepseek'), isNull);
+      await persistence.remove(legacy);
+      await persistence.markRemovalRuntimePublished(legacy);
+      await persistence.finalizeRemoval(legacy);
+
+      expect(await persistence.load('deepseek'), isNull);
+      expect(await store.loadAllProviderModelCatalogs(), isEmpty);
+    },
+  );
+
+  test(
+    'legacy empty catalog loads for removal but cannot be republished',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-settings-');
+      addTearDown(() => directory.delete(recursive: true));
+      final store = SqliteProviderConfigurationStore.open(
+        '${directory.path}/providers.sqlite',
+      );
+      addTearDown(store.close);
+      final emptyCatalog = _catalog(modelIds: const []);
+      final created = await store.replaceProviderConfiguration(
+        expectedRevision: null,
+        replacement: ProviderConfigurationReplacement(
+          config: ProviderConfig.toApis(enabled: false, secretRef: _ref(25)),
+          modelCatalog: emptyCatalog,
+        ),
+      );
+      await store.markProviderMutationRuntimePublished(created);
+      await store.finalizeProviderMutation(created);
+      final persistence = AtomicProviderSettingsPersistence(store);
+      final legacy = (await persistence.load('toapis'))!;
+
+      expect(legacy.catalog!.models, isEmpty);
+      await expectLater(
+        persistence.replace(
+          legacy,
+          ProviderSettingsSnapshot(
+            config: legacy.config,
+            catalog: emptyCatalog,
+          ),
+        ),
+        throwsStateError,
+      );
+      await persistence.remove(legacy);
+      await persistence.markRemovalRuntimePublished(legacy);
+      await persistence.finalizeRemoval(legacy);
+
+      expect(await persistence.load('toapis'), isNull);
+    },
+  );
+
+  test(
+    'restart rolls back staged rotation without reading either Key',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-settings-');
+      addTearDown(() => directory.delete(recursive: true));
+      final path = '${directory.path}/providers.sqlite';
+      var store = SqliteProviderConfigurationStore.open(path);
+      var persistence = AtomicProviderSettingsPersistence(store);
+      final first = _snapshot(_ref(4));
+      await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
+      await persistence.finalizeReplace(null, first);
+      final loaded = (await persistence.load('toapis'))!;
+      final replacement = _snapshot(_ref(5));
+      await persistence.replace(loaded, replacement);
+      await store.close();
+
+      store = SqliteProviderConfigurationStore.open(path);
+      addTearDown(store.close);
+      persistence = AtomicProviderSettingsPersistence(store);
+      final credentials = _RecoveryCredentials({
+        first.config.secretRef!,
+        replacement.config.secretRef!,
+      });
+      await persistence.recoverPending(credentials);
+
+      expect(credentials.getCalls, 0);
+      expect(credentials.deleted, [replacement.config.secretRef]);
+      expect(await store.listPendingProviderOperations(), isEmpty);
+      expect(
+        (await persistence.load('toapis'))?.config.secretRef,
+        first.config.secretRef,
+      );
+    },
+  );
 
   test(
     'delete false leaves staged operation durable for next startup',
@@ -167,10 +246,12 @@ void main() {
       final persistence = AtomicProviderSettingsPersistence(store);
       final first = _snapshot(_ref(6));
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
       final loaded = (await persistence.load('toapis'))!;
       final replacement = _snapshot(_ref(7));
       await persistence.replace(loaded, replacement);
+      await persistence.markReplaceRuntimePublished(loaded, replacement);
       final credentials = _RecoveryCredentials({
         first.config.secretRef!,
         replacement.config.secretRef!,
@@ -195,6 +276,7 @@ void main() {
       var persistence = AtomicProviderSettingsPersistence(store);
       final first = _snapshot(_ref(8));
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
       final loaded = (await persistence.load('toapis'))!;
       await persistence.replace(loaded, _snapshot(_ref(9)));
@@ -216,7 +298,7 @@ void main() {
   );
 
   test(
-    'restart resumes staged removal and deletes only referenced old ref',
+    'restart restores staged removal without deleting its old ref',
     () async {
       final directory = await Directory.systemTemp.createTemp('halo-settings-');
       addTearDown(() => directory.delete(recursive: true));
@@ -225,9 +307,40 @@ void main() {
       var persistence = AtomicProviderSettingsPersistence(store);
       final first = _snapshot(_ref(10));
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
       final loaded = (await persistence.load('toapis'))!;
       await persistence.remove(loaded);
+      await store.close();
+
+      store = SqliteProviderConfigurationStore.open(path);
+      addTearDown(store.close);
+      persistence = AtomicProviderSettingsPersistence(store);
+      final credentials = _RecoveryCredentials({first.config.secretRef!});
+      await persistence.recoverPending(credentials);
+
+      expect(credentials.getCalls, 0);
+      expect(credentials.deleted, isEmpty);
+      expect(await persistence.load('toapis'), isNotNull);
+      expect(await store.listPendingProviderOperations(), isEmpty);
+    },
+  );
+
+  test(
+    'restart finalizes published removal and deletes only its old ref',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('halo-settings-');
+      addTearDown(() => directory.delete(recursive: true));
+      final path = '${directory.path}/providers.sqlite';
+      var store = SqliteProviderConfigurationStore.open(path);
+      var persistence = AtomicProviderSettingsPersistence(store);
+      final first = _snapshot(_ref(23));
+      await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
+      await persistence.finalizeReplace(null, first);
+      final loaded = (await persistence.load('toapis'))!;
+      await persistence.remove(loaded);
+      await persistence.markRemovalRuntimePublished(loaded);
       await store.close();
 
       store = SqliteProviderConfigurationStore.open(path);
@@ -302,6 +415,7 @@ void main() {
       var persistence = AtomicProviderSettingsPersistence(store);
       final first = _snapshot(_ref(15));
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
       final loaded = (await persistence.load('toapis'))!;
       await persistence.replace(loaded, _snapshot(_ref(16)));
@@ -330,9 +444,11 @@ void main() {
       final first = _snapshot(_ref(17));
       final replacement = _snapshot(_ref(18));
       await persistence.replace(null, first);
+      await persistence.markReplaceRuntimePublished(null, first);
       await persistence.finalizeReplace(null, first);
       final loaded = (await persistence.load('toapis'))!;
       await persistence.replace(loaded, replacement);
+      await persistence.markReplaceRuntimePublished(loaded, replacement);
       await store.close();
 
       store = SqliteProviderConfigurationStore.open(path);

@@ -41,9 +41,6 @@ final class AtomicProviderSettingsPersistence
     }
     final catalog = await (store as ProviderModelCatalogStore)
         .loadProviderModelCatalog(providerId);
-    if (catalog == null || catalog.models.isEmpty) {
-      throw StateError('Provider model catalog is missing');
-    }
     final snapshot = ProviderSettingsSnapshot(
       config: versioned.config,
       catalog: catalog,
@@ -62,9 +59,15 @@ final class AtomicProviderSettingsPersistence
             previous.config.providerId != next.config.providerId)) {
       throw StateError('Provider settings mutation conflict');
     }
+    final nextCatalog = next.catalog;
+    if (nextCatalog == null ||
+        nextCatalog.providerId != next.config.providerId ||
+        nextCatalog.models.isEmpty) {
+      throw StateError('Provider model catalog is incomplete');
+    }
     final replacement = ProviderConfigurationReplacement(
       config: next.config,
-      modelCatalog: next.catalog,
+      modelCatalog: nextCatalog,
     );
     late final ProviderConfigurationMutationLease lease;
     if (previous == null) {
@@ -111,6 +114,15 @@ final class AtomicProviderSettingsPersistence
   }
 
   @override
+  Future<void> markReplaceRuntimePublished(
+    ProviderSettingsSnapshot? previous,
+    ProviderSettingsSnapshot next,
+  ) async {
+    final lease = _requirePending(previous, next);
+    await _store.markProviderMutationRuntimePublished(lease);
+  }
+
+  @override
   Future<void> finalizeReplace(
     ProviderSettingsSnapshot? previous,
     ProviderSettingsSnapshot next,
@@ -145,6 +157,15 @@ final class AtomicProviderSettingsPersistence
     if (lease == null) throw StateError('Provider removal lease is missing');
     await _store.restoreRemovedProvider(lease);
     _removals.remove(snapshot);
+  }
+
+  @override
+  Future<void> markRemovalRuntimePublished(
+    ProviderSettingsSnapshot snapshot,
+  ) async {
+    final lease = _removals[snapshot];
+    if (lease == null) throw StateError('Provider removal lease is missing');
+    await _store.markProviderRemovalRuntimePublished(lease);
   }
 
   @override
@@ -192,28 +213,29 @@ final class AtomicProviderSettingsPersistence
         expectedKind: descriptor.kind,
       );
       if (descriptor.kind == PendingProviderOperationKind.remove) {
-        await _deleteExistingRefs(
-          credentials,
-          descriptor.previousCredentialRefs.values,
-          existingAccounts,
-        );
         final lease = recovery.removalLease;
         if (lease == null) {
           throw StateError('Pending provider removal recovery is invalid');
         }
-        await _store.finalizeProviderRemoval(lease);
+        if (descriptor.state == PendingProviderOperationState.staged) {
+          await _store.restoreRemovedProvider(lease);
+        } else {
+          await _deleteExistingRefs(
+            credentials,
+            descriptor.previousCredentialRefs.values,
+            existingAccounts,
+          );
+          await _store.finalizeProviderRemoval(lease);
+        }
         continue;
       }
 
       final newRefs = descriptor.nextCredentialRefs.values.toSet();
-      final allNewRefsExist = newRefs.every(
-        (ref) => existingAccounts.contains(_account(ref)),
-      );
       final lease = recovery.mutationLease;
       if (lease == null) {
         throw StateError('Pending provider mutation recovery is invalid');
       }
-      if (!allNewRefsExist) {
+      if (descriptor.state == PendingProviderOperationState.staged) {
         final previousRefs = descriptor.previousCredentialRefs.values;
         final allPreviousRefsExist = previousRefs.every(
           (ref) => existingAccounts.contains(_account(ref)),
@@ -225,6 +247,12 @@ final class AtomicProviderSettingsPersistence
         }
         await _store.rollbackProviderMutation(lease);
         continue;
+      }
+      final allNewRefsExist = newRefs.every(
+        (ref) => existingAccounts.contains(_account(ref)),
+      );
+      if (!allNewRefsExist) {
+        throw StateError('Published provider mutation credential is missing');
       }
       await _deleteExistingRefs(
         credentials,
