@@ -35,9 +35,11 @@ class ExpertProfilePage extends StatelessWidget {
     final name = installed?.name ?? market?.name ?? '合同审阅助手';
     final model =
         installed?.model ?? market?.model ?? 'Anthropic / claude-sonnet-4';
-    final profileModel = normalizedExpertId == 'general'
-        ? 'ToAPIs / doubao-s2s · 可用'
-        : '$model · 可用';
+    // An installed expert's real binding is rendered by the 模型 row below,
+    // which resolves it from the routing controller. Repeating a fixture model
+    // string here would contradict it — 通用助理 claimed
+    // `ToAPIs / doubao-s2s · 可用` while the row correctly read 尚未配置.
+    final profileModel = installed?.status ?? '可用';
     final description =
         market?.description ?? '你的个人工作协调者。理解需求，安排最合适的 Agent，并把过程整理成最终结果。';
     final avatarUrl =
