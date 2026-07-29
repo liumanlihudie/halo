@@ -13,6 +13,10 @@ import 'package:halo_mobile/features/group_chat/group_info_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_details_page.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
 import 'package:halo_mobile/features/settings/settings_page.dart';
+import 'package:halo_mobile/features/settings/local_data_page.dart';
+import 'package:halo_mobile/features/settings/model_providers_page.dart';
+import 'package:halo_mobile/features/settings/provider_detail_page.dart';
+import 'package:halo_mobile/features/settings/self_hosted_gateway_page.dart';
 
 GoRouter createAppRouter({String initialLocation = '/conversations'}) {
   return GoRouter(
@@ -76,6 +80,23 @@ GoRouter createAppRouter({String initialLocation = '/conversations'}) {
         path: '/expert/:expertId/data',
         builder: (context, state) =>
             ExpertDataPage(expertId: state.pathParameters['expertId']!),
+      ),
+      GoRoute(
+        path: '/settings/providers',
+        builder: (context, state) => const ModelProvidersPage(),
+      ),
+      GoRoute(
+        path: '/settings/providers/:providerId',
+        builder: (context, state) =>
+            ProviderDetailPage(providerId: state.pathParameters['providerId']!),
+      ),
+      GoRoute(
+        path: '/settings/gateway',
+        builder: (context, state) => const SelfHostedGatewayPage(),
+      ),
+      GoRoute(
+        path: '/settings/local-data',
+        builder: (context, state) => const LocalDataPage(),
       ),
     ],
   );

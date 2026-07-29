@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
@@ -26,7 +27,16 @@ class SettingsPage extends StatelessWidget {
                     label: item.title,
                     detail: item.detail.isEmpty ? null : item.detail,
                     prototypeIconClass: item.iconClass,
-                    onTap: () {},
+                    onTap: () {
+                      switch (item.title) {
+                        case '模型服务':
+                          context.push('/settings/providers');
+                        case '自托管 Gateway':
+                          context.push('/settings/gateway');
+                        case '本地数据与备份':
+                          context.push('/settings/local-data');
+                      }
+                    },
                     trailing: item.toggle == null
                         ? Icon(
                             HaloIcon.requirePrototypeClass('ph ph-caret-right'),
