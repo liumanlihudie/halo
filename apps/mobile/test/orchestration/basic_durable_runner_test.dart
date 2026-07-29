@@ -264,7 +264,7 @@ void main() {
         hostAgentId: 'product-manager',
         input: '分析风险',
         replyMode: ConversationReplyMode.auto,
-        memberAgentIds: ['product-manager', 'technical-architect'],
+        memberAgentIds: ['technical-architect', 'product-manager'],
       ),
     );
     final events = await _collectCompletedRun(runner, handle.runId);
@@ -278,6 +278,35 @@ void main() {
       ['product-manager'],
     );
     expect(events.last.type, OrchestrationEventType.runCompleted);
+  });
+
+  test('invalid selector output falls back to the frozen group host', () async {
+    final runner = BasicDurableRunner(
+      store: InMemoryRunEventStore(),
+      selector: const _FixedSelector(['outsider']),
+      runtime: const _EchoRuntime(),
+    );
+
+    final handle = await runner.startRun(
+      const StartConversationRunCommand(
+        clientCommandId: 'command-invalid-selector-fallback',
+        conversationId: 'group-product',
+        hostAgentId: 'product-manager',
+        input: '分析风险',
+        replyMode: ConversationReplyMode.auto,
+        memberAgentIds: ['technical-architect', 'product-manager'],
+      ),
+    );
+    final events = await _collectCompletedRun(runner, handle.runId);
+
+    expect(
+      events
+          .singleWhere(
+            (event) => event.type == OrchestrationEventType.agentsSelected,
+          )
+          .selectedAgentIds,
+      ['product-manager'],
+    );
   });
 
   test(

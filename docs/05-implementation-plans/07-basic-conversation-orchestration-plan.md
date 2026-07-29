@@ -18,12 +18,16 @@ Provider 调用通过 `AgentRuntime` 端口隔离，第一轮使用确定性本�
 ## Global Constraints
 
 - 普通消息只能选择当前群成员中的 1–2 个 Agent。
+- 每个 Run 必须显式冻结并校验 `hostAgentId`；选择器失败只回退群主持
+  Agent，不扩大执行集合。
 - `@某个 Agent` 只执行合法、去重后的被点名成员，最多 4 个。
 - `@所有人` 只执行当前群成员，最多 8 个，并按冻结顺序输出。
 - 页面不能直接生成 Agent 回复，只能根据 `OrchestrationEvent` 更新。
 - 所有 Event 在同一 Run 内使用从 1 开始的单调 `seq`。
 - `clientCommandId` 幂等；重复提交返回同一个 Run。
 - Message Bus 接收方必须属于本轮 `executableAgentIds`。
+- Message Bus 以规范化的发送方、排序接收方、类型和 payload 引用生成权威
+  内容身份；调用方 `dedupeKey` 不能绕过去重或参与者校验。
 - Provider Key、完整 Prompt、私有记忆和文件正文不得进入 Event。
 
 ---

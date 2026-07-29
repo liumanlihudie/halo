@@ -285,7 +285,7 @@ class BasicDurableRunner implements OrchestrationKernel {
         .take(2)
         .toList();
     if (selected.isEmpty) {
-      selected.add(command.memberAgentIds.first);
+      selected.add(command.hostAgentId);
     }
     return selected;
   }

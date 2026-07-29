@@ -96,40 +96,43 @@ void main() {
     );
   });
 
-  test('content identity deduplicates different caller keys and recipient order', () {
-    final bus = AgentMessageBus();
-    final first = bus.publish(
-      runId: 'run-identity',
-      conversationId: 'group-product',
-      fromAgentId: 'product-manager',
-      toAgentIds: const ['growth-advisor', 'technical-architect'],
-      type: AgentCollaborationMessageType.question,
-      payloadRefs: const ['message-1'],
-      executableAgentIds: const [
-        'product-manager',
-        'technical-architect',
-        'growth-advisor',
-      ],
-      dedupeKey: 'caller-key-1',
-    );
-    final duplicate = bus.publish(
-      runId: 'run-identity',
-      conversationId: 'group-product',
-      fromAgentId: 'product-manager',
-      toAgentIds: const ['technical-architect', 'growth-advisor'],
-      type: AgentCollaborationMessageType.question,
-      payloadRefs: const ['message-1'],
-      executableAgentIds: const [
-        'product-manager',
-        'technical-architect',
-        'growth-advisor',
-      ],
-      dedupeKey: 'caller-key-2',
-    );
+  test(
+    'content identity deduplicates different caller keys and recipient order',
+    () {
+      final bus = AgentMessageBus();
+      final first = bus.publish(
+        runId: 'run-identity',
+        conversationId: 'group-product',
+        fromAgentId: 'product-manager',
+        toAgentIds: const ['growth-advisor', 'technical-architect'],
+        type: AgentCollaborationMessageType.question,
+        payloadRefs: const ['message-1'],
+        executableAgentIds: const [
+          'product-manager',
+          'technical-architect',
+          'growth-advisor',
+        ],
+        dedupeKey: 'caller-key-1',
+      );
+      final duplicate = bus.publish(
+        runId: 'run-identity',
+        conversationId: 'group-product',
+        fromAgentId: 'product-manager',
+        toAgentIds: const ['technical-architect', 'growth-advisor'],
+        type: AgentCollaborationMessageType.question,
+        payloadRefs: const ['message-1'],
+        executableAgentIds: const [
+          'product-manager',
+          'technical-architect',
+          'growth-advisor',
+        ],
+        dedupeKey: 'caller-key-2',
+      );
 
-    expect(duplicate.messageId, first.messageId);
-    expect(duplicate.toAgentIds, ['growth-advisor', 'technical-architect']);
-  });
+      expect(duplicate.messageId, first.messageId);
+      expect(duplicate.toAgentIds, ['growth-advisor', 'technical-architect']);
+    },
+  );
 
   test('message bus enforces the twenty-message run budget', () {
     final bus = AgentMessageBus();

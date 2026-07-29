@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
+import 'package:halo_mobile/features/group_chat/group_chat_history_repository.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/orchestration/orchestration_kernel.dart';
@@ -28,6 +29,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
   GroupChatController? _controller;
+  late final List<GroupChatHistoryItem> _history;
   _ComposerChoice _choice = _ComposerChoice.auto;
   String? _mentionedAgentId;
 
@@ -36,6 +38,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
     super.initState();
     final OrchestrationKernel kernel =
         widget.orchestrationKernel ?? ref.read(orchestrationKernelProvider);
+    _history = const PrototypeGroupChatHistoryRepository().load(widget.groupId);
     _controller = GroupChatController(
       kernel: kernel,
       conversationId: widget.groupId,
@@ -182,7 +185,7 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
         padding: const EdgeInsets.fromLTRB(12, 11, 12, 16),
         children: [
           const _CenterNotice('群目标：判断个人 AI 通讯产品的 iOS MVP 是否值得做'),
-          const _HistoricalGroupTimeline(),
+          _HistoricalGroupTimeline(items: _history),
           if (controller != null)
             for (final turn in controller.pastTurns) ...[
               _MineGroupBubble(text: turn.input),
@@ -273,33 +276,33 @@ class _CenterNotice extends StatelessWidget {
 }
 
 class _HistoricalGroupTimeline extends StatelessWidget {
-  const _HistoricalGroupTimeline();
+  const _HistoricalGroupTimeline({required this.items});
+
+  final List<GroupChatHistoryItem> items;
 
   @override
-  Widget build(BuildContext context) {
-    return const Column(
-      children: [
-        _CenterNotice('今天 10:12'),
-        _MineGroupBubble(text: '先从用户价值、实现难度和商业化三个角度判断一下。'),
-        _CenterNotice('自动选择了 产品经理、技术架构师'),
-        _ExpertGroupBubble(
-          message: GroupChatAgentMessage(
-            agentId: 'product-manager',
-            text: '用户价值是成立的，但首版必须把“联系人就是能力”做透。',
-            status: GroupChatMessageStatus.completed,
+  Widget build(BuildContext context) => Column(
+    children: [
+      for (final item in items)
+        switch (item.type) {
+          GroupChatHistoryItemType.notice => _CenterNotice(item.text),
+          GroupChatHistoryItemType.userMessage => _MineGroupBubble(
+            text: item.text,
           ),
-        ),
-        _ExpertGroupBubble(
-          message: GroupChatAgentMessage(
-            agentId: 'technical-architect',
-            text: '工程上可行。最大的风险不是 UI，而是消息可靠性、模型编排和长期记忆边界。',
-            status: GroupChatMessageStatus.completed,
+          GroupChatHistoryItemType.agentMessage => _ExpertGroupBubble(
+            message: GroupChatAgentMessage(
+              agentId: item.agentId!,
+              text: item.text,
+              status: GroupChatMessageStatus.completed,
+            ),
           ),
-        ),
-        _SummaryCard(title: '群聊阶段总结', summary: '首版聚焦文字对话、可控群聊、Agent 市场和结果沉淀。'),
-      ],
-    );
-  }
+          GroupChatHistoryItemType.summary => _SummaryCard(
+            title: item.title ?? '群聊总结',
+            summary: item.text,
+          ),
+        },
+    ],
+  );
 }
 
 class _MineGroupBubble extends StatelessWidget {

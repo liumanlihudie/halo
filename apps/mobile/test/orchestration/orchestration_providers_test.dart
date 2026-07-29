@@ -9,21 +9,21 @@ void main() {
     addTearDown(container.dispose);
     final kernel = container.read(orchestrationKernelProvider);
 
-    final handle = await kernel.startRun(
-      const StartConversationRunCommand(
-        clientCommandId: 'provider-command',
-        conversationId: 'group-product',
-        hostAgentId: 'product-manager',
-        input: '检查 iOS 技术风险',
-        replyMode: ConversationReplyMode.auto,
-        memberAgentIds: [
-          'product-manager',
-          'interaction-designer',
-          'technical-architect',
-          'growth-advisor',
-        ],
-      ),
+    const command = StartConversationRunCommand(
+      clientCommandId: 'provider-command',
+      conversationId: 'group-product',
+      hostAgentId: 'product-manager',
+      input: '检查 iOS 技术风险',
+      replyMode: ConversationReplyMode.auto,
+      memberAgentIds: [
+        'product-manager',
+        'interaction-designer',
+        'technical-architect',
+        'growth-advisor',
+      ],
     );
+    final handle = await kernel.startRun(command);
+    final duplicateHandle = await kernel.startRun(command);
     final events = <OrchestrationEvent>[];
     await for (final event
         in kernel.watchRun(handle.runId).timeout(const Duration(seconds: 2))) {
@@ -47,5 +47,16 @@ void main() {
       ),
       isNotEmpty,
     );
+    expect(duplicateHandle.runId, handle.runId);
+    expect(
+      events.where((event) => event.type == OrchestrationEventType.runCreated),
+      hasLength(1),
+    );
+
+    final replay = await kernel
+        .watchRun(handle.runId, afterSeq: 3)
+        .take(events.length - 3)
+        .toList();
+    expect(replay.map((event) => event.seq), events.skip(3).map((e) => e.seq));
   });
 }
