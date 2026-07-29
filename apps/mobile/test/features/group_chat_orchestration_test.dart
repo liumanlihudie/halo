@@ -321,7 +321,7 @@ OrchestrationEvent _event(
     type: type,
     stage: stage,
     agentId: agentId,
-    text: text,
+    text: text == null ? null : PublicEventText.trustedApplication(text),
     selectedAgentIds: selectedAgentIds,
     errorCode: errorCode,
   );

@@ -19,14 +19,14 @@ void main() {
   });
 
   test('orchestration event survives a JSON round trip', () {
-    const event = OrchestrationEvent(
+    final event = OrchestrationEvent(
       eventId: 'event-3',
       runId: 'run-1',
       seq: 3,
       type: OrchestrationEventType.agentMessageCompleted,
       stage: ConversationStage.responding,
       agentId: 'technical-architect',
-      text: '工程上可行。',
+      text: PublicEventText.trustedApplication('工程上可行。'),
       selectedAgentIds: ['technical-architect'],
     );
 

@@ -78,7 +78,7 @@ void main() {
     await _collectCompletedRun(runner, first.runId);
 
     expect(second.runId, first.runId);
-    final replay = await runner.watchRun(first.runId).take(8).toList();
+    final replay = await runner.watchRun(first.runId).take(7).toList();
     expect(
       replay.where((event) => event.type == OrchestrationEventType.runCreated),
       hasLength(1),
@@ -163,7 +163,6 @@ void main() {
           ConversationStage.collectingOpinions,
           ConversationStage.crossDiscussion,
           ConversationStage.summarizing,
-          ConversationStage.completed,
         ]),
       );
       expect(
@@ -618,7 +617,10 @@ class _InspectingSelector implements AgentSelector {
   }
 }
 
-class _EchoRuntime implements AgentRuntime {
+class _EchoRuntime implements AgentRuntime, IdempotentAgentRuntimeCapability {
+  @override
+  bool get supportsIdempotency => true;
+
   const _EchoRuntime();
 
   @override
