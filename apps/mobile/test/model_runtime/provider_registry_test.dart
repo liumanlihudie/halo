@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/model_runtime/model_runtime.dart';
 
@@ -223,6 +225,85 @@ void main() {
       ),
     );
   });
+
+  test(
+    'snapshot close force-detaches a provider that never completes',
+    () async {
+      final provider = _NeverCompletingProvider();
+      final registry = ProviderRegistry.snapshot([
+        provider,
+      ], shutdownTimeout: const Duration(milliseconds: 20));
+      final chat = registry.chat(
+        _request(ModelRef(providerId: 'toapis', modelId: 'chat')),
+      );
+      await provider.dispatched.future;
+
+      await registry.close().timeout(const Duration(seconds: 1));
+
+      expect(registry.shutdownForced, isTrue);
+      expect(chat, doesNotComplete);
+      expect(() => registry.configs, throwsStateError);
+    },
+  );
+
+  test(
+    'snapshot fences a delayed provider success after forced close',
+    () async {
+      final provider = _DelayedSuccessProvider();
+      final registry = ProviderRegistry.snapshot([
+        provider,
+      ], shutdownTimeout: const Duration(milliseconds: 20));
+      final chat = registry.chat(
+        _request(ModelRef(providerId: 'toapis', modelId: 'chat')),
+      );
+      await provider.dispatched.future;
+      await registry.close().timeout(const Duration(seconds: 1));
+
+      provider.complete();
+
+      await expectLater(
+        chat,
+        throwsA(
+          isA<ModelRuntimeException>().having(
+            (error) => error.code,
+            'code',
+            ModelRuntimeErrorCode.streamInterrupted,
+          ),
+        ),
+      );
+      expect(registry.shutdownForced, isTrue);
+    },
+  );
+
+  test('snapshot fences delayed success after caller cancellation', () async {
+    final provider = _DelayedSuccessProvider();
+    final registry = ProviderRegistry.snapshot([provider]);
+    final caller = CancellationToken();
+    final chat = registry.chat(
+      ChatRequest(
+        requestId: 'request-1',
+        model: ModelRef(providerId: 'toapis', modelId: 'chat'),
+        messages: [ChatMessage(role: ChatRole.user, content: 'hello')],
+        cancellationToken: caller,
+      ),
+    );
+    await provider.dispatched.future;
+
+    caller.cancel();
+    provider.complete();
+
+    await expectLater(
+      chat,
+      throwsA(
+        isA<ModelRuntimeException>().having(
+          (error) => error.code,
+          'code',
+          ModelRuntimeErrorCode.streamInterrupted,
+        ),
+      ),
+    );
+    await registry.close();
+  });
 }
 
 ModelDescriptor _model(
@@ -263,6 +344,51 @@ class _EchoProvider implements ModelProvider {
           '$prefix:${request.model.modelId}:${request.messages.single.content}',
       finishReason: ChatFinishReason.completed,
       usage: const ChatUsage(inputTokens: 4, outputTokens: 2),
+    );
+  }
+}
+
+final class _NeverCompletingProvider implements ModelProvider {
+  final Completer<void> dispatched = Completer<void>();
+
+  @override
+  final ProviderConfig config = ProviderConfig.toApis();
+
+  @override
+  Iterable<ModelDescriptor> get modelCatalog => [_model('toapis', 'chat')];
+
+  @override
+  Future<ChatResponse> chat(ChatRequest request) {
+    if (!dispatched.isCompleted) dispatched.complete();
+    return Completer<ChatResponse>().future;
+  }
+}
+
+final class _DelayedSuccessProvider implements ModelProvider {
+  final Completer<void> dispatched = Completer<void>();
+  final Completer<ChatResponse> _response = Completer<ChatResponse>();
+
+  @override
+  final ProviderConfig config = ProviderConfig.toApis();
+
+  @override
+  Iterable<ModelDescriptor> get modelCatalog => [_model('toapis', 'chat')];
+
+  @override
+  Future<ChatResponse> chat(ChatRequest request) {
+    if (!dispatched.isCompleted) dispatched.complete();
+    return _response.future;
+  }
+
+  void complete() {
+    _response.complete(
+      ChatResponse(
+        requestId: 'request-1',
+        model: ModelRef(providerId: 'toapis', modelId: 'chat'),
+        outputText: 'late-success',
+        finishReason: ChatFinishReason.completed,
+        usage: const ChatUsage(inputTokens: 1, outputTokens: 1),
+      ),
     );
   }
 }

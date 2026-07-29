@@ -68,12 +68,14 @@ class OpenAICompatibleModelProvider implements ModelProvider {
       );
     }
     _validateCapabilities(request, model.capabilities);
+    requireActiveChatRequest(request);
 
     final credential = await _resolveCredential(config.secretRef);
     final headerCredentials = <String, EphemeralCredential>{};
     for (final entry in config.headerSecretRefs.entries) {
       headerCredentials[entry.key] = await _requiredCredential(entry.value);
     }
+    requireActiveChatRequest(request);
 
     final body = <String, Object?>{
       'model': request.model.modelId,
@@ -92,6 +94,7 @@ class OpenAICompatibleModelProvider implements ModelProvider {
           body: body,
           credential: credential,
           headerCredentials: headerCredentials,
+          cancellationToken: request.cancellationToken,
         ),
       );
     } catch (_) {

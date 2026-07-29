@@ -37,4 +37,26 @@ void main() {
     expect(ref.toString(), 'vault://***/***');
     expect(ref.toString(), isNot(contains('private-account')));
   });
+
+  test('credential values are never silently trimmed', () {
+    final expiry = DateTime.utc(2030);
+    expect(
+      () => EphemeralCredential(value: ' secret', expiresAt: expiry),
+      throwsArgumentError,
+    );
+    expect(
+      EphemeralCredential(value: 'secret', expiresAt: expiry).value,
+      'secret',
+    );
+  });
+
+  test('secret locators reject percent-encoded identity aliases', () {
+    for (final locator in [
+      'keychain://openai/%61ccount',
+      'vault://team/%73ecret',
+      'memory://test/%6bey',
+    ]) {
+      expect(() => SecretRef.parse(locator), throwsArgumentError);
+    }
+  });
 }

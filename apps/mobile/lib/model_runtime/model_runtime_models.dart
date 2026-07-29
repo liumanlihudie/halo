@@ -1,14 +1,17 @@
 import 'package:flutter/foundation.dart';
+import 'package:halo_mobile/model_runtime/cancellation_token.dart';
+import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
+import 'package:halo_mobile/model_runtime/runtime_string_validation.dart';
 
 @immutable
 class ModelRef {
   ModelRef({required String providerId, required String modelId})
-    : providerId = providerId.trim(),
-      modelId = modelId.trim() {
-    if (this.providerId.isEmpty) {
+    : providerId = providerId,
+      modelId = modelId {
+    if (!isCanonicalRuntimeId(providerId)) {
       throw ArgumentError.value(providerId, 'providerId');
     }
-    if (this.modelId.isEmpty) {
+    if (!isSafeRuntimeIdentifier(modelId, maxUtf8Bytes: 256)) {
       throw ArgumentError.value(modelId, 'modelId');
     }
   }
@@ -54,10 +57,11 @@ class ChatRequest {
     this.temperature,
     this.maxOutputTokens,
     Map<String, Object?> metadata = const {},
-  }) : requestId = requestId.trim(),
+    this.cancellationToken,
+  }) : requestId = requestId,
        messages = List.unmodifiable(messages),
        metadata = Map.unmodifiable(metadata) {
-    if (this.requestId.isEmpty) {
+    if (!isSafeRuntimeIdentifier(requestId, maxUtf8Bytes: 256)) {
       throw ArgumentError.value(requestId, 'requestId');
     }
     if (this.messages.isEmpty) {
@@ -81,6 +85,27 @@ class ChatRequest {
   final double? temperature;
   final int? maxOutputTokens;
   final Map<String, Object?> metadata;
+  final CancellationToken? cancellationToken;
+
+  ChatRequest withCancellationToken(CancellationToken token) => ChatRequest(
+    requestId: requestId,
+    model: model,
+    messages: messages,
+    temperature: temperature,
+    maxOutputTokens: maxOutputTokens,
+    metadata: metadata,
+    cancellationToken: token,
+  );
+}
+
+void requireActiveChatRequest(ChatRequest request) {
+  if (request.cancellationToken?.isCancelled ?? false) {
+    throw const ModelRuntimeException(
+      code: ModelRuntimeErrorCode.streamInterrupted,
+      safeMessage: '模型请求已取消',
+      retryable: false,
+    );
+  }
 }
 
 @immutable
@@ -110,8 +135,8 @@ class ModelDescriptor {
     required this.ref,
     required String displayName,
     required this.capabilities,
-  }) : displayName = displayName.trim() {
-    if (this.displayName.isEmpty) {
+  }) : displayName = displayName {
+    if (!isSafeRuntimeDisplayText(displayName)) {
       throw ArgumentError.value(displayName, 'displayName');
     }
     if (capabilities.maxOutputTokens <= 0) {
@@ -149,14 +174,23 @@ class ChatUsage {
 
 @immutable
 class ChatResponse {
-  const ChatResponse({
-    required this.requestId,
+  ChatResponse({
+    required String requestId,
     required this.model,
     required this.outputText,
     required this.finishReason,
     required this.usage,
-    this.providerRequestId,
-  });
+    String? providerRequestId,
+  }) : requestId = requestId,
+       providerRequestId = providerRequestId {
+    if (!isSafeRuntimeIdentifier(requestId, maxUtf8Bytes: 256)) {
+      throw ArgumentError.value(requestId, 'requestId');
+    }
+    if (providerRequestId != null &&
+        !isSafeRuntimeIdentifier(providerRequestId, maxUtf8Bytes: 256)) {
+      throw ArgumentError.value(providerRequestId, 'providerRequestId');
+    }
+  }
 
   final String requestId;
   final ModelRef model;

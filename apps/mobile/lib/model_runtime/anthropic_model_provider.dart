@@ -39,6 +39,7 @@ class AnthropicModelProvider implements ModelProvider {
   @override
   Future<ChatResponse> chat(ChatRequest request) async {
     final descriptor = validateNativeTextRequest(request, config, _catalog);
+    requireActiveChatRequest(request);
     final temperature = request.temperature;
     if (temperature != null && temperature > 1) {
       throw const ModelRuntimeException(
@@ -51,6 +52,7 @@ class AnthropicModelProvider implements ModelProvider {
       config,
       secretResolver,
     );
+    requireActiveChatRequest(request);
     final system = request.messages
         .where((message) => message.role == ChatRole.system)
         .map((message) => message.content)
@@ -76,6 +78,7 @@ class AnthropicModelProvider implements ModelProvider {
           body: body,
           credential: credential,
           apiVersion: apiVersion,
+          cancellationToken: request.cancellationToken,
         ),
       );
     } catch (_) {

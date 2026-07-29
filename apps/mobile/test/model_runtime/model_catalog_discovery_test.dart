@@ -192,12 +192,21 @@ void main() {
       ProviderCatalogTransportResult(
         models: [_raw('toapis', 'model', 'unsafe\r\nheader')],
       ),
+      ProviderCatalogTransportResult(
+        models: [_raw('toapis', ' model', 'Padded model')],
+      ),
+      ProviderCatalogTransportResult(
+        models: [_raw('toapis', 'model', ' Padded display')],
+      ),
       for (final unsafe in [
         'line\u2028separator',
         'paragraph\u2029separator',
         'byte\uFEFForder-mark',
         'c1\u0085control',
         'arabic\u061Cletter-mark',
+        'combining\u034Fgrapheme-joiner',
+        'tag\u{e0001}language',
+        'tag\u{e0020}space',
       ])
         ProviderCatalogTransportResult(
           models: [_raw('toapis', 'model', unsafe)],

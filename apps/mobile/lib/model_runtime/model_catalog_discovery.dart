@@ -7,6 +7,8 @@ import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_models.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_support.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
+import 'package:halo_mobile/model_runtime/runtime_string_validation.dart'
+    as validation;
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 
 class ModelCatalogDiscovery {
@@ -158,8 +160,8 @@ class ModelCatalogDiscovery {
       if (raw.providerId != config.providerId) {
         throw const FormatException();
       }
-      final modelId = raw.modelId.trim();
-      final displayName = raw.displayName.trim();
+      final modelId = raw.modelId;
+      final displayName = raw.displayName;
       if (!_safeModelId(modelId) || !_safeDisplayName(displayName)) {
         throw const FormatException();
       }
@@ -189,18 +191,16 @@ class ModelCatalogDiscovery {
   }
 
   bool _safeModelId(String value) =>
-      value.isNotEmpty &&
-      value.length <= maximumModelIdLength &&
+      validation.isSafeRuntimeIdentifier(
+        value,
+        maxUtf8Bytes: maximumModelIdLength,
+      ) &&
       RegExp(r'^[A-Za-z0-9][A-Za-z0-9._:/-]*$').hasMatch(value);
 
-  bool _safeDisplayName(String value) =>
-      value.isNotEmpty &&
-      value.length <= maximumDisplayNameLength &&
-      !RegExp(
-        r'[\x00-\x1F\x7F-\x9F\u00AD\u061C\u180E'
-        r'\u200B-\u200F\u2028-\u202E\u2060-\u206F'
-        r'\uFEFF\uFFF9-\uFFFB]',
-      ).hasMatch(value);
+  bool _safeDisplayName(String value) => validation.isSafeRuntimeDisplayText(
+    value,
+    maxUtf8Bytes: maximumDisplayNameLength,
+  );
 
   void _validateHintValues(Map<String, Object?> hints) {
     for (final entry in hints.entries) {

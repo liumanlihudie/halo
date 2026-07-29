@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/model_runtime/model_runtime.dart';
 import 'package:halo_mobile/model_runtime/testing/fake_openai_compatible_transport.dart';
@@ -95,7 +97,7 @@ void main() {
       request.toString(),
       'OpenAICompatibleTransportRequest(origin: '
       'https://models.example.com:8443, path: /***/, '
-      'hasCredential: false, headerCredentialNames: [])',
+      'hasCredential: false, headerCredentialCount: 0)',
     );
     expect(request.toString(), isNot(contains('sk-path-secret')));
   });
@@ -127,6 +129,47 @@ void main() {
             (error) => error.code,
             'code',
             ModelRuntimeErrorCode.invalidCredential,
+          ),
+        ),
+      );
+      expect(transport.records, isEmpty);
+    },
+  );
+
+  test(
+    'cancellation after credential lookup fences transport dispatch',
+    () async {
+      final ref = SecretRef.parse('memory://test/delayed');
+      final resolver = _DelayedSecretResolver();
+      final transport = FakeOpenAICompatibleTransport()
+        ..enqueue(_successfulResponse('must-not-dispatch'));
+      final provider = _compatibleProvider(
+        config: ProviderConfig.toApis(secretRef: ref),
+        modelId: 'chat',
+        resolver: resolver,
+        transport: transport,
+      );
+      final cancellationToken = CancellationToken();
+      final chat = provider.chat(
+        ChatRequest(
+          requestId: 'cancel-before-dispatch',
+          model: ModelRef(providerId: 'toapis', modelId: 'chat'),
+          messages: [ChatMessage(role: ChatRole.user, content: 'hello')],
+          cancellationToken: cancellationToken,
+        ),
+      );
+      await resolver.requested.future;
+
+      cancellationToken.cancel();
+      resolver.complete();
+
+      await expectLater(
+        chat,
+        throwsA(
+          isA<ModelRuntimeException>().having(
+            (error) => error.code,
+            'code',
+            ModelRuntimeErrorCode.streamInterrupted,
           ),
         ),
       );
@@ -322,6 +365,27 @@ class _SensitiveFailingTransport implements OpenAICompatibleHttpTransport {
       safeMessage:
           'Authorization: Bearer sk-live-secret; upstream body: private',
       retryable: false,
+    );
+  }
+}
+
+final class _DelayedSecretResolver implements SecretResolver {
+  final Completer<void> requested = Completer<void>();
+  final Completer<EphemeralCredential?> _credential =
+      Completer<EphemeralCredential?>();
+
+  @override
+  Future<EphemeralCredential?> resolve(SecretRef ref) {
+    if (!requested.isCompleted) requested.complete();
+    return _credential.future;
+  }
+
+  void complete() {
+    _credential.complete(
+      EphemeralCredential(
+        value: 'test-only-delayed-token',
+        expiresAt: DateTime.now().add(const Duration(minutes: 1)),
+      ),
     );
   }
 }

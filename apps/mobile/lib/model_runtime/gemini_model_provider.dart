@@ -35,10 +35,12 @@ class GeminiModelProvider implements ModelProvider {
   @override
   Future<ChatResponse> chat(ChatRequest request) async {
     validateNativeTextRequest(request, config, _catalog);
+    requireActiveChatRequest(request);
     final credential = await resolveRequiredNativeCredential(
       config,
       secretResolver,
     );
+    requireActiveChatRequest(request);
     final system = request.messages
         .where((message) => message.role == ChatRole.system)
         .map((message) => message.content)
@@ -76,6 +78,7 @@ class GeminiModelProvider implements ModelProvider {
           endpoint: _generateEndpoint(config.baseUri, request.model.modelId),
           body: body,
           credential: credential,
+          cancellationToken: request.cancellationToken,
         ),
       );
     } catch (_) {

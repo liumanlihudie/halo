@@ -35,10 +35,12 @@ class OpenAINativeModelProvider implements ModelProvider {
   @override
   Future<ChatResponse> chat(ChatRequest request) async {
     validateNativeTextRequest(request, config, _catalog);
+    requireActiveChatRequest(request);
     final credential = await resolveRequiredNativeCredential(
       config,
       secretResolver,
     );
+    requireActiveChatRequest(request);
     final body = <String, Object?>{
       'model': request.model.modelId,
       'messages': request.messages.map((message) => message.toJson()).toList(),
@@ -54,6 +56,7 @@ class OpenAINativeModelProvider implements ModelProvider {
           endpoint: _chatEndpoint(config.baseUri),
           body: body,
           credential: credential,
+          cancellationToken: request.cancellationToken,
         ),
       );
     } catch (_) {

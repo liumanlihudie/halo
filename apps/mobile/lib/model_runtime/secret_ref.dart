@@ -8,6 +8,7 @@ class SecretRef {
     final normalized = value.trim();
     final uri = Uri.tryParse(normalized);
     if (normalized.isEmpty ||
+        normalized != value ||
         normalized.toLowerCase().startsWith('sk-') ||
         uri == null ||
         !const {'keychain', 'vault', 'memory'}.contains(uri.scheme) ||
@@ -16,7 +17,8 @@ class SecretRef {
         uri.hasQuery ||
         uri.hasFragment ||
         uri.userInfo.isNotEmpty ||
-        (uri.scheme == 'memory' && uri.host != 'test')) {
+        (uri.scheme == 'memory' && uri.host != 'test') ||
+        normalized.contains('%')) {
       throw ArgumentError.value(value, 'value', 'Invalid secret reference');
     }
     return SecretRef._(uri);
@@ -40,8 +42,8 @@ class SecretRef {
 @immutable
 class EphemeralCredential {
   EphemeralCredential({required String value, required this.expiresAt})
-    : value = value.trim() {
-    if (this.value.isEmpty) {
+    : value = value {
+    if (value.isEmpty || value != value.trim()) {
       throw ArgumentError.value(value, 'value');
     }
   }
@@ -57,4 +59,36 @@ class EphemeralCredential {
 
 abstract interface class SecretResolver {
   Future<EphemeralCredential?> resolve(SecretRef ref);
+}
+
+abstract final class ProviderSecretRefPolicy {
+  static const service = 'halo.provider';
+  static final RegExp _uuidAccount = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-'
+    r'[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
+  );
+
+  static bool isValid(SecretRef ref) {
+    final uri = ref.locator;
+    if (ref.scheme != 'keychain' ||
+        uri.host != service ||
+        uri.pathSegments.length != 1) {
+      return false;
+    }
+    final account = uri.pathSegments.single;
+    final canonical = 'keychain://$service/$account';
+    return ref.scheme == 'keychain' &&
+        _uuidAccount.hasMatch(account) &&
+        uri.toString() == canonical;
+  }
+
+  static void validate(SecretRef ref) {
+    if (!isValid(ref)) {
+      throw ArgumentError.value(
+        ref,
+        'secretRef',
+        'Provider secrets require the fixed Keychain service and UUID account',
+      );
+    }
+  }
 }

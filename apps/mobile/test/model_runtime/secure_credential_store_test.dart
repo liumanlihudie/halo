@@ -405,8 +405,8 @@ void main() {
     () async {
       final acceptedService = '${List.filled(124, 'a').join()}😀';
       final rejectedService = '${List.filled(125, 'a').join()}😀';
-      final acceptedAccount = '${List.filled(253, 'a').join()}e\u0301';
-      final rejectedAccount = '${List.filled(254, 'a').join()}e\u0301';
+      final acceptedAccount = List.filled(256, 'a').join();
+      final rejectedAccount = List.filled(257, 'a').join();
       final channel = FakeSecureCredentialChannel()
         ..enqueueResult([])
         ..enqueueResult(null);

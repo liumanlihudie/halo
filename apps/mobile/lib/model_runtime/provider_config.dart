@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:halo_mobile/model_runtime/runtime_string_validation.dart'
+    as validation;
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 
 enum ProviderKind {
@@ -12,9 +14,28 @@ enum ProviderKind {
 
 enum ProviderProtocol { openAICompatible, openAI, anthropic, gemini }
 
+bool isCanonicalRuntimeId(String value) =>
+    validation.isCanonicalRuntimeId(value);
+
+bool isSafeRuntimeDisplayText(String value) =>
+    validation.isSafeRuntimeDisplayText(value);
+
 @immutable
 class ProviderConfig {
   static final _headerTokenPattern = RegExp(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$");
+  static final Uri toApisCanonicalBaseUri = Uri.parse('https://toapis.com/v1');
+  static final Uri deepSeekCanonicalBaseUri = Uri.parse(
+    'https://api.deepseek.com/v1',
+  );
+  static final Uri openAICanonicalBaseUri = Uri.parse(
+    'https://api.openai.com/v1',
+  );
+  static final Uri anthropicCanonicalBaseUri = Uri.parse(
+    'https://api.anthropic.com/v1',
+  );
+  static final Uri geminiCanonicalBaseUri = Uri.parse(
+    'https://generativelanguage.googleapis.com/v1beta',
+  );
 
   ProviderConfig._({
     required this.providerId,
@@ -27,8 +48,11 @@ class ProviderConfig {
     required this.headerSecretRefs,
     required this.allowInsecureHttp,
   }) {
-    if (providerId.trim().isEmpty) {
+    if (!isCanonicalRuntimeId(providerId)) {
       throw ArgumentError.value(providerId, 'providerId');
+    }
+    if (!isSafeRuntimeDisplayText(displayName)) {
+      throw ArgumentError.value(displayName, 'displayName');
     }
     if (!baseUri.hasScheme ||
         baseUri.host.isEmpty ||
@@ -56,6 +80,7 @@ class ProviderConfig {
         );
       }
     }
+    providerCredentialBindings(this);
   }
 
   factory ProviderConfig.toApis({bool enabled = true, SecretRef? secretRef}) =>
@@ -64,12 +89,77 @@ class ProviderConfig {
         kind: ProviderKind.toApis,
         protocol: ProviderProtocol.openAICompatible,
         displayName: 'ToAPIs',
-        baseUri: Uri.parse('https://toapis.com/v1'),
+        baseUri: toApisCanonicalBaseUri,
         enabled: enabled,
         secretRef: secretRef,
         headerSecretRefs: const {},
         allowInsecureHttp: false,
       );
+
+  factory ProviderConfig.persisted({
+    required String providerId,
+    required ProviderKind kind,
+    required ProviderProtocol protocol,
+    required String displayName,
+    required Uri baseUri,
+    required bool enabled,
+    SecretRef? secretRef,
+    Map<String, SecretRef> headerSecretRefs = const {},
+    required bool allowInsecureHttp,
+  }) {
+    final (expectedProviderId, expectedProtocol, expectedUri) = switch (kind) {
+      ProviderKind.toApis => (
+        'toapis',
+        ProviderProtocol.openAICompatible,
+        toApisCanonicalBaseUri,
+      ),
+      ProviderKind.deepSeek => (
+        'deepseek',
+        ProviderProtocol.openAICompatible,
+        deepSeekCanonicalBaseUri,
+      ),
+      ProviderKind.openAI => (
+        'openai',
+        ProviderProtocol.openAI,
+        openAICanonicalBaseUri,
+      ),
+      ProviderKind.anthropic => (
+        'anthropic',
+        ProviderProtocol.anthropic,
+        anthropicCanonicalBaseUri,
+      ),
+      ProviderKind.gemini => (
+        'gemini',
+        ProviderProtocol.gemini,
+        geminiCanonicalBaseUri,
+      ),
+      ProviderKind.customOpenAICompatible => (
+        null,
+        ProviderProtocol.openAICompatible,
+        null,
+      ),
+    };
+    const builtInIds = {'toapis', 'deepseek', 'openai', 'anthropic', 'gemini'};
+    final invalidIdentity = expectedProviderId == null
+        ? builtInIds.contains(providerId)
+        : providerId != expectedProviderId;
+    if (invalidIdentity ||
+        protocol != expectedProtocol ||
+        (expectedUri != null && baseUri != expectedUri)) {
+      throw StateError('Invalid persisted provider configuration');
+    }
+    return ProviderConfig._(
+      providerId: providerId,
+      kind: kind,
+      protocol: protocol,
+      displayName: displayName,
+      baseUri: baseUri,
+      enabled: enabled,
+      secretRef: secretRef,
+      headerSecretRefs: Map.unmodifiable(headerSecretRefs),
+      allowInsecureHttp: allowInsecureHttp,
+    );
+  }
 
   factory ProviderConfig.deepSeek({
     bool enabled = true,
@@ -79,7 +169,7 @@ class ProviderConfig {
     kind: ProviderKind.deepSeek,
     protocol: ProviderProtocol.openAICompatible,
     displayName: 'DeepSeek',
-    baseUri: Uri.parse('https://api.deepseek.com/v1'),
+    baseUri: deepSeekCanonicalBaseUri,
     enabled: enabled,
     secretRef: secretRef,
     headerSecretRefs: const {},
@@ -92,7 +182,7 @@ class ProviderConfig {
         kind: ProviderKind.openAI,
         protocol: ProviderProtocol.openAI,
         displayName: 'OpenAI',
-        baseUri: Uri.parse('https://api.openai.com/v1'),
+        baseUri: openAICanonicalBaseUri,
         enabled: enabled,
         secretRef: secretRef,
         headerSecretRefs: const {},
@@ -107,7 +197,7 @@ class ProviderConfig {
     kind: ProviderKind.anthropic,
     protocol: ProviderProtocol.anthropic,
     displayName: 'Anthropic Claude',
-    baseUri: Uri.parse('https://api.anthropic.com/v1'),
+    baseUri: anthropicCanonicalBaseUri,
     enabled: enabled,
     secretRef: secretRef,
     headerSecretRefs: const {},
@@ -120,7 +210,7 @@ class ProviderConfig {
         kind: ProviderKind.gemini,
         protocol: ProviderProtocol.gemini,
         displayName: 'Google Gemini',
-        baseUri: Uri.parse('https://generativelanguage.googleapis.com/v1beta'),
+        baseUri: geminiCanonicalBaseUri,
         enabled: enabled,
         secretRef: secretRef,
         headerSecretRefs: const {},
@@ -157,6 +247,22 @@ class ProviderConfig {
   final Map<String, SecretRef> headerSecretRefs;
   final bool allowInsecureHttp;
 
+  ProviderConfig copyWith({
+    bool? enabled,
+    SecretRef? secretRef,
+    Map<String, SecretRef>? headerSecretRefs,
+  }) => ProviderConfig.persisted(
+    providerId: providerId,
+    kind: kind,
+    protocol: protocol,
+    displayName: displayName,
+    baseUri: baseUri,
+    enabled: enabled ?? this.enabled,
+    secretRef: secretRef ?? this.secretRef,
+    headerSecretRefs: headerSecretRefs ?? this.headerSecretRefs,
+    allowInsecureHttp: allowInsecureHttp,
+  );
+
   Map<String, Object?> toSafeJson() => {
     'providerId': providerId,
     'kind': kind.name,
@@ -170,4 +276,37 @@ class ProviderConfig {
     'headerSecretNames': headerSecretRefs.keys.toList()..sort(),
     'allowInsecureHttp': allowInsecureHttp,
   };
+}
+
+Map<String, SecretRef> providerCredentialBindings(ProviderConfig config) {
+  final bindings = <String, SecretRef>{};
+  final ownersByLocator = <String, String>{};
+
+  void bind(String slot, SecretRef ref) {
+    if (bindings.containsKey(slot)) {
+      throw ArgumentError.value(
+        config.headerSecretRefs,
+        'headerSecretRefs',
+        'Credential slots are case-insensitively unique',
+      );
+    }
+    final locator = ref.locator.toString();
+    final priorSlot = ownersByLocator[locator];
+    if (priorSlot != null && priorSlot != slot) {
+      throw ArgumentError.value(
+        ref,
+        'secretRef',
+        'A credential reference can belong to only one slot',
+      );
+    }
+    bindings[slot] = ref;
+    ownersByLocator[locator] = slot;
+  }
+
+  final primary = config.secretRef;
+  if (primary != null) bind('primary', primary);
+  for (final entry in config.headerSecretRefs.entries) {
+    bind('header:${entry.key.toLowerCase()}', entry.value);
+  }
+  return Map<String, SecretRef>.unmodifiable(bindings);
 }
