@@ -46,6 +46,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
   late SingleChatConversationProjection _conversation;
   SingleChatController? _chatController;
   bool _dependencyLoadFailed = false;
+  bool _conversationNotInstalled = false;
   int _dependencyGeneration = 0;
   String? _modelLabel;
 
@@ -78,6 +79,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
       ..dispose();
     _chatController = null;
     _dependencyLoadFailed = false;
+    _conversationNotInstalled = false;
     _resetConversationPlaceholder();
     _startDependencyInitialization();
   }
@@ -140,7 +142,19 @@ class _SingleChatPageState extends State<SingleChatPage> {
           'A production single-chat service requires durable repository injection.',
         );
       }
-      final described = resolvedRepository.describe(conversationId);
+      final SingleChatConversationProjection described;
+      try {
+        described = resolvedRepository.describe(conversationId);
+      } on StateError {
+        // The conversation exists in the prototype list but has no installed
+        // expert behind it. That is a catalog gap, not a storage failure, and
+        // saying "storage is unavailable" sends the user chasing the wrong
+        // problem.
+        if (mounted && generation == _dependencyGeneration) {
+          setState(() => _conversationNotInstalled = true);
+        }
+        return;
+      }
       if (expertId case final override? when override != described.expertId) {
         throw StateError(
           'Single chat expert identity does not match its conversation.',
@@ -272,7 +286,10 @@ class _SingleChatPageState extends State<SingleChatPage> {
         controller: _scrollController,
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
         children: [
-          if (_dependencyLoadFailed) const _SystemNotice('聊天存储暂不可用，请稍后重试'),
+          if (_conversationNotInstalled)
+            const _SystemNotice('这个联系人还没有可执行的专家，暂时无法对话。')
+          else if (_dependencyLoadFailed)
+            const _SystemNotice('聊天存储暂不可用，请稍后重试'),
           if (state.historyLoadFailed) const _SystemNotice('历史消息加载失败，可继续当前对话'),
           for (final message in state.messages)
             _ProjectedMessage(
@@ -305,7 +322,10 @@ class _SingleChatPageState extends State<SingleChatPage> {
         controller: _textController,
         onAttach: () => _showAttachmentSheet(context),
         onSend: _send,
-        enabled: controller != null && !_dependencyLoadFailed,
+        enabled:
+            controller != null &&
+            !_dependencyLoadFailed &&
+            !_conversationNotInstalled,
       ),
     );
   }
