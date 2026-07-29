@@ -3,14 +3,58 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 
-class ProviderDetailPage extends StatelessWidget {
-  const ProviderDetailPage({required this.providerId, super.key});
+class ProviderDetailPage extends StatefulWidget {
+  const ProviderDetailPage({
+    required this.providerId,
+    this.controller,
+    super.key,
+  });
   final String providerId;
+  final ProviderSettingsController? controller;
+
+  @override
+  State<ProviderDetailPage> createState() => _ProviderDetailPageState();
+}
+
+class _ProviderDetailPageState extends State<ProviderDetailPage> {
+  final _apiKeyController = TextEditingController();
+  late final TextEditingController _modelController;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _modelController = TextEditingController(
+      text: ModelProviderInfo.fromId(widget.providerId).model,
+    );
+    final controller = widget.controller;
+    if (controller != null) {
+      controller.addListener(_refresh);
+      controller.load(widget.providerId).catchError((Object _) => null);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller?.removeListener(_refresh);
+    _apiKeyController.dispose();
+    _modelController.dispose();
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    final provider = ModelProviderInfo.fromId(providerId);
+    final provider = ModelProviderInfo.fromId(widget.providerId);
+    final controller = widget.controller;
+    final supported = const {'toapis', 'deepseek'}.contains(widget.providerId);
+    final configured =
+        controller?.hasConfigurationFor(widget.providerId) ?? false;
     return HaloPageScaffold(
       title: '模型服务',
       compactTitle: true,
@@ -63,17 +107,22 @@ class ProviderDetailPage extends StatelessWidget {
                     ],
                   ),
                 ),
-                const HaloTag('已配置', tone: HaloTagTone.green),
+                HaloTag(
+                  configured ? '已配置' : '未配置',
+                  tone: configured ? HaloTagTone.green : HaloTagTone.gray,
+                ),
               ],
             ),
           ),
           const SizedBox(height: 14),
           _Field(label: '服务地址', icon: 'ph ph-link', hint: provider.baseUrl),
-          const _Field(
+          _Field(
             label: 'API Key',
             icon: 'ph ph-key',
             hint: '输入服务商 API Key',
             obscure: true,
+            controller: _apiKeyController,
+            onChanged: (_) => setState(() {}),
           ),
           const Padding(
             padding: EdgeInsets.only(bottom: 11),
@@ -82,36 +131,95 @@ class ProviderDetailPage extends StatelessWidget {
               style: TextStyle(fontSize: 9, color: HaloColors.green),
             ),
           ),
-          _Field(label: '默认模型 ID', icon: 'ph ph-cube', hint: provider.model),
-          const _StateCard(icon: 'ph ph-info', text: '保存前可以先测试连接，不会发送对话内容。'),
+          _Field(
+            label: '默认模型 ID',
+            icon: 'ph ph-cube',
+            hint: provider.model,
+            controller: _modelController,
+          ),
+          _StateCard(
+            icon: 'ph ph-info',
+            text: _safeStatus(controller?.stateFor(widget.providerId)),
+          ),
           const SizedBox(height: 9),
           OutlinedButton.icon(
-            onPressed: () {},
+            onPressed: null,
             icon: Icon(HaloIcon.requirePrototypeClass('ph ph-plugs-connected')),
-            label: const Text('测试连接'),
+            label: const Text('测试连接（暂不可用）'),
           ),
           OutlinedButton.icon(
-            onPressed: () {},
+            onPressed: null,
             icon: Icon(
               HaloIcon.requirePrototypeClass('ph ph-arrows-clockwise'),
             ),
             label: const Text('刷新模型目录'),
           ),
           OutlinedButton.icon(
-            onPressed: () {},
+            onPressed: null,
             icon: Icon(HaloIcon.requirePrototypeClass('ph ph-power')),
-            label: const Text('启用或禁用 Provider'),
+            label: const Text('随保存启用'),
           ),
           const SizedBox(height: 7),
-          FilledButton(onPressed: () {}, child: const Text('保存到本机')),
+          FilledButton(
+            onPressed:
+                controller == null ||
+                    !supported ||
+                    _busy ||
+                    _apiKeyController.text.isEmpty
+                ? null
+                : _save,
+            child: Text(_busy ? '保存中…' : '保存到本机'),
+          ),
           TextButton(
-            onPressed: () {},
+            onPressed: controller == null || !configured || _busy
+                ? null
+                : _remove,
             child: const Text('移除此配置', style: TextStyle(color: HaloColors.red)),
           ),
         ],
       ),
     );
   }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    try {
+      await widget.controller!.save(
+        ProviderSettingsDraft(
+          providerId: widget.providerId,
+          modelId: _modelController.text,
+          apiKey: _apiKeyController.text,
+          enabled: true,
+        ),
+      );
+      _apiKeyController.clear();
+    } on ProviderSettingsException {
+      // The controller exposes only fixed safe state; secret/error details are
+      // intentionally never reflected into the UI.
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _remove() async {
+    setState(() => _busy = true);
+    try {
+      await widget.controller!.remove(widget.providerId);
+    } on ProviderSettingsException {
+      // Fixed state is rendered by the controller listener.
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _safeStatus(ProviderSettingsState? state) => switch (state) {
+    ProviderSettingsState.cleanupPending => '配置已生效；旧凭证正在等待安全清理。',
+    ProviderSettingsState.recoveryPending => '配置恢复中，请稍后重试。',
+    ProviderSettingsState.saveFailed => '保存失败；原配置仍然有效。',
+    ProviderSettingsState.deleteFailed => '移除失败；原配置已恢复。',
+    ProviderSettingsState.orphanedCredential => '安全存储需要清理；请稍后重试。',
+    _ => '生产连接测试与模型目录暂不可用，不会显示虚假连接状态。',
+  };
 }
 
 class ModelProviderInfo {
@@ -125,7 +233,7 @@ class ModelProviderInfo {
     'toapis' => const ModelProviderInfo(
       'ToAPIs',
       '推荐聚合 · OpenAI-compatible',
-      'https://api.toapis.com/v1',
+      'https://toapis.com/v1',
       'gpt-5-mini',
     ),
     'deepseek' => const ModelProviderInfo(
@@ -155,11 +263,15 @@ class _Field extends StatelessWidget {
     required this.icon,
     required this.hint,
     this.obscure = false,
+    this.onChanged,
+    this.controller,
   });
   final String label;
   final String icon;
   final String hint;
   final bool obscure;
+  final ValueChanged<String>? onChanged;
+  final TextEditingController? controller;
 
   @override
   Widget build(BuildContext context) {
@@ -175,6 +287,8 @@ class _Field extends StatelessWidget {
           const SizedBox(height: 6),
           TextField(
             obscureText: obscure,
+            onChanged: onChanged,
+            controller: controller,
             decoration: InputDecoration(
               hintText: hint,
               prefixIcon: Icon(HaloIcon.requirePrototypeClass(icon), size: 18),

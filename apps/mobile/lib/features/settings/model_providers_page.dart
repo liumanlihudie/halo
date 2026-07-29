@@ -3,48 +3,66 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 
-class ModelProvidersPage extends StatelessWidget {
-  const ModelProvidersPage({super.key});
+class ModelProvidersPage extends StatefulWidget {
+  const ModelProvidersPage({this.controller, super.key});
 
-  static const providers = <(String, String, String, String, HaloTagTone)>[
-    (
-      'toapis',
-      'ToAPIs',
-      '推荐聚合 · OpenAI-compatible · 多模态',
-      '已连接 · 42 个模型',
-      HaloTagTone.green,
-    ),
-    (
-      'deepseek',
-      'DeepSeek',
-      '官方 API · 推理与通用文字',
-      '已连接 · 4 个模型',
-      HaloTagTone.green,
-    ),
-    ('openai', 'OpenAI', '官方 API · 文字与多模态', '未配置', HaloTagTone.gray),
-    (
-      'anthropic',
-      'Anthropic Claude',
-      '官方 API · Claude 系列',
-      '已连接 · 6 个模型',
-      HaloTagTone.green,
-    ),
-    ('gemini', 'Google Gemini', '官方 API · 文字与多模态', '连接异常', HaloTagTone.red),
-    ('custom', '自定义 OpenAI-compatible', '任意兼容服务地址', '未配置', HaloTagTone.gray),
-    (
-      'local',
-      '本地模型',
-      'Ollama / LM Studio / vLLM',
-      '服务离线 · 6 个模型',
-      HaloTagTone.amber,
-    ),
-    ('doubao', '豆包端到端语音', '独立实时协议 · 一对一全双工', '已配置', HaloTagTone.green),
-    ('vidu', 'Vidu', '视频生成与视频形象', '未配置', HaloTagTone.gray),
+  final ProviderSettingsController? controller;
+
+  static const providers = <(String, String, String, bool)>[
+    ('toapis', 'ToAPIs', '推荐聚合 · OpenAI-compatible · 多模态', true),
+    ('deepseek', 'DeepSeek', '官方 API · 推理与通用文字', true),
+    ('openai', 'OpenAI', '官方 API · 文字与多模态', false),
+    ('anthropic', 'Anthropic Claude', '官方 API · Claude 系列', false),
+    ('gemini', 'Google Gemini', '官方 API · 文字与多模态', false),
+    ('custom', '自定义 OpenAI-compatible', '任意兼容服务地址', false),
+    ('local', '本地模型', 'Ollama / LM Studio / vLLM', false),
+    ('doubao', '豆包端到端语音', '独立实时协议 · 一对一全双工', false),
+    ('vidu', 'Vidu', '视频生成与视频形象', false),
   ];
 
   @override
+  State<ModelProvidersPage> createState() => _ModelProvidersPageState();
+}
+
+class _ModelProvidersPageState extends State<ModelProvidersPage> {
+  @override
+  void initState() {
+    super.initState();
+    _loadSupported();
+  }
+
+  @override
+  void didUpdateWidget(ModelProvidersPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) _loadSupported();
+  }
+
+  void _loadSupported() {
+    final controller = widget.controller;
+    if (controller == null) return;
+    for (final providerId in const ['toapis', 'deepseek']) {
+      controller.load(providerId).catchError((Object _) => null);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
+    if (controller != null) {
+      return AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) => _buildPage(context, controller),
+      );
+    }
+    return _buildPage(context, null);
+  }
+
+  Widget _buildPage(
+    BuildContext context,
+    ProviderSettingsController? controller,
+  ) {
     return HaloPageScaffold(
       title: '模型服务',
       compactTitle: true,
@@ -71,38 +89,43 @@ class ModelProvidersPage extends StatelessWidget {
             children: [
               HaloSettingsRow(
                 label: '默认文字模型',
-                detail: 'Anthropic / claude-sonnet-4',
+                detail: '尚未配置',
                 prototypeIconClass: 'ph ph-chat-circle-text',
                 onTap: () {},
               ),
               HaloSettingsRow(
                 label: '默认图片模型',
-                detail: 'ToAPIs / seedream-4',
+                detail: '尚未配置',
                 prototypeIconClass: 'ph ph-image',
                 onTap: () {},
               ),
               HaloSettingsRow(
                 label: '默认视频模型',
-                detail: 'ToAPIs / vidu-q2',
+                detail: '尚未配置',
                 prototypeIconClass: 'ph ph-video-camera',
                 onTap: () {},
               ),
               HaloSettingsRow(
                 label: 'Router 模型',
-                detail: 'DeepSeek / deepseek-chat',
+                detail: '尚未配置',
                 prototypeIconClass: 'ph ph-path',
                 onTap: () {},
               ),
             ],
           ),
           const HaloSectionLabel('多个 Provider 可同时启用'),
-          for (final provider in providers)
+          for (final provider in ModelProvidersPage.providers)
             _ProviderRow(
               id: provider.$1,
               name: provider.$2,
               kind: provider.$3,
-              state: provider.$4,
-              tone: provider.$5,
+              state: _providerState(controller, provider.$1, provider.$4),
+              tone:
+                  provider.$4 &&
+                      (controller?.hasConfigurationFor(provider.$1) ?? false)
+                  ? HaloTagTone.green
+                  : HaloTagTone.gray,
+              enabled: provider.$4,
             ),
           const HaloSectionLabel('需要服务端能力？'),
           Material(
@@ -157,6 +180,22 @@ class ModelProvidersPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _providerState(
+    ProviderSettingsController? controller,
+    String providerId,
+    bool supported,
+  ) {
+    if (!supported) return '后续支持';
+    final state = controller?.stateFor(providerId);
+    if (state == ProviderSettingsState.recoveryPending ||
+        state == ProviderSettingsState.cleanupPending) {
+      return '恢复中';
+    }
+    return (controller?.hasConfigurationFor(providerId) ?? false)
+        ? '已配置'
+        : '未配置';
   }
 }
 
@@ -215,12 +254,14 @@ class _ProviderRow extends StatelessWidget {
     required this.kind,
     required this.state,
     required this.tone,
+    required this.enabled,
   });
   final String id;
   final String name;
   final String kind;
   final String state;
   final HaloTagTone tone;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -230,7 +271,7 @@ class _ProviderRow extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(13),
         child: InkWell(
-          onTap: () => context.push('/settings/providers/$id'),
+          onTap: enabled ? () => context.push('/settings/providers/$id') : null,
           borderRadius: BorderRadius.circular(13),
           child: Padding(
             padding: const EdgeInsets.all(12),
