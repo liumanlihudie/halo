@@ -59,7 +59,9 @@ class _ConversationRow extends StatelessWidget {
       child: InkWell(
         key: ValueKey('conversation-${conversation.id}'),
         onTap: () {
-          if (!conversation.id.startsWith('group-')) {
+          if (conversation.id.startsWith('group-')) {
+            context.push('/group/${conversation.id}');
+          } else {
             context.push('/chat/${conversation.id}');
           }
         },
