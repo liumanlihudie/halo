@@ -102,6 +102,45 @@ void main() {
     },
   );
 
+  test('a failed bootstrap keeps its reason instead of losing it', () async {
+    final failure = StateError('provider store is corrupt');
+    final host = ApplicationKernelHost(
+      bootstrap: () async => throw failure,
+      unavailable: _kernel('unavailable'),
+    );
+    var notifications = 0;
+    host.addListener(() => notifications++);
+
+    expect(host.bootstrapFailure, isNull);
+    await expectLater(host.initialize(), throwsStateError);
+
+    // Losing this is what leaves the app silently degraded with no diagnosis.
+    expect(host.bootstrapFailure, same(failure));
+    expect(notifications, greaterThan(0));
+    await host.close();
+  });
+
+  test('a later successful bootstrap clears the recorded failure', () async {
+    var attempt = 0;
+    final replacement = _kernel('replacement');
+    final host = ApplicationKernelHost(
+      bootstrap: () async {
+        if (attempt++ == 0) throw StateError('transient');
+        return replacement;
+      },
+      unavailable: _kernel('unavailable'),
+    );
+
+    await expectLater(host.initialize(), throwsStateError);
+    expect(host.bootstrapFailure, isNotNull);
+
+    await host.initialize();
+
+    expect(host.bootstrapFailure, isNull);
+    expect(host.current, same(replacement));
+    await host.close();
+  });
+
   test('close disposes host even when a pending bootstrap fails', () async {
     final pending = Completer<ApplicationKernel>();
     final host = ApplicationKernelHost(

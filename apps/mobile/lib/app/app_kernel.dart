@@ -100,6 +100,14 @@ final class ApplicationKernelHost extends ChangeNotifier {
 
   int _generation = 0;
   bool _closed = false;
+
+  Object? _bootstrapFailure;
+
+  /// Why the last bootstrap attempt failed, if it did.
+  ///
+  /// Without this the app silently degrades to [UnavailableApplicationKernel]
+  /// and every screen has to guess at the cause.
+  Object? get bootstrapFailure => _bootstrapFailure;
   final Set<Future<void>> _pending = {};
   Future<void>? _closeFuture;
 
@@ -120,7 +128,9 @@ final class ApplicationKernelHost extends ChangeNotifier {
     late final ApplicationKernel candidate;
     try {
       candidate = await _bootstrap();
-    } catch (_) {
+    } catch (error) {
+      _bootstrapFailure = error;
+      notifyListeners();
       rethrow;
     }
     if (_closed || generation != _generation) {
@@ -129,6 +139,7 @@ final class ApplicationKernelHost extends ChangeNotifier {
     }
     final previous = _current;
     _current = candidate;
+    _bootstrapFailure = null;
     notifyListeners();
     if (!identical(previous, _unavailable)) {
       await _swapBarrier();
