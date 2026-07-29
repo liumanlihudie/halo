@@ -21,7 +21,7 @@ class ConversationsPage extends StatelessWidget {
         HaloIconButton(
           prototypeIconClass: 'ph ph-plus',
           semanticLabel: '新建对话',
-          onPressed: () {},
+          onPressed: () => context.push('/group/new'),
         ),
       ],
       body: Column(

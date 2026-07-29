@@ -444,7 +444,7 @@ void _showAttachmentSheet(BuildContext context) {
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    builder: (context) => Container(
+    builder: (sheetContext) => Container(
       padding: const EdgeInsets.fromLTRB(15, 9, 15, 24),
       decoration: const BoxDecoration(
         color: HaloColors.soft,
@@ -482,7 +482,14 @@ void _showAttachmentSheet(BuildContext context) {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(13),
                     child: InkWell(
-                      onTap: () {},
+                      onTap: () {
+                        Navigator.of(sheetContext).pop();
+                        if (ability.$2 == '端到端语音通话') {
+                          context.push('/call/voice/general-assistant');
+                        } else if (ability.$2 == 'Vidu 视频通话') {
+                          context.push('/call/video/general-assistant');
+                        }
+                      },
                       borderRadius: BorderRadius.circular(13),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),

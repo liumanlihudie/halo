@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/app/app_shell.dart';
 import 'package:halo_mobile/features/circle/circle_page.dart';
+import 'package:halo_mobile/features/circle/moment_detail_page.dart';
 import 'package:halo_mobile/features/conversations/conversations_page.dart';
 import 'package:halo_mobile/features/expert_team/expert_team_page.dart';
 import 'package:halo_mobile/features/expert_market/expert_data_page.dart';
@@ -10,7 +11,11 @@ import 'package:halo_mobile/features/expert_market/expert_profile_page.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_page.dart';
 import 'package:halo_mobile/features/group_chat/group_context_page.dart';
 import 'package:halo_mobile/features/group_chat/group_info_page.dart';
+import 'package:halo_mobile/features/group_chat/new_group_page.dart';
+import 'package:halo_mobile/features/media/call_demo_page.dart';
+import 'package:halo_mobile/features/media/media_preview_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_details_page.dart';
+import 'package:halo_mobile/features/single_chat/chat_history_page.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
 import 'package:halo_mobile/features/settings/settings_page.dart';
 import 'package:halo_mobile/features/settings/local_data_page.dart';
@@ -46,6 +51,16 @@ GoRouter createAppRouter({String initialLocation = '/conversations'}) {
         ),
       ),
       GoRoute(
+        path: '/chat/:conversationId/history',
+        builder: (context, state) => ChatHistoryPage(
+          conversationId: state.pathParameters['conversationId']!,
+        ),
+      ),
+      GoRoute(
+        path: '/group/new',
+        builder: (context, state) => const NewGroupPage(),
+      ),
+      GoRoute(
         path: '/group/:groupId',
         builder: (context, state) =>
             GroupChatPage(groupId: state.pathParameters['groupId']!),
@@ -59,6 +74,30 @@ GoRouter createAppRouter({String initialLocation = '/conversations'}) {
         path: '/group/:groupId/context',
         builder: (context, state) =>
             GroupContextPage(groupId: state.pathParameters['groupId']!),
+      ),
+      GoRoute(
+        path: '/circle/:postId',
+        builder: (context, state) =>
+            MomentDetailPage(postId: state.pathParameters['postId']!),
+      ),
+      GoRoute(
+        path: '/media/:kind',
+        builder: (context, state) =>
+            MediaPreviewPage(kind: state.pathParameters['kind']!),
+      ),
+      GoRoute(
+        path: '/call/voice/:expertId',
+        builder: (context, state) => CallDemoPage(
+          expertId: state.pathParameters['expertId']!,
+          video: false,
+        ),
+      ),
+      GoRoute(
+        path: '/call/video/:expertId',
+        builder: (context, state) => CallDemoPage(
+          expertId: state.pathParameters['expertId']!,
+          video: true,
+        ),
       ),
       GoRoute(
         path: '/market',

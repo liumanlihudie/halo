@@ -34,7 +34,7 @@ class ChatDetailsPage extends StatelessWidget {
               HaloSettingsRow(
                 label: '查找聊天记录',
                 prototypeIconClass: 'ph ph-magnifying-glass',
-                onTap: () {},
+                onTap: () => context.push('/chat/$conversationId/history'),
                 trailing: Icon(
                   HaloIcon.requirePrototypeClass('ph ph-caret-right'),
                   size: 14,
