@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
@@ -57,7 +58,11 @@ class _ConversationRow extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         key: ValueKey('conversation-${conversation.id}'),
-        onTap: () {},
+        onTap: () {
+          if (!conversation.id.startsWith('group-')) {
+            context.push('/chat/${conversation.id}');
+          }
+        },
         child: SizedBox(
           height: 72,
           child: Row(

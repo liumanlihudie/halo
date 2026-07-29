@@ -4,14 +4,18 @@ import 'package:halo_mobile/app/router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_theme.dart';
 
 class HaloApp extends StatefulWidget {
-  const HaloApp({super.key});
+  const HaloApp({this.initialLocation = '/conversations', super.key});
+
+  final String initialLocation;
 
   @override
   State<HaloApp> createState() => _HaloAppState();
 }
 
 class _HaloAppState extends State<HaloApp> {
-  late final GoRouter _router = createAppRouter();
+  late final GoRouter _router = createAppRouter(
+    initialLocation: widget.initialLocation,
+  );
 
   @override
   void dispose() {

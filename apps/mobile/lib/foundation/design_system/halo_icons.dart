@@ -32,6 +32,11 @@ abstract final class HaloIcon {
       fontFamily: 'PhosphorRegular',
       fontPackage: 'phosphor_flutter',
     ),
+    'ph ph-bell': IconData(
+      0xe0ce,
+      fontFamily: 'PhosphorRegular',
+      fontPackage: 'phosphor_flutter',
+    ),
     'ph ph-brackets-curly': IconData(
       0xe860,
       fontFamily: 'PhosphorRegular',
@@ -314,6 +319,11 @@ abstract final class HaloIcon {
     ),
     'ph ph-plus': IconData(
       0xe3d4,
+      fontFamily: 'PhosphorRegular',
+      fontPackage: 'phosphor_flutter',
+    ),
+    'ph ph-push-pin': IconData(
+      0xe3e2,
       fontFamily: 'PhosphorRegular',
       fontPackage: 'phosphor_flutter',
     ),
