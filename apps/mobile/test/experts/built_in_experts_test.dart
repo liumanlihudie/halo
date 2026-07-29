@@ -123,7 +123,7 @@ void main() {
         OutputValueType.evidenceList,
       );
       expect(
-        checker.outputSchema.validateStructure(const {
+        checker.outputSchema.unsafeShapeOnly(const {
           'Claim': 'The metric increased.',
           'Evidence': <String>[],
           'Verdict': 'supported',
@@ -132,7 +132,7 @@ void main() {
         isFalse,
       );
       expect(
-        checker.outputSchema.validateStructure(const {
+        checker.outputSchema.unsafeShapeOnly(const {
           'Claim': 'The metric increased.',
           'Evidence': <String>[],
           'Verdict': 'abstain',

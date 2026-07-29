@@ -28,6 +28,8 @@ enum MemoryRetention { none, session }
 
 enum EvidenceStance { supports, contradicts }
 
+enum ExpertValidationPolicy { structural, trustedEvidence }
+
 String claimDigestFor(String claim) {
   _validateText(claim, 'claim', maximumLength: 4096);
   return sha256.convert(utf8.encode(claim)).toString();
@@ -577,7 +579,16 @@ class OutputSchema {
   final String? abstainVerdict;
   final bool allowAdditionalFields;
 
-  bool validateStructure(Map<String, Object?> output) {
+  /// Whether this schema expresses an abstaining, directional evidence
+  /// decision rather than merely using ordinary fields with similar names.
+  bool get hasDirectionalEvidenceContract =>
+      evidenceField != null || verdictField != null || abstainVerdict != null;
+
+  /// Checks only JSON shape and value types.
+  ///
+  /// This is not an authorization or evidence-trust decision. Production
+  /// catalog output must be accepted through [ExecutableExpert.validateOutput].
+  bool unsafeShapeOnly(Map<String, Object?> output) {
     if (!output.keys.toSet().containsAll(fields.keys)) return false;
     if (!allowAdditionalFields &&
         output.keys.any((key) => !fields.containsKey(key))) {
@@ -644,7 +655,7 @@ class TrustedExpertOutputValidator {
   final EvidenceTrustRegistry trustRegistry;
 
   bool validate(Map<String, Object?> output, ExpertValidationContext context) {
-    if (!schema.validateStructure(output)) return false;
+    if (!schema.unsafeShapeOnly(output)) return false;
     final verdictKey = schema.verdictField;
     if (verdictKey == null) return true;
     final verdict = output[verdictKey];
@@ -677,6 +688,56 @@ class TrustedExpertOutputValidator {
       outputDigest: _expertOutputDigest(output),
       requiredStance: requiredStance,
     );
+  }
+}
+
+/// The application-level output validation composition root.
+///
+/// A gateway may omit [trustRegistry] for structural-only catalogs. Experts
+/// whose policy requires trusted evidence still bind, but their executable
+/// validator fails closed.
+class ExpertOutputValidationGateway {
+  const ExpertOutputValidationGateway({this.trustRegistry});
+
+  final EvidenceTrustRegistry? trustRegistry;
+
+  ExecutableExpert bind(ExpertProfile profile) {
+    final registry = trustRegistry;
+    final trustedValidator =
+        profile.validationPolicy == ExpertValidationPolicy.trustedEvidence &&
+            registry != null
+        ? TrustedExpertOutputValidator(
+            schema: profile.outputSchema,
+            trustRegistry: registry,
+          )
+        : null;
+    return ExecutableExpert._(profile, trustedValidator);
+  }
+}
+
+/// An expert profile bound to its executable output-validation policy.
+///
+/// Production callers should validate catalog output only through
+/// [validateOutput]. Shape-only checks are intentionally not exposed here.
+class ExecutableExpert {
+  const ExecutableExpert._(this.profile, this._trustedValidator);
+
+  final ExpertProfile profile;
+  final TrustedExpertOutputValidator? _trustedValidator;
+
+  bool validateOutput(
+    Map<String, Object?> output, {
+    ExpertValidationContext? context,
+  }) {
+    return switch (profile.validationPolicy) {
+      ExpertValidationPolicy.structural => profile.outputSchema.unsafeShapeOnly(
+        output,
+      ),
+      ExpertValidationPolicy.trustedEvidence =>
+        context != null &&
+            _trustedValidator != null &&
+            _trustedValidator.validate(output, context),
+    };
   }
 }
 
@@ -772,6 +833,7 @@ class ExpertProfile {
     required this.routingCard,
     required this.toolPolicy,
     required this.outputSchema,
+    required this.validationPolicy,
     required this.memoryPolicy,
     required List<EvaluationCase> evaluationCases,
   }) : evaluationCases = List<EvaluationCase>.unmodifiable(evaluationCases) {
@@ -786,6 +848,21 @@ class ExpertProfile {
     if (caseIds.length != this.evaluationCases.length) {
       throw ArgumentError('Evaluation case IDs must be unique.');
     }
+    if (outputSchema.hasDirectionalEvidenceContract &&
+        validationPolicy != ExpertValidationPolicy.trustedEvidence) {
+      throw ArgumentError(
+        'Directional evidence schemas require trusted-evidence validation.',
+      );
+    }
+    if (validationPolicy == ExpertValidationPolicy.trustedEvidence &&
+        (!outputSchema.hasDirectionalEvidenceContract ||
+            !promptPackage.guards.contains(
+              PromptGuard.abstainWithoutEvidence,
+            ))) {
+      throw ArgumentError(
+        'Trusted-evidence experts require an abstaining evidence schema.',
+      );
+    }
   }
 
   factory ExpertProfile.fromJson(Map<String, Object?> json) {
@@ -798,6 +875,7 @@ class ExpertProfile {
       'routingCard',
       'toolPolicy',
       'outputSchema',
+      'validationPolicy',
       'memoryPolicy',
       'evaluationCases',
     });
@@ -810,6 +888,11 @@ class ExpertProfile {
       routingCard: RoutingCard.fromJson(_readMap(json, 'routingCard')),
       toolPolicy: ToolPolicy.fromJson(_readMap(json, 'toolPolicy')),
       outputSchema: OutputSchema.fromJson(_readMap(json, 'outputSchema')),
+      validationPolicy: _readEnum(
+        json,
+        'validationPolicy',
+        ExpertValidationPolicy.values,
+      ),
       memoryPolicy: MemoryPolicy.fromJson(_readMap(json, 'memoryPolicy')),
       evaluationCases: _readMapList(
         json,
@@ -826,6 +909,7 @@ class ExpertProfile {
   final RoutingCard routingCard;
   final ToolPolicy toolPolicy;
   final OutputSchema outputSchema;
+  final ExpertValidationPolicy validationPolicy;
   final MemoryPolicy memoryPolicy;
   final List<EvaluationCase> evaluationCases;
 
@@ -838,6 +922,7 @@ class ExpertProfile {
     'routingCard': routingCard.toJson(),
     'toolPolicy': toolPolicy.toJson(),
     'outputSchema': outputSchema.toJson(),
+    'validationPolicy': validationPolicy.name,
     'memoryPolicy': memoryPolicy.toJson(),
     'evaluationCases': evaluationCases.map((value) => value.toJson()).toList(),
   };
@@ -1013,7 +1098,12 @@ _ChineseNegationStatus _chineseNegationStatus(String prefix) {
   var latestIndex = -1;
   var latestNegator = '';
   for (final negator in negators) {
-    final index = clause.lastIndexOf(negator);
+    var index = clause.lastIndexOf(negator);
+    if (negator == '别') {
+      while (index >= 0 && _isLexicalBie(clause, index)) {
+        index = clause.lastIndexOf(negator, index - 1);
+      }
+    }
     if (index > latestIndex) {
       latestIndex = index;
       latestNegator = negator;
@@ -1028,6 +1118,25 @@ _ChineseNegationStatus _chineseNegationStatus(String prefix) {
     return _ChineseNegationStatus.none;
   }
   return _ChineseNegationStatus.negated;
+}
+
+bool _isLexicalBie(String clause, int index) {
+  if (index == 0) return false;
+  final word = clause.substring(index - 1, index + 1);
+  return const {
+    '识别',
+    '辨别',
+    '分别',
+    '区别',
+    '差别',
+    '个别',
+    '类别',
+    '特别',
+    '级别',
+    '性别',
+    '判别',
+    '鉴别',
+  }.contains(word);
 }
 
 bool _isValidEvidenceValue(Object? value) {

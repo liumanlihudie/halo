@@ -69,6 +69,7 @@ abstract final class BuiltInExperts {
         'Risks': OutputValueType.stringList,
       },
     ),
+    validationPolicy: ExpertValidationPolicy.structural,
     memoryPolicy: MemoryPolicy(
       readableScopes: const {
         MemoryScope.conversationContext,
@@ -156,6 +157,7 @@ abstract final class BuiltInExperts {
         'Verification': OutputValueType.stringList,
       },
     ),
+    validationPolicy: ExpertValidationPolicy.structural,
     memoryPolicy: MemoryPolicy(
       readableScopes: const {
         MemoryScope.conversationContext,
@@ -246,6 +248,7 @@ abstract final class BuiltInExperts {
       verdictField: 'Verdict',
       abstainVerdict: 'abstain',
     ),
+    validationPolicy: ExpertValidationPolicy.trustedEvidence,
     memoryPolicy: MemoryPolicy(
       readableScopes: const {
         MemoryScope.conversationContext,

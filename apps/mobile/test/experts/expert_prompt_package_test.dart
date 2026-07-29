@@ -55,6 +55,91 @@ void main() {
     );
   });
 
+  test(
+    'directional evidence contracts cannot downgrade to structural policy',
+    () {
+      final directionalSchema = _factSchema();
+      const trustedGuards = {
+        PromptGuard.roleIntegrity,
+        PromptGuard.evidenceBoundaries,
+        PromptGuard.noFabrication,
+        PromptGuard.abstainWithoutEvidence,
+      };
+
+      expect(
+        () => _profile(
+          outputSchema: directionalSchema,
+          validationPolicy: ExpertValidationPolicy.structural,
+          guards: trustedGuards,
+        ),
+        throwsArgumentError,
+        reason: 'direct construction must reject a structural downgrade',
+      );
+
+      final trusted = _profile(
+        outputSchema: directionalSchema,
+        validationPolicy: ExpertValidationPolicy.trustedEvidence,
+        guards: trustedGuards,
+      );
+      final downgradedJson = trusted.toJson()
+        ..['validationPolicy'] = ExpertValidationPolicy.structural.name;
+      expect(
+        () => ExpertProfile.fromJson(downgradedJson),
+        throwsArgumentError,
+        reason: 'JSON decoding must reject a structural downgrade',
+      );
+
+      final fakeEvidence = EvidenceItem(
+        sourceId: 'untrusted-source',
+        ref: 'https://fake.invalid/report',
+        quoteOrSummary: 'A fabricated supporting statement.',
+        receiptId: 'rcpt_AAAAAAAAAAAAAAAAAAAAAA',
+        receiptToken: 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA',
+        stance: EvidenceStance.supports,
+      );
+      final executable = const ExpertOutputValidationGateway().bind(trusted);
+      expect(
+        executable.validateOutput(
+          {
+            'Claim': 'A claim.',
+            'Evidence': [fakeEvidence.toJson()],
+            'Verdict': 'supported',
+            'Confidence': 60,
+          },
+          context: ExpertValidationContext(
+            runId: 'run-policy',
+            turnId: 'turn-1',
+            outputId: 'output-1',
+          ),
+        ),
+        isFalse,
+        reason: 'directional evidence must never reach the structural branch',
+      );
+    },
+  );
+
+  test('ordinary field names do not imply a directional evidence contract', () {
+    final profile = _profile(
+      outputSchema: OutputSchema(
+        schemaId: 'editor-observations.v1',
+        fields: const {
+          'Evidence': OutputValueType.stringList,
+          'Verdict': OutputValueType.string,
+        },
+      ),
+      validationPolicy: ExpertValidationPolicy.structural,
+    );
+
+    expect(profile.validationPolicy, ExpertValidationPolicy.structural);
+    expect(
+      const ExpertOutputValidationGateway().bind(profile).validateOutput(const {
+        'Evidence': ['The heading is inconsistent.'],
+        'Verdict': 'Revise the heading.',
+      }),
+      isTrue,
+    );
+  });
+
   test('negative routing triggers override intents and capabilities', () {
     final card = RoutingCard(
       intents: const ['产品需求', 'roadmap'],
@@ -100,6 +185,10 @@ void main() {
     expect(card.excludes('别再写代码'), isFalse);
     expect(card.excludes('无需继续写代码'), isFalse);
     expect(card.matches('不需要产品需求分析'), isFalse);
+    expect(card.matches('请识别产品需求中的风险'), isTrue);
+    expect(card.matches('不需要识别产品需求中的风险'), isFalse);
+    expect(card.matches('请告别产品需求'), isFalse);
+    expect(card.matches('离别产品需求'), isFalse);
     expect(card.matches('aprdx'), isFalse);
     expect(card.matches('Need PRD now'), isTrue);
   });
@@ -150,7 +239,7 @@ void main() {
     final evidence = issued.evidence;
 
     expect(
-      schema.validateStructure(const {
+      schema.unsafeShapeOnly(const {
         'Claim': 'The release shipped.',
         'Evidence': <String>[],
         'Verdict': 'supported',
@@ -159,7 +248,7 @@ void main() {
       isFalse,
     );
     expect(
-      schema.validateStructure(const {
+      schema.unsafeShapeOnly(const {
         'Claim': 'The release shipped.',
         'Evidence': <String>[],
         'Verdict': 'abstain',
@@ -350,7 +439,7 @@ void main() {
       'Verdict': 'supported',
       'Confidence': 50,
     };
-    expect(_factSchema().validateStructure(output), isTrue);
+    expect(_factSchema().unsafeShapeOnly(output), isTrue);
     expect(
       TrustedExpertOutputValidator(
         schema: _factSchema(),
@@ -486,7 +575,7 @@ void main() {
     );
 
     expect(
-      schema.validateStructure(const {
+      schema.unsafeShapeOnly(const {
         'Claim': 'Version 42 shipped.',
         'Evidence': <Object?>[
           {
@@ -517,7 +606,7 @@ void main() {
       'Confidence': 95,
     };
 
-    expect(schema.validateStructure(output), isTrue);
+    expect(schema.unsafeShapeOnly(output), isTrue);
     expect(issued.validate(schema, output), isTrue);
   });
 
@@ -619,7 +708,7 @@ void main() {
       'Confidence': 0,
     };
 
-    expect(_factSchema().validateStructure(output), isTrue);
+    expect(_factSchema().unsafeShapeOnly(output), isTrue);
     expect(issued.validate(_factSchema(), output), isTrue);
     expect(
       issued.validate(_factSchema(), {
@@ -910,6 +999,13 @@ OutputSchema _factSchema() => OutputSchema(
 ExpertProfile _profile({
   List<String>? constraints,
   List<String>? capabilities,
+  OutputSchema? outputSchema,
+  ExpertValidationPolicy validationPolicy = ExpertValidationPolicy.structural,
+  Set<PromptGuard> guards = const {
+    PromptGuard.roleIntegrity,
+    PromptGuard.evidenceBoundaries,
+    PromptGuard.noFabrication,
+  },
 }) {
   return ExpertProfile(
     id: 'product-manager',
@@ -920,11 +1016,7 @@ ExpertProfile _profile({
       system: 'Act only as the assigned product manager.',
       personality: 'Structured, candid, and user-centered.',
       constraints: constraints ?? const ['Do not invent evidence.'],
-      guards: const {
-        PromptGuard.roleIntegrity,
-        PromptGuard.evidenceBoundaries,
-        PromptGuard.noFabrication,
-      },
+      guards: guards,
     ),
     routingCard: RoutingCard(
       intents: const ['产品需求'],
@@ -936,13 +1028,16 @@ ExpertProfile _profile({
       approvalRequiredTools: const [],
       deniedTools: const ['shell.execute'],
     ),
-    outputSchema: OutputSchema(
-      schemaId: 'product-brief.v1',
-      fields: const {
-        'Problem': OutputValueType.string,
-        'Recommendation': OutputValueType.string,
-      },
-    ),
+    outputSchema:
+        outputSchema ??
+        OutputSchema(
+          schemaId: 'product-brief.v1',
+          fields: const {
+            'Problem': OutputValueType.string,
+            'Recommendation': OutputValueType.string,
+          },
+        ),
+    validationPolicy: validationPolicy,
     memoryPolicy: MemoryPolicy(
       readableScopes: const {
         MemoryScope.conversationContext,
