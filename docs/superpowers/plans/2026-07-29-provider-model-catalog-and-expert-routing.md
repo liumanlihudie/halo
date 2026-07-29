@@ -221,6 +221,9 @@ git commit -m "feat: fetch provider model catalogs"
 ### Task 3: Save Key With Complete Model Discovery
 
 **Files:**
+- Modify: `apps/mobile/lib/model_runtime/provider_configuration_store.dart`
+- Modify: `apps/mobile/lib/model_runtime/sqlite_provider_configuration_store.dart`
+- Modify: `apps/mobile/lib/model_runtime/production_model_runtime_factory.dart`
 - Modify: `apps/mobile/lib/features/settings/provider_settings_controller.dart`
 - Modify: `apps/mobile/lib/features/settings/provider_settings_persistence.dart`
 - Modify: `apps/mobile/lib/features/settings/provider_detail_page.dart`
@@ -229,6 +232,8 @@ git commit -m "feat: fetch provider model catalogs"
 - Modify: `apps/mobile/test/features/settings/provider_settings_persistence_test.dart`
 - Modify: `apps/mobile/test/features/settings/provider_detail_page_test.dart`
 - Modify: `apps/mobile/test/app/production_app_kernel_test.dart`
+- Modify: `apps/mobile/test/model_runtime/provider_configuration_store_test.dart`
+- Modify: `apps/mobile/test/model_runtime/production_model_runtime_factory_test.dart`
 
 **Interfaces:**
 - Produces:
@@ -250,6 +255,23 @@ class ProviderSettingsDraft {
 
 - `ProviderSettingsSnapshot` contains `config` and `catalog`; it no longer owns a manually entered model.
 - `ProviderSettingsController.refreshCatalog(providerId)` fetches and atomically replaces the complete directory using the existing credential reference.
+- Provider mutations/removals persist a recovery phase:
+
+```dart
+enum PendingProviderOperationState { staged, runtimePublished }
+
+Future<void> markProviderMutationRuntimePublished(
+  ProviderConfigurationMutationLease lease,
+);
+Future<void> markProviderRemovalRuntimePublished(
+  ProviderRemovalLease lease,
+);
+```
+
+  Recovery rolls back/restores `staged` work and only finalizes
+  `runtimePublished` work. A runtime swap is not treated as failed merely
+  because retirement of the already-replaced old runtime reports a cleanup
+  error.
 
 - [ ] **Step 1: Write failing controller transaction tests**
 
