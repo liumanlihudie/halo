@@ -29,73 +29,68 @@ class ChatDetailsPage extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('聊天内容'),
           ),
-          HaloSettingsGroup(
-            children: [
-              HaloSettingsRow(
-                label: '查找聊天记录',
-                prototypeIconClass: 'ph ph-magnifying-glass',
-                onTap: () => context.push('/chat/$conversationId/history'),
-                trailing: Icon(
-                  HaloIcon.requirePrototypeClass('ph ph-caret-right'),
-                  size: 14,
-                  color: HaloColors.muted,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            child: HaloSettingsGroup(
+              children: [
+                HaloSettingsRow(
+                  label: '查找聊天记录',
+                  onTap: () => context.push('/chat/$conversationId/history'),
+                  trailing: Icon(
+                    HaloIcon.requirePrototypeClass('ph ph-caret-right'),
+                    size: 14,
+                    color: HaloColors.muted,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           const _AssetShortcuts(),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('当前会话'),
           ),
-          HaloSettingsGroup(
-            children: [
-              HaloSettingsRow(
-                label: '消息免打扰',
-                prototypeIconClass: 'ph ph-bell-slash',
-                trailing: Switch.adaptive(value: false, onChanged: null),
-              ),
-              HaloSettingsRow(
-                label: '置顶聊天',
-                prototypeIconClass: 'ph ph-push-pin',
-                trailing: Switch.adaptive(value: false, onChanged: null),
-              ),
-              HaloSettingsRow(
-                label: '重要消息提醒',
-                prototypeIconClass: 'ph ph-bell',
-                trailing: Switch.adaptive(value: true, onChanged: null),
-              ),
-            ],
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 13),
+            child: HaloSettingsGroup(
+              children: [
+                HaloSettingsRow(
+                  label: '消息免打扰',
+                  trailing: HaloSwitch(value: false, onChanged: null),
+                ),
+                HaloSettingsRow(
+                  label: '置顶聊天',
+                  trailing: HaloSwitch(value: false, onChanged: null),
+                ),
+                HaloSettingsRow(
+                  label: '重要消息提醒',
+                  trailing: HaloSwitch(value: true, onChanged: null),
+                ),
+              ],
+            ),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('外观与数据'),
           ),
-          HaloSettingsGroup(
-            children: [
-              HaloSettingsRow(
-                label: '设置当前聊天背景',
-                detail: '默认浅灰',
-                prototypeIconClass: 'ph ph-image',
-                onTap: () {},
-              ),
-              HaloSettingsRow(
-                label: '导出聊天记录',
-                detail: 'Markdown / JSON / ZIP',
-                prototypeIconClass: 'ph ph-export',
-                onTap: () {},
-              ),
-              HaloSettingsRow(
-                label: '清空聊天记录',
-                prototypeIconClass: 'ph ph-trash',
-                onTap: () {},
-              ),
-              HaloSettingsRow(
-                label: '反馈专家问题',
-                prototypeIconClass: 'ph ph-warning-circle',
-                onTap: () {},
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13),
+            child: HaloSettingsGroup(
+              children: [
+                HaloSettingsRow(
+                  label: '设置当前聊天背景',
+                  detail: '默认浅灰',
+                  onTap: () {},
+                ),
+                HaloSettingsRow(
+                  label: '导出聊天记录',
+                  detail: 'Markdown / JSON / ZIP',
+                  onTap: () {},
+                ),
+                HaloSettingsRow(label: '清空聊天记录', onTap: () {}),
+                HaloSettingsRow(label: '反馈专家问题', onTap: () {}),
+              ],
+            ),
           ),
         ],
       ),

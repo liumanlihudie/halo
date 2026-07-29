@@ -15,8 +15,11 @@ class ExpertProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedExpertId = expertId == 'general-assistant'
+        ? 'general'
+        : expertId;
     final installed = HaloFixtures.installedExperts
-        .where((expert) => expert.id == expertId)
+        .where((expert) => expert.id == normalizedExpertId)
         .firstOrNull;
     final market = HaloFixtures.marketExperts
         .where((expert) => expert.id == expertId)
@@ -24,8 +27,15 @@ class ExpertProfilePage extends StatelessWidget {
     final name = installed?.name ?? market?.name ?? '合同审阅助手';
     final model =
         installed?.model ?? market?.model ?? 'Anthropic / claude-sonnet-4';
+    final profileModel = normalizedExpertId == 'general'
+        ? 'ToAPIs / doubao-s2s · 可用'
+        : '$model · 可用';
     final description =
         market?.description ?? '你的个人工作协调者。理解需求，安排最合适的 Agent，并把过程整理成最终结果。';
+    final avatarUrl =
+        installed?.imageUrl ??
+        'https://images.unsplash.com/photo-1568602471122-7832951cc4c5'
+            '?auto=format&fit=crop&w=180&q=75';
 
     return HaloPageScaffold(
       title: marketMode ? 'Agent 详情' : 'Agent 资料',
@@ -50,10 +60,17 @@ class ExpertProfilePage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 94),
         children: [
-          _ProfileHero(name: name, model: model),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(15, 12, 15, 13),
-            child: Text(description, style: HaloTextStyles.body),
+          _ProfileHero(
+            name: name,
+            model: marketMode ? model : profileModel,
+            avatarUrl: avatarUrl,
+          ),
+          ColoredBox(
+            color: HaloColors.paper,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+              child: Text(description, style: HaloTextStyles.body),
+            ),
           ),
           if (marketMode) ...[
             const _AbilityGrid(),
@@ -81,19 +98,16 @@ class ExpertProfilePage extends StatelessWidget {
               children: [
                 HaloSettingsRow(
                   label: '发消息',
-                  prototypeIconClass: 'ph ph-chat-circle-dots',
                   onTap: () => context.push('/chat/general-assistant'),
                 ),
                 HaloSettingsRow(
                   label: '语音通话',
                   detail: '端到端双工',
-                  prototypeIconClass: 'ph ph-phone',
                   onTap: () => context.push('/call/voice/$expertId'),
                 ),
                 HaloSettingsRow(
                   label: '视频通话',
                   detail: 'Vidu',
-                  prototypeIconClass: 'ph ph-video-camera',
                   onTap: () => context.push('/call/video/$expertId'),
                 ),
               ],
@@ -107,23 +121,21 @@ class ExpertProfilePage extends StatelessWidget {
                 HaloSettingsRow(
                   label: '专家数据',
                   detail: '提示词、模型、工具与权限',
-                  prototypeIconClass: 'ph ph-database',
                   onTap: () => context.push('/expert/$expertId/data'),
                 ),
                 HaloSettingsRow(
                   label: '当前状态',
                   detail: '可用 · 最近活动',
-                  prototypeIconClass: 'ph ph-pulse',
                   onTap: () {},
                 ),
                 HaloSettingsRow(
                   label: '最近圈层动态',
                   detail: '3 条 · 刚刚',
-                  prototypeIconClass: 'ph ph-circles-three',
                   onTap: () {},
                 ),
               ],
             ),
+            const _PreferenceSettings(),
           ],
         ],
       ),
@@ -133,44 +145,126 @@ class ExpertProfilePage extends StatelessWidget {
 }
 
 class _ProfileHero extends StatelessWidget {
-  const _ProfileHero({required this.name, required this.model});
+  const _ProfileHero({
+    required this.name,
+    required this.model,
+    required this.avatarUrl,
+  });
   final String name;
   final String model;
+  final String avatarUrl;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-      color: HaloColors.navy,
-      child: Row(
+    return SizedBox(
+      height: 205,
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          HaloAvatar(letter: name.characters.first, size: 72),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w700,
-                  ),
+          Image.network(
+            'https://images.unsplash.com/photo-1556761175-b413da4baf72'
+            '?auto=format&fit=crop&w=900&q=80',
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => const ColoredBox(color: HaloColors.navy),
+          ),
+          DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Colors.transparent, Color(0x99000000)],
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.white, width: 3),
+                        borderRadius: BorderRadius.circular(19),
+                      ),
+                      child: HaloAvatar(
+                        letter: name.characters.first,
+                        imageUrl: avatarUrl,
+                        size: 76,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              model,
+                              style: const TextStyle(
+                                color: Color(0xCCFFFFFF),
+                                fontSize: 10,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  model,
-                  style: const TextStyle(
-                    color: Color(0xFFC5CADB),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PreferenceSettings extends StatefulWidget {
+  const _PreferenceSettings();
+
+  @override
+  State<_PreferenceSettings> createState() => _PreferenceSettingsState();
+}
+
+class _PreferenceSettingsState extends State<_PreferenceSettings> {
+  var proactiveMessaging = true;
+  var circlePublishing = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return HaloSettingsGroup(
+      children: [
+        HaloSettingsRow(
+          label: '主动消息',
+          trailing: HaloSwitch(
+            value: proactiveMessaging,
+            semanticLabel: '主动消息',
+            onChanged: (value) => setState(() => proactiveMessaging = value),
+          ),
+        ),
+        HaloSettingsRow(
+          label: '允许发布到圈层',
+          trailing: HaloSwitch(
+            value: circlePublishing,
+            semanticLabel: '允许发布到圈层',
+            onChanged: (value) => setState(() => circlePublishing = value),
+          ),
+        ),
+        HaloSettingsRow(label: '添加到群聊', onTap: () {}),
+      ],
     );
   }
 }

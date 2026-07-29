@@ -43,11 +43,7 @@ class SettingsPage extends StatelessWidget {
                             size: 14,
                             color: HaloColors.muted,
                           )
-                        : Switch.adaptive(
-                            value: item.toggle!,
-                            onChanged: (_) {},
-                            activeTrackColor: HaloColors.accent,
-                          ),
+                        : HaloSwitch(value: item.toggle!, onChanged: (_) {}),
                   ),
               ],
             ),

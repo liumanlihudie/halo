@@ -27,6 +27,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   Widget build(BuildContext context) {
     return HaloPageScaffold(
       title: 'iOS 产品小组',
+      titleBadge: '4 AI',
       compactTitle: true,
       backgroundColor: HaloColors.soft,
       leading: HaloIconButton(

@@ -10,11 +10,6 @@ class GroupContextPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const sources = [
-      ('ph ph-file-text', 'iOS MVP 产品范围.md', '文件 · 28 KB · 全部 Agent 可读'),
-      ('ph ph-link', '竞品功能与价格快照', '网页 · 今天 09:40 更新'),
-      ('ph ph-brain', '产品决策共享记忆', '记忆 · 42 条事实'),
-    ];
     return HaloPageScaffold(
       title: '共享上下文',
       compactTitle: true,
@@ -34,64 +29,131 @@ class GroupContextPage extends StatelessWidget {
         ),
       ],
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(15, 12, 15, 24),
+        padding: const EdgeInsets.fromLTRB(15, 0, 15, 24),
         children: [
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              color: HaloColors.accentSoft,
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(12),
-              child: Text(
-                '群内 Agent 只会读取你明确添加的文件、网页与共享记忆。移除后不会继续用于新回答。',
-                style: TextStyle(
-                  color: HaloColors.accentDeep,
-                  fontSize: 11,
-                  height: 1.5,
-                ),
-              ),
-            ),
-          ),
-          const HaloSectionLabel('当前来源 · 3'),
+          const HaloSectionLabel('群内 Agent 均可读取'),
           HaloSettingsGroup(
             children: [
-              for (final source in sources)
-                HaloSettingsRow(
-                  label: source.$2,
-                  detail: source.$3,
-                  prototypeIconClass: source.$1,
-                  trailing: Icon(
-                    HaloIcon.requirePrototypeClass('ph ph-dots-three'),
-                    size: 16,
-                    color: HaloColors.muted,
-                  ),
-                  onTap: () {},
+              _ContextRow(
+                title: 'IOS-IM 产品规格',
+                subtitle: 'Markdown · 今天更新',
+                trailing: const Text('已共享', style: HaloTextStyles.caption),
+                onTap: () => context.push('/media/file'),
+              ),
+              _ContextRow(
+                title: '竞品研究资料',
+                subtitle: '文件夹 · 8 个来源',
+                trailing: _TrailingText('只读'),
+                onTap: () {},
+              ),
+              const _ContextRow(
+                title: '用户长期偏好',
+                subtitle: '共享事实记忆',
+                trailing: HaloSwitch(
+                  value: true,
+                  onChanged: null,
+                  semanticLabel: '共享用户长期偏好',
                 ),
+              ),
             ],
           ),
-          const HaloSectionLabel('上下文规则'),
-          const HaloSettingsGroup(
+          const HaloSectionLabel('不会共享'),
+          HaloSettingsGroup(
             children: [
-              HaloSettingsRow(
-                label: '允许 Agent 相互引用观点',
-                prototypeIconClass: 'ph ph-chat-circle-dots',
-                trailing: Switch.adaptive(value: true, onChanged: null),
-              ),
-              HaloSettingsRow(
-                label: '回答必须附带来源',
-                prototypeIconClass: 'ph ph-check-circle',
-                trailing: Switch.adaptive(value: true, onChanged: null),
-              ),
-              HaloSettingsRow(
-                label: '冲突证据自动交给核查员',
-                prototypeIconClass: 'ph ph-warning-circle',
-                trailing: Switch.adaptive(value: true, onChanged: null),
+              _ContextRow(
+                title: 'Agent 私有关系记忆',
+                subtitle: '称呼、相处方式和私聊内容',
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const HaloTag('隔离', tone: HaloTagTone.gray),
+                    const SizedBox(width: 5),
+                    Icon(
+                      HaloIcon.requirePrototypeClass('ph ph-caret-right'),
+                      size: 13,
+                      color: HaloColors.muted,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ContextRow extends StatelessWidget {
+  const _ContextRow({
+    required this.title,
+    required this.subtitle,
+    required this.trailing,
+    this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final Widget trailing;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 58),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: HaloColors.ink,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(subtitle, style: HaloTextStyles.caption),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                trailing,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TrailingText extends StatelessWidget {
+  const _TrailingText(this.label);
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label, style: HaloTextStyles.caption),
+        const SizedBox(width: 5),
+        Icon(
+          HaloIcon.requirePrototypeClass('ph ph-caret-right'),
+          size: 13,
+          color: HaloColors.muted,
+        ),
+      ],
     );
   }
 }

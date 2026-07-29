@@ -10,6 +10,8 @@ class HaloPageScaffold extends StatelessWidget {
     this.actions = const [],
     this.backgroundColor = HaloColors.paper,
     this.compactTitle = false,
+    this.titleBadge,
+    this.titleBadgeTone = HaloTagTone.accent,
     this.bottom,
     super.key,
   });
@@ -20,23 +22,37 @@ class HaloPageScaffold extends StatelessWidget {
   final List<Widget> actions;
   final Color backgroundColor;
   final bool compactTitle;
+  final String? titleBadge;
+  final HaloTagTone titleBadgeTone;
   final Widget? bottom;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: backgroundColor,
+      backgroundColor: HaloColors.paper,
       body: SafeArea(
         bottom: false,
         child: Column(
           children: [
-            HaloNavBar(
-              title: title,
-              leading: leading,
-              actions: actions,
-              compactTitle: compactTitle,
+            Material(
+              key: const ValueKey('halo-nav-surface'),
+              color: HaloColors.paper,
+              child: HaloNavBar(
+                title: title,
+                leading: leading,
+                actions: actions,
+                compactTitle: compactTitle,
+                titleBadge: titleBadge,
+                titleBadgeTone: titleBadgeTone,
+              ),
             ),
-            Expanded(child: body),
+            Expanded(
+              child: Material(
+                key: const ValueKey('halo-body-surface'),
+                color: backgroundColor,
+                child: body,
+              ),
+            ),
             ?bottom,
           ],
         ),
@@ -51,6 +67,8 @@ class HaloNavBar extends StatelessWidget {
     this.leading,
     this.actions = const [],
     this.compactTitle = false,
+    this.titleBadge,
+    this.titleBadgeTone = HaloTagTone.accent,
     super.key,
   });
 
@@ -58,17 +76,30 @@ class HaloNavBar extends StatelessWidget {
   final Widget? leading;
   final List<Widget> actions;
   final bool compactTitle;
+  final String? titleBadge;
+  final HaloTagTone titleBadgeTone;
 
   @override
   Widget build(BuildContext context) {
-    final titleWidget = Text(
-      title,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      textAlign: compactTitle ? TextAlign.center : TextAlign.left,
-      style: compactTitle
-          ? HaloTextStyles.compactTitle
-          : HaloTextStyles.pageTitle,
+    final titleWidget = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: compactTitle ? TextAlign.center : TextAlign.left,
+            style: compactTitle
+                ? HaloTextStyles.compactTitle
+                : HaloTextStyles.pageTitle,
+          ),
+        ),
+        if (titleBadge case final badge?) ...[
+          const SizedBox(width: 6),
+          HaloTag(badge, tone: titleBadgeTone),
+        ],
+      ],
     );
 
     if (!compactTitle) {
@@ -431,7 +462,7 @@ class HaloSettingsGroup extends StatelessWidget {
 class HaloSettingsRow extends StatelessWidget {
   const HaloSettingsRow({
     required this.label,
-    required this.prototypeIconClass,
+    this.prototypeIconClass,
     this.detail,
     this.trailing,
     this.onTap,
@@ -439,7 +470,7 @@ class HaloSettingsRow extends StatelessWidget {
   });
 
   final String label;
-  final String prototypeIconClass;
+  final String? prototypeIconClass;
   final String? detail;
   final Widget? trailing;
   final VoidCallback? onTap;
@@ -458,21 +489,25 @@ class HaloSettingsRow extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
             child: Row(
               children: [
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: HaloColors.accentSoft,
-                    borderRadius: BorderRadius.circular(HaloRadii.settingsIcon),
-                  ),
-                  child: SizedBox.square(
-                    dimension: 30,
-                    child: Icon(
-                      HaloIcon.requirePrototypeClass(prototypeIconClass),
-                      size: 17,
-                      color: HaloColors.accentDeep,
+                if (prototypeIconClass case final iconClass?) ...[
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: HaloColors.accentSoft,
+                      borderRadius: BorderRadius.circular(
+                        HaloRadii.settingsIcon,
+                      ),
+                    ),
+                    child: SizedBox.square(
+                      dimension: 30,
+                      child: Icon(
+                        HaloIcon.requirePrototypeClass(iconClass),
+                        size: 17,
+                        color: HaloColors.accentDeep,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
+                  const SizedBox(width: 10),
+                ],
                 Expanded(child: Text(label, style: HaloTextStyles.body)),
                 if (detail != null)
                   Flexible(
@@ -489,6 +524,65 @@ class HaloSettingsRow extends StatelessWidget {
                   ),
                 if (trailing != null) ...[const SizedBox(width: 8), trailing!],
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class HaloSwitch extends StatelessWidget {
+  const HaloSwitch({
+    required this.value,
+    required this.onChanged,
+    this.semanticLabel,
+    super.key,
+  });
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: semanticLabel,
+      toggled: value,
+      enabled: onChanged != null,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onChanged == null ? null : () => onChanged!(!value),
+        child: SizedBox(
+          width: 43,
+          height: 25,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            padding: const EdgeInsets.all(3),
+            decoration: BoxDecoration(
+              color: value ? HaloColors.accent : const Color(0xFFCDD1D9),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: AnimatedAlign(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              alignment: value ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: 19,
+                height: 19,
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(0x33000000),
+                      blurRadius: 3,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),

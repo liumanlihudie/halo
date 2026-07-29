@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
+import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
-import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
 class NewGroupPage extends StatefulWidget {
   const NewGroupPage({super.key});
@@ -12,80 +12,173 @@ class NewGroupPage extends StatefulWidget {
 }
 
 class _NewGroupPageState extends State<NewGroupPage> {
-  final selected = <String>{'product', 'data'};
+  final selected = <String>{'product', 'architect', 'growth'};
+
+  static const choices = [
+    (
+      'product',
+      '产品经理',
+      '需求拆解与产品判断',
+      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75',
+      '产',
+    ),
+    (
+      'architect',
+      '技术架构师',
+      '实现路径与工程风险',
+      'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75',
+      '技',
+    ),
+    ('growth', '增长顾问', '分发、留存和商业化', null, '增'),
+    (
+      'writing',
+      '写作顾问',
+      '文档结构与表达',
+      'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=75',
+      '写',
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return HaloPageScaffold(
       title: '创建 AI 群聊',
       compactTitle: true,
-      backgroundColor: HaloColors.soft,
+      backgroundColor: HaloColors.paper,
       leading: HaloIconButton(
-        prototypeIconClass: 'ph ph-caret-left',
-        semanticLabel: '返回',
+        prototypeIconClass: 'ph ph-x',
+        semanticLabel: '取消',
         onPressed: () =>
             context.canPop() ? context.pop() : context.go('/conversations'),
       ),
-      body: Column(
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(15, 9, 15, 8),
-            child: HaloSearchField(placeholder: '搜索已添加的 Agent'),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                '已选择 ${selected.length} 位专家',
-                style: HaloTextStyles.secondary,
-              ),
+      actions: [
+        TextButton(
+          onPressed: selected.length >= 2
+              ? () => context.go('/group/group-product')
+              : null,
+          child: const Text(
+            '完成',
+            style: TextStyle(
+              color: HaloColors.accentDeep,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(15, 8, 15, 16),
-              children: [
-                for (final expert in HaloFixtures.installedExperts)
-                  CheckboxListTile(
-                    value: selected.contains(expert.id),
-                    onChanged: (value) => setState(
-                      () => value == true
-                          ? selected.add(expert.id)
-                          : selected.remove(expert.id),
+        ),
+      ],
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(15, 9, 15, 24),
+        children: [
+          const HaloSearchField(placeholder: '搜索 Agent'),
+          const HaloSectionLabel('群名称'),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            decoration: BoxDecoration(
+              color: HaloColors.soft,
+              borderRadius: BorderRadius.circular(HaloRadii.card),
+            ),
+            child: const Text('新项目评审组', style: HaloTextStyles.body),
+          ),
+          HaloSectionLabel('选择成员 · 已选 ${selected.length} 个'),
+          for (final choice in choices)
+            _AgentChoiceRow(
+              name: choice.$2,
+              description: choice.$3,
+              imageUrl: choice.$4,
+              letter: choice.$5,
+              selected: selected.contains(choice.$1),
+              onTap: () => setState(
+                () => selected.contains(choice.$1)
+                    ? selected.remove(choice.$1)
+                    : selected.add(choice.$1),
+              ),
+            ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => context.push('/market'),
+              child: SizedBox(
+                height: 62,
+                child: Row(
+                  children: [
+                    const HaloAvatar(letter: '+', size: 46),
+                    const SizedBox(width: 11),
+                    const Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('从 AI 市场添加', style: HaloTextStyles.rowTitle),
+                          SizedBox(height: 4),
+                          Text('发现更多专业 Agent', style: HaloTextStyles.caption),
+                        ],
+                      ),
                     ),
-                    contentPadding: EdgeInsets.zero,
-                    secondary: HaloAvatar(
-                      imageUrl: expert.imageUrl,
-                      letter: expert.avatarLetter,
-                      size: 42,
+                    Icon(
+                      HaloIcon.requirePrototypeClass('ph ph-caret-right'),
+                      size: 14,
+                      color: HaloColors.muted,
                     ),
-                    title: Text(expert.name, style: HaloTextStyles.rowTitle),
-                    subtitle: Text(
-                      '${expert.model}\n${expert.status}',
-                      maxLines: 2,
-                      style: HaloTextStyles.caption,
-                    ),
-                    controlAffinity: ListTileControlAffinity.trailing,
-                    activeColor: HaloColors.accent,
-                  ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
         ],
       ),
-      bottom: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: selected.length >= 2
-                  ? () => context.go('/group/group-product')
-                  : null,
-              child: Text('创建群聊（${selected.length}）'),
-            ),
+    );
+  }
+}
+
+class _AgentChoiceRow extends StatelessWidget {
+  const _AgentChoiceRow({
+    required this.name,
+    required this.description,
+    required this.letter,
+    required this.selected,
+    required this.onTap,
+    this.imageUrl,
+  });
+
+  final String name;
+  final String description;
+  final String letter;
+  final String? imageUrl;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          height: 62,
+          child: Row(
+            children: [
+              HaloAvatar(imageUrl: imageUrl, letter: letter, size: 46),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: HaloTextStyles.rowTitle),
+                    const SizedBox(height: 4),
+                    Text(description, style: HaloTextStyles.caption),
+                  ],
+                ),
+              ),
+              if (selected)
+                const HaloTag('已选', tone: HaloTagTone.green)
+              else
+                Icon(
+                  HaloIcon.requirePrototypeClass('ph ph-plus'),
+                  size: 18,
+                  color: HaloColors.muted,
+                ),
+            ],
           ),
         ),
       ),

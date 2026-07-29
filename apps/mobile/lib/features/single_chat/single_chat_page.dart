@@ -30,6 +30,8 @@ class _SingleChatPageState extends State<SingleChatPage> {
     );
     return HaloPageScaffold(
       title: conversation.title,
+      titleBadge: conversation.tag,
+      titleBadgeTone: conversation.tagTone,
       compactTitle: true,
       leading: HaloIconButton(
         prototypeIconClass: 'ph ph-caret-left',

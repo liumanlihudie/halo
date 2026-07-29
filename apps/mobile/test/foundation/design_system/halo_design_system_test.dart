@@ -71,4 +71,69 @@ void main() {
       findsNWidgets(4),
     );
   });
+
+  testWidgets('page scaffold keeps the navbar white and colors only the body', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HaloPageScaffold(
+          title: '聊天详情',
+          compactTitle: true,
+          backgroundColor: HaloColors.soft,
+          body: SizedBox(),
+        ),
+      ),
+    );
+
+    final nav = tester.widget<Material>(
+      find.byKey(const ValueKey('halo-nav-surface')),
+    );
+    final body = tester.widget<Material>(
+      find.byKey(const ValueKey('halo-body-surface')),
+    );
+    expect(nav.color, HaloColors.paper);
+    expect(body.color, HaloColors.soft);
+  });
+
+  testWidgets('compact navigation can show the prototype status badge', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: HaloPageScaffold(
+          title: 'iOS 产品小组',
+          titleBadge: '4 AI',
+          compactTitle: true,
+          body: SizedBox(),
+        ),
+      ),
+    );
+
+    expect(find.text('iOS 产品小组'), findsOneWidget);
+    expect(find.text('4 AI'), findsOneWidget);
+  });
+
+  testWidgets('prototype switch has exact dimensions and changes value', (
+    tester,
+  ) async {
+    var value = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) => Center(
+            child: HaloSwitch(
+              value: value,
+              onChanged: (next) => setState(() => value = next),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.getSize(find.byType(HaloSwitch)), const Size(43, 25));
+    await tester.tap(find.byType(HaloSwitch));
+    await tester.pump();
+    expect(value, isTrue);
+  });
 }

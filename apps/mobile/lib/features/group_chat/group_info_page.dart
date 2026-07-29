@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
+import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 
 class GroupInfoPage extends StatelessWidget {
@@ -34,55 +35,32 @@ class GroupInfoPage extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('群聊信息'),
           ),
-          HaloSettingsGroup(
+          _InsetGroup(
             children: [
-              HaloSettingsRow(
-                label: '群名称',
-                detail: 'iOS 产品小组',
-                prototypeIconClass: 'ph ph-users-three',
-                onTap: () {},
-              ),
-              HaloSettingsRow(
-                label: '群目标',
-                detail: '验证 iOS MVP',
-                prototypeIconClass: 'ph ph-target',
-                onTap: () {},
-              ),
-              HaloSettingsRow(
-                label: '主持 Agent',
-                detail: '产品经理',
-                prototypeIconClass: 'ph ph-user',
-                onTap: () {},
-              ),
+              HaloSettingsRow(label: '群名称', detail: 'iOS 产品小组', onTap: () {}),
+              HaloSettingsRow(label: '群目标', detail: '验证 iOS MVP', onTap: () {}),
+              HaloSettingsRow(label: '主持 Agent', detail: '产品经理', onTap: () {}),
             ],
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('发言与上下文'),
           ),
-          HaloSettingsGroup(
+          _InsetGroup(
             children: [
-              HaloSettingsRow(
-                label: '默认发言规则',
-                detail: '自动选择',
-                prototypeIconClass: 'ph ph-path',
-                onTap: () {},
-              ),
+              HaloSettingsRow(label: '默认发言规则', detail: '自动选择', onTap: () {}),
               HaloSettingsRow(
                 label: '共享上下文',
                 detail: '3 个来源',
-                prototypeIconClass: 'ph ph-brain',
                 onTap: () => context.push('/group/$groupId/context'),
               ),
               const HaloSettingsRow(
                 label: '每次讨论自动总结',
-                prototypeIconClass: 'ph ph-sparkle',
-                trailing: Switch.adaptive(value: true, onChanged: null),
+                trailing: HaloSwitch(value: true, onChanged: null),
               ),
               const HaloSettingsRow(
                 label: '讨论总结发布到圈层',
-                prototypeIconClass: 'ph ph-circles-three',
-                trailing: Switch.adaptive(value: true, onChanged: null),
+                trailing: HaloSwitch(value: true, onChanged: null),
               ),
             ],
           ),
@@ -90,13 +68,37 @@ class GroupInfoPage extends StatelessWidget {
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('群聊内容'),
           ),
-          HaloSettingsGroup(
+          _InsetGroup(
+            children: [HaloSettingsRow(label: '查找群聊记录', onTap: () {})],
+          ),
+          const _AssetShortcuts(),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 15),
+            child: HaloSectionLabel('当前群聊'),
+          ),
+          const _InsetGroup(
             children: [
               HaloSettingsRow(
-                label: '查找群聊记录',
-                prototypeIconClass: 'ph ph-magnifying-glass',
-                onTap: () {},
+                label: '消息免打扰',
+                trailing: HaloSwitch(value: false, onChanged: null),
               ),
+              HaloSettingsRow(
+                label: '置顶群聊',
+                trailing: HaloSwitch(value: false, onChanged: null),
+              ),
+              HaloSettingsRow(
+                label: '讨论完成提醒',
+                trailing: HaloSwitch(value: true, onChanged: null),
+              ),
+              HaloSettingsRow(label: '设置当前群聊背景', detail: '默认浅灰'),
+              HaloSettingsRow(label: '导出群聊记录', detail: 'Markdown / JSON / ZIP'),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const _InsetGroup(
+            children: [
+              HaloSettingsRow(label: '清空群聊记录', detail: '保留群配置'),
+              HaloSettingsRow(label: '删除群聊'),
             ],
           ),
         ],
@@ -111,11 +113,23 @@ class _MemberStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const members = [
-      ('产', '产品经理'),
-      ('交', '交互设计'),
-      ('技', '技术架构'),
-      ('增', '增长顾问'),
-      ('+', '添加'),
+      (
+        '产',
+        '产品经理',
+        'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75',
+      ),
+      (
+        '交',
+        '交互设计',
+        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75',
+      ),
+      (
+        '技',
+        '技术架构',
+        'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75',
+      ),
+      ('增', '增长顾问', null),
+      ('+', '添加', null),
     ];
     return SizedBox(
       height: 94,
@@ -130,6 +144,7 @@ class _MemberStrip extends StatelessWidget {
             children: [
               HaloAvatar(
                 letter: members[index].$1,
+                imageUrl: members[index].$3,
                 size: 48,
                 backgroundColor: index == members.length - 1
                     ? HaloColors.muted
@@ -146,6 +161,68 @@ class _MemberStrip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _AssetShortcuts extends StatelessWidget {
+  const _AssetShortcuts();
+
+  @override
+  Widget build(BuildContext context) {
+    const items = [
+      ('ph ph-images', '图片与视频'),
+      ('ph ph-files', '文件'),
+      ('ph ph-link', '链接'),
+      ('ph ph-sparkle', 'AI 成果'),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(15, 10, 15, 0),
+      child: Row(
+        children: [
+          for (final item in items)
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(11),
+                  child: InkWell(
+                    onTap: () {},
+                    borderRadius: BorderRadius.circular(11),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                      child: Column(
+                        children: [
+                          Icon(
+                            HaloIcon.requirePrototypeClass(item.$1),
+                            size: 20,
+                            color: HaloColors.accentDeep,
+                          ),
+                          const SizedBox(height: 5),
+                          Text(item.$2, style: HaloTextStyles.caption),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InsetGroup extends StatelessWidget {
+  const _InsetGroup({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 13),
+      child: HaloSettingsGroup(children: children),
     );
   }
 }
