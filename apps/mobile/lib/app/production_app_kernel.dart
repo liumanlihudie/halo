@@ -3,6 +3,7 @@ import 'dart:io';
 // ignore_for_file: prefer_initializing_formals
 
 import 'package:halo_mobile/app/app_kernel.dart';
+import 'package:halo_mobile/app/production_group_chat_port.dart';
 import 'package:halo_mobile/app/production_single_chat_port.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
@@ -10,6 +11,8 @@ import 'package:halo_mobile/features/settings/provider_settings_controller.dart'
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/drift_chat_message_repository.dart';
+import 'package:halo_mobile/orchestration/sqlite_model_call_journal.dart';
+import 'package:halo_mobile/orchestration/wiring/orchestration_kernel_factory.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_catalog_discovery.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
@@ -19,6 +22,7 @@ import 'package:halo_mobile/model_runtime/production_provider_inspection_transpo
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
+import 'package:halo_mobile/model_runtime/provider_registry.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
@@ -73,6 +77,8 @@ final class ProductionAppKernelFactory {
     ProductionModelRuntimeSlot? runtimeSlot;
     ProductionSingleChatPort? singleChatPort;
     DurableChatMessageRepository? chatRepository;
+    SqliteModelCallJournal? modelCallJournal;
+    OrchestrationKernelFactory? orchestrationFactory;
     try {
       final supportDirectory = await _applicationSupportDirectory();
       await supportDirectory.create(recursive: true);
@@ -116,6 +122,23 @@ final class ProductionAppKernelFactory {
           gateway: const ExpertOutputValidationGateway(),
         ),
       );
+      final experts = ExecutableExpertRegistry(
+        gateway: const ExpertOutputValidationGateway(),
+      );
+      modelCallJournal = SqliteModelCallJournal.open(
+        '${supportDirectory.path}${Platform.pathSeparator}halo_model_calls.sqlite',
+      );
+      orchestrationFactory = OrchestrationKernelFactory.production(
+        appSupportDirectory: _FixedAppSupportDirectory(supportDirectory.path),
+        selector: RoutingCardAgentSelector(experts),
+        runtime: LiveRoutingAgentRuntime(
+          modelRuntime: _SlotChatModelRuntime(runtimeSlot),
+          experts: experts,
+          journal: modelCallJournal,
+          store: settingsStore,
+        ),
+      );
+      final orchestrationKernel = await orchestrationFactory.create();
       final settings = ProviderSettingsController(
         credentials: _credentials,
         catalogFetcher: _ProductionProviderModelCatalogFetcher(
@@ -137,8 +160,11 @@ final class ProductionAppKernelFactory {
           chatRepository: chatRepository,
           providerSettings: settings,
           modelRouting: modelRouting,
+          groupChatPort: ProductionGroupChatPort(orchestrationKernel),
         ),
         port: singleChatPort,
+        orchestrationKernel: orchestrationKernel,
+        modelCallJournal: modelCallJournal,
         chatRepository: chatRepository,
         settings: settings,
         modelRouting: modelRouting,
@@ -146,6 +172,12 @@ final class ProductionAppKernelFactory {
         settingsStore: settingsStore,
       );
     } catch (error, stackTrace) {
+      try {
+        await orchestrationFactory?.close();
+      } catch (_) {}
+      try {
+        modelCallJournal?.close();
+      } catch (_) {}
       try {
         await singleChatPort?.close();
       } catch (_) {}
@@ -269,7 +301,11 @@ final class _ProductionAppKernel implements ApplicationKernel {
     required ModelRoutingController modelRouting,
     required ProductionModelRuntimeSlot runtimeSlot,
     required ProviderConfigurationStore settingsStore,
+    required ManagedOrchestrationKernel orchestrationKernel,
+    required SqliteModelCallJournal modelCallJournal,
   }) : _port = port,
+       _orchestrationKernel = orchestrationKernel,
+       _modelCallJournal = modelCallJournal,
        _chatRepository = chatRepository,
        _settings = settings,
        _modelRouting = modelRouting,
@@ -287,6 +323,8 @@ final class _ProductionAppKernel implements ApplicationKernel {
   final ModelRoutingController _modelRouting;
   final ProductionModelRuntimeSlot _runtimeSlot;
   final ProviderConfigurationStore _settingsStore;
+  final ManagedOrchestrationKernel _orchestrationKernel;
+  final SqliteModelCallJournal _modelCallJournal;
   Future<void>? _closeFuture;
 
   @override
@@ -310,6 +348,9 @@ final class _ProductionAppKernel implements ApplicationKernel {
       }
     }
 
+    // Drain orchestration before the runtime it calls into disappears.
+    await closeOne(_orchestrationKernel.close);
+    await closeOne(() async => _modelCallJournal.close());
     await closeOne(_modelRouting.close);
     await closeOne(_settings.close);
     await closeOne(_runtimeSlot.close);
@@ -419,3 +460,21 @@ const productionSingleChatConversations = {
     avatarLetter: '健',
   ),
 };
+
+final class _FixedAppSupportDirectory implements AppSupportDirectoryProvider {
+  const _FixedAppSupportDirectory(this.path);
+
+  final String path;
+
+  @override
+  Future<String> getDirectoryPath() async => path;
+}
+
+final class _SlotChatModelRuntime implements ChatModelRuntime {
+  const _SlotChatModelRuntime(this.slot);
+
+  final ProductionModelRuntimeSlot slot;
+
+  @override
+  Future<ChatResponse> chat(ChatRequest request) => slot.chat(request);
+}

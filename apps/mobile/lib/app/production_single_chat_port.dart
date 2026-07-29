@@ -3,6 +3,7 @@ import 'dart:convert';
 
 // ignore_for_file: prefer_initializing_formals
 
+import 'package:halo_mobile/experts/expert_output_prompt.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
@@ -132,44 +133,10 @@ final class ProductionSingleChatPort implements SingleChatPort {
   }
 }
 
-String _renderExpertSystemPrompt(ExecutableExpert expert) {
-  const proposedAction = {
-    'verb': 'review',
-    'target': 'replace-with-target',
-    'conditions': ['replace-with-condition'],
-  };
-  final template = <String, Object?>{};
-  for (final entry in expert.profile.outputSchema.fields.entries) {
-    template[entry.key] = switch (entry.value) {
-      OutputValueType.string => 'replace-with-answer',
-      OutputValueType.stringList => ['replace-with-item'],
-      OutputValueType.evidenceList => <Object?>[],
-      OutputValueType.integer => 0,
-      OutputValueType.boolean => false,
-      OutputValueType.proposedActionList => [proposedAction],
-      OutputValueType.verificationEnvelope => {
-        'claimType': 'advice',
-        'tense': 'proposed',
-        'verified': false,
-        'source': 'none',
-        'proposedActions': [proposedAction],
-        'executedFacts': <String>[],
-      },
-    };
-  }
-  return [
-    expert.profile.promptPackage.render(),
-    'Output format:',
-    'Return exactly one valid JSON object and no Markdown or surrounding text.',
-    'Use exactly the keys and value shapes in this template. Replace every '
-        'placeholder with a concise answer. Do not add or remove keys.',
-    'Verification.proposedActions MUST contain at least one action. Its verb '
-        'MUST be one of: analyze, compare, document, implement, measure, plan, '
-        'query, review, test, train, verify. target and every condition MUST '
-        'be lowercase ASCII kebab-case identifiers. executedFacts MUST be [].',
-    jsonEncode(template),
-  ].join('\n');
-}
+String _renderExpertSystemPrompt(ExecutableExpert expert) => [
+  expert.profile.promptPackage.render(),
+  renderExpertOutputPrompt(expert),
+].join('\n');
 
 String? _decodeAndProject(ExecutableExpert expert, String rawModelOutput) {
   try {

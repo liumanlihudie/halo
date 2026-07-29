@@ -87,8 +87,20 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/group/:groupId',
-        builder: (context, state) =>
-            GroupChatPage(groupId: state.pathParameters['groupId']!),
+        builder: (context, state) {
+          final groupId = state.pathParameters['groupId']!;
+          Widget buildPage(AppDependencies? current) => GroupChatPage(
+            key: ValueKey(current),
+            groupId: groupId,
+            runPort: current?.groupChatPort,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/group/:groupId/info',

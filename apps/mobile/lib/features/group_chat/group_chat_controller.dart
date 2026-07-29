@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -429,7 +430,7 @@ class GroupChatController extends ChangeNotifier {
     final agentId = event.agentId;
     if (agentId == null) return;
     final index = _activeMessageByAgent.remove(agentId);
-    final text = event.text ?? event.errorCode ?? '';
+    final text = _publicAnswer(event.text) ?? event.errorCode ?? '';
     if (index == null) {
       _messages.add(
         GroupChatAgentMessage(
@@ -444,6 +445,22 @@ class GroupChatController extends ChangeNotifier {
       text: text,
       status: messageStatus,
     );
+  }
+
+  /// The runtime persists a `TruthfulOutputEnvelope` as the event text, so the
+  /// bubble would otherwise render raw JSON. Unparseable text is passed through
+  /// unchanged: it may be a plain message from a non-provider-backed runtime.
+  String? _publicAnswer(String? text) {
+    if (text == null) return null;
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is! Map) return text;
+      final answer = decoded['answer'];
+      if (answer is! String || answer.trim().isEmpty) return text;
+      return answer;
+    } catch (_) {
+      return text;
+    }
   }
 
   void _applyStreamError(Object error) {

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:halo_mobile/experts/expert_output_prompt.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
@@ -290,7 +291,10 @@ final class ProviderBackedAgentRuntime
   String _expertSystemPrompt(ExecutableExpert expert) =>
       '${expert.profile.promptPackage.render()}\n\n'
       'P0 runtime policy: tools are disabled; private memory is unavailable; do not request credentials. '
-      'Return only the expert output JSON matching your existing schema. Completed facts require trusted receipts and are unsupported in P0.';
+      'Completed facts require trusted receipts and are unsupported in P0.\n'
+      // Without the explicit template and verb allowlist a real provider
+      // returns non-conforming JSON and the whole turn is dropped silently.
+      '${renderExpertOutputPrompt(expert)}';
 
   String _participantInput(String input, List<String> previousResponses) {
     final shared = _bounded(

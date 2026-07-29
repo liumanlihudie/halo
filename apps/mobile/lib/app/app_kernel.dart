@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
+import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
@@ -15,6 +16,7 @@ class AppDependencies {
     required this.chatRepository,
     this.providerSettings,
     this.modelRouting,
+    this.groupChatPort,
     this.allowEphemeralChatRepositoryForTesting = false,
   });
 
@@ -22,6 +24,10 @@ class AppDependencies {
   final ChatMessageRepository chatRepository;
   final ProviderSettingsController? providerSettings;
   final ModelRoutingController? modelRouting;
+
+  /// Absent until the orchestration kernel is available; the group composer
+  /// stays disabled rather than inventing replies.
+  final GroupChatRunPort? groupChatPort;
   final bool allowEphemeralChatRepositoryForTesting;
 }
 

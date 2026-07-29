@@ -25,8 +25,9 @@ void main() {
     // ignore: avoid_print
     print('GROUP >>> ${texts.join(" | ")}');
 
-    // Pins today's honest behaviour. When the production group run port lands,
-    // this expectation must flip to an enabled composer rather than be deleted.
-    expect(find.text('群聊运行服务待接入'), findsOneWidget);
+    // The production run port must reach the UI, so the composer is live rather
+    // than showing the not-wired placeholder.
+    expect(find.text('群聊运行服务待接入'), findsNothing);
+    expect(find.byType(TextField), findsWidgets);
   });
 }
