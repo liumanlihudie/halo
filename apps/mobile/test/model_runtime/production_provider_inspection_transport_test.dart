@@ -12,6 +12,40 @@ void main() {
     expiresAt: DateTime.utc(2099),
   );
 
+  test('a declared non-text model is excluded from the catalog', () async {
+    final adapter =
+        FakeUnaryHttpAdapter(
+          retainSafeHeaderValuesForTesting: true,
+          retainRequestContentForTesting: true,
+        )..enqueueRaw(
+          statusCode: 200,
+          bytes: utf8.encode(
+            '{"object":"list","data":['
+            '{"id":"chat-model","object":"model",'
+            '"supported_endpoint_types":["chat_completions"]},'
+            '{"id":"image-model","object":"model",'
+            '"supported_endpoint_types":["images"]},'
+            '{"id":"embedding-model","object":"model",'
+            '"supported_endpoint_types":["embeddings"]},'
+            // Declares nothing, so it is assumed usable rather than dropped.
+            '{"id":"unknown-model","object":"model"}'
+            ']}',
+          ),
+        );
+    final transport = _transport(adapter);
+
+    final result = await transport.discoverModels(
+      _request(config: ProviderConfig.deepSeek(), credential: credential),
+    );
+
+    // An image or embedding model persisted as chat-capable would be offered as
+    // the default text model and fail on first use.
+    expect(result.models.map((model) => model.modelId), [
+      'chat-model',
+      'unknown-model',
+    ]);
+  });
+
   test(
     'DeepSeek models response becomes confirmed text metadata in order',
     () async {

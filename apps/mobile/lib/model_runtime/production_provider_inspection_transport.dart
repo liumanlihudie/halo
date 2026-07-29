@@ -12,13 +12,43 @@ final class ProductionProviderInspectionTransport
     implements ProviderInspectionTransport {
   ProductionProviderInspectionTransport({required this.client});
 
-  static const _capabilityHints = <String, Object?>{
+  /// Used only when the provider declares nothing about the model.
+  ///
+  /// An OpenAI-compatible `/models` response carries no capability metadata, so
+  /// these are an assumption, not a fact. Providers that do declare endpoint
+  /// types (`supported_endpoint_types`) are believed instead — otherwise image,
+  /// audio and embedding models are persisted as chat-capable and become
+  /// selectable as the default text model.
+  static const _assumedCapabilityHints = <String, Object?>{
     'supports_chat': true,
     'supports_system': true,
     'supports_temperature': true,
   };
 
+  static const _chatEndpointTypes = <String>{
+    'chat',
+    'chat_completions',
+    'chat/completions',
+    'completions',
+    'messages',
+    'generate_content',
+    'text',
+  };
+
   final SecureJsonHttpClient client;
+
+  /// The endpoint types a provider declares for one model, or null when it
+  /// declares none. An empty or malformed list is treated as "declared nothing"
+  /// rather than as evidence of anything.
+  static Set<String>? _declaredEndpointTypes(Map<String, Object?> item) {
+    final declared = item['supported_endpoint_types'];
+    if (declared is! List) return null;
+    final types = declared.whereType<String>().map(
+      (type) => type.toLowerCase(),
+    );
+    final resolved = types.toSet();
+    return resolved.isEmpty ? null : resolved;
+  }
 
   @override
   Future<ProviderCatalogTransportResult> discoverModels(
@@ -50,12 +80,18 @@ final class ProductionProviderInspectionTransport
             !seen.add(modelId)) {
           throw const FormatException();
         }
+        final declared = _declaredEndpointTypes(item);
+        if (declared != null && !declared.any(_chatEndpointTypes.contains)) {
+          // Declared, and not a text model. Skipping keeps it out of the text
+          // model picker instead of mislabelling it as chat-capable.
+          continue;
+        }
         models.add(
           UpstreamModelMetadata(
             providerId: request.config.providerId,
             modelId: modelId,
             displayName: modelId,
-            capabilityHints: _capabilityHints,
+            capabilityHints: _assumedCapabilityHints,
           ),
         );
       }
