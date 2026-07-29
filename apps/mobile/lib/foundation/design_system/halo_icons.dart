@@ -327,6 +327,11 @@ abstract final class HaloIcon {
       fontFamily: 'PhosphorRegular',
       fontPackage: 'phosphor_flutter',
     ),
+    'ph ph-pulse': IconData(
+      0xe000,
+      fontFamily: 'PhosphorRegular',
+      fontPackage: 'phosphor_flutter',
+    ),
     'ph ph-power': IconData(
       0xe3da,
       fontFamily: 'PhosphorRegular',
@@ -459,6 +464,11 @@ abstract final class HaloIcon {
     ),
     'ph ph-waveform': IconData(
       0xe802,
+      fontFamily: 'PhosphorRegular',
+      fontPackage: 'phosphor_flutter',
+    ),
+    'ph ph-wrench': IconData(
+      0xe5d4,
       fontFamily: 'PhosphorRegular',
       fontPackage: 'phosphor_flutter',
     ),

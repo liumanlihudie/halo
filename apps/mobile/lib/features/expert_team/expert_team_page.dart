@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
@@ -65,7 +66,7 @@ class _MarketBanner extends StatelessWidget {
       color: HaloColors.accentSoft,
       borderRadius: BorderRadius.circular(HaloRadii.card),
       child: InkWell(
-        onTap: () {},
+        onTap: () => context.push('/market'),
         borderRadius: BorderRadius.circular(HaloRadii.card),
         child: Padding(
           padding: const EdgeInsets.all(14),
@@ -125,7 +126,7 @@ class _ExpertRow extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {},
+        onTap: () => context.push('/expert/${expert.id}'),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
