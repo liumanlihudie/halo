@@ -1,41 +1,55 @@
 import 'package:flutter/material.dart';
+import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 
 abstract final class HaloTheme {
-  static const accent = Color(0xFF586BE0);
-  static const canvas = Color(0xFFF3F4F7);
-
   static ThemeData light() {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: accent,
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: HaloColors.accent,
       brightness: Brightness.light,
-      surface: Colors.white,
+      surface: HaloColors.paper,
+      error: HaloColors.red,
     );
 
     return ThemeData(
       useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: canvas,
-      appBarTheme: const AppBarTheme(
-        centerTitle: false,
-        elevation: 0,
-        backgroundColor: canvas,
-        foregroundColor: Color(0xFF1D2330),
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: HaloColors.paper,
+      dividerColor: HaloColors.line,
+      splashColor: HaloColors.accent.withValues(alpha: 0.06),
+      highlightColor: HaloColors.accent.withValues(alpha: 0.04),
+      textTheme: ThemeData.light().textTheme.apply(
+        bodyColor: HaloColors.ink,
+        displayColor: HaloColors.ink,
       ),
       navigationBarTheme: NavigationBarThemeData(
-        height: 72,
-        backgroundColor: Colors.white,
-        indicatorColor: accent.withValues(alpha: 0.12),
+        height: HaloMetrics.tabBarHeight,
+        backgroundColor: HaloColors.paper.withValues(alpha: 0.96),
+        indicatorColor: Colors.transparent,
+        elevation: 0,
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           return TextStyle(
             color: states.contains(WidgetState.selected)
-                ? accent
-                : const Color(0xFF858B96),
-            fontSize: 12,
+                ? HaloColors.accentDeep
+                : const Color(0xFF999DA6),
+            fontSize: 10,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w700
-                : FontWeight.w500,
+                : FontWeight.w400,
           );
         }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          return IconThemeData(
+            color: states.contains(WidgetState.selected)
+                ? HaloColors.accentDeep
+                : const Color(0xFF999DA6),
+            size: 21,
+          );
+        }),
+      ),
+      dividerTheme: const DividerThemeData(
+        color: HaloColors.line,
+        thickness: 1,
+        space: 1,
       ),
     );
   }
