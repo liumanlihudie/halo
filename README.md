@@ -20,12 +20,13 @@
 - [工程开发规范](docs/03-development/02-engineering-guide.md)
 - [MVP 开发计划](docs/03-development/04-mvp-implementation-plan.md)
 
-## 静态演示放在哪里
+## 工程入口
 
-当前只有一套静态演示，刻意保留在项目根目录，避免改变现有浏览器地址和自动化测试：
+静态原型保留在根目录；可运行的 iOS-first Flutter 工程位于 `apps/mobile`：
 
 ```text
 IOS-IM/
+├── apps/mobile/         # Flutter 工程与 iOS Runner
 ├── prototype.html       # 可点击的单文件 HTML 演示
 ├── prototype.test.cjs   # 原型契约测试
 └── docs/
@@ -49,6 +50,10 @@ http://127.0.0.1:4173/prototype.html
 
 ```bash
 node --test prototype.test.cjs
+cd apps/mobile
+flutter analyze
+flutter test
+flutter build ios --simulator
 ```
 
 推荐演示路径：进入“iOS 产品小组” → 切换三种发言模式 → 运行“让大家讨论” → 发布群聊总结到圈层 → 进入群资料管理成员与共享上下文。
