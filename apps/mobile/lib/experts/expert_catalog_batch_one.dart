@@ -312,6 +312,7 @@ ExpertProfile _standardProfile({
     outputSchema: OutputSchema(
       schemaId: schemaId,
       fields: const {
+        'Answer': OutputValueType.answerText,
         'Analysis': OutputValueType.string,
         'Recommendations': OutputValueType.proposedActionList,
         'Risks': OutputValueType.stringList,

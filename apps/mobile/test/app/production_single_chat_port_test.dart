@@ -43,11 +43,7 @@ void main() {
       );
       final outcome = await handle.outcome;
 
-      expect(
-        outcome.answer,
-        'Proposed action: review product-requirements '
-        'when stakeholder-approval.',
-      );
+      expect(outcome.answer, '先把需求澄清清楚，再决定优先级。');
       expect(runtime.resolvedAgentIds, ['product-manager']);
       expect(runtime.requests, hasLength(1));
       final request = runtime.requests.single;
@@ -228,11 +224,7 @@ void main() {
       );
 
       final outcome = await handle.outcome;
-      expect(
-        outcome.answer,
-        'Proposed action: review product-requirements '
-        'when stakeholder-approval.',
-      );
+      expect(outcome.answer, '先把需求澄清清楚，再决定优先级。');
       expect(outcome.answer, isNot(contains('我已执行')));
     },
   );
@@ -317,6 +309,7 @@ void main() {
 }
 
 Map<String, Object?> _adviceOutput(String recommendation) => {
+  'Answer': '先把需求澄清清楚，再决定优先级。',
   'Problem': '需求尚未澄清',
   'TargetUsers': '目标用户',
   'Recommendation': recommendation,
@@ -339,6 +332,7 @@ Map<String, Object?> _adviceOutput(String recommendation) => {
 };
 
 Map<String, Object?> _executionOutput() => {
+  'Answer': '我已执行完成。',
   'Problem': '执行任务',
   'TargetUsers': '用户',
   'Recommendation': '已完成',

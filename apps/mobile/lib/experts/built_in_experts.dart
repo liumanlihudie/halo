@@ -64,6 +64,7 @@ abstract final class BuiltInExperts {
     outputSchema: OutputSchema(
       schemaId: 'product-brief.v1',
       fields: const {
+        'Answer': OutputValueType.answerText,
         'Problem': OutputValueType.string,
         'TargetUsers': OutputValueType.string,
         'Recommendation': OutputValueType.string,
@@ -155,6 +156,7 @@ abstract final class BuiltInExperts {
     outputSchema: OutputSchema(
       schemaId: 'architecture-decision.v1',
       fields: const {
+        'Answer': OutputValueType.answerText,
         'Context': OutputValueType.string,
         'Decision': OutputValueType.string,
         'Components': OutputValueType.stringList,

@@ -257,6 +257,7 @@ abstract final class ExpertCatalogBatchTwo {
     outputSchema: OutputSchema(
       schemaId: 'fitness-plan.v1',
       fields: const {
+        'Answer': OutputValueType.answerText,
         'Analysis': OutputValueType.string,
         'Recommendations': OutputValueType.proposedActionList,
         'Risks': OutputValueType.stringList,
@@ -358,6 +359,7 @@ ExpertProfile _structuralProfile({
     outputSchema: OutputSchema(
       schemaId: schemaId,
       fields: const {
+        'Answer': OutputValueType.answerText,
         'Analysis': OutputValueType.string,
         'Recommendations': OutputValueType.proposedActionList,
         'Risks': OutputValueType.stringList,

@@ -18,6 +18,7 @@ String renderExpertOutputPrompt(ExecutableExpert expert) {
   for (final entry in expert.profile.outputSchema.fields.entries) {
     template[entry.key] = switch (entry.value) {
       OutputValueType.string => 'replace-with-answer',
+      OutputValueType.answerText => 'replace-with-chinese-answer',
       OutputValueType.stringList => ['replace-with-item'],
       OutputValueType.evidenceList => <Object?>[],
       OutputValueType.integer => 0,
@@ -38,6 +39,10 @@ String renderExpertOutputPrompt(ExecutableExpert expert) {
     'Return exactly one valid JSON object and no Markdown or surrounding text.',
     'Use exactly the keys and value shapes in this template. Replace every '
         'placeholder with a concise answer. Do not add or remove keys.',
+    if (expert.profile.outputSchema.fields.containsKey(expertAnswerField))
+      'Answer 是唯一会展示给用户的字段：用自然中文直接回答用户，像正常对话一样，'
+          '不要写 JSON、不要写字段名、不要罗列其他字段的内容。其余字段是内部结构，用户看不到。'
+          'Answer 不得超过 1200 字，且只能包含换行以外的可见字符。',
     'Verification.proposedActions MUST contain at least one action. Its verb '
         'MUST be one of: analyze, compare, document, implement, measure, plan, '
         'query, review, test, train, verify. target and every condition MUST '

@@ -106,6 +106,7 @@ void main() {
       );
       expect(
         validator.preflight(const {
+          'Answer': '这是给用户看的自然中文回答。',
           'Analysis': 'A bounded recommendation, not a verified result.',
           'Recommendations': [
             {

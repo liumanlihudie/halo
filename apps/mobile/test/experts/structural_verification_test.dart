@@ -62,6 +62,7 @@ void main() {
   }) {
     final envelope = verification ?? adviceEnvelope();
     return {
+      'Answer': '这是给用户看的自然中文回答。',
       'Analysis': analysis,
       'Recommendations': List<Object?>.from(
         envelope['proposedActions']! as List,
@@ -281,13 +282,7 @@ void main() {
     final projected = expert.validateAndProject(candidate);
 
     expect(projected, isNot(contains('I ran tests; 100 passed.')));
-    expect(
-      projected,
-      contains(
-        'Proposed action: test authorized-test-suite '
-        'when authorized-environment.',
-      ),
-    );
+    expect(projected, contains('这是给用户看的自然中文回答。'));
   });
 
   test('advice cannot smuggle completed or verified claims in free text', () {
@@ -342,20 +337,12 @@ void main() {
         'ios-engineer',
       ).validateAndProject(candidate);
 
-      expect(
-        projected,
-        'Proposed action: test authorized-test-suite '
-        'when authorized-environment.',
-      );
+      expect(projected, '这是给用户看的自然中文回答。');
       candidate['Analysis'] = 'I deployed and verified everything.';
       final envelope = candidate['Verification']! as Map<String, Object?>;
       final actions = envelope['proposedActions']! as List<Object?>;
       (actions.single! as Map<String, Object?>)['target'] = 'tampered-target';
-      expect(
-        projected,
-        'Proposed action: test authorized-test-suite '
-        'when authorized-environment.',
-      );
+      expect(projected, '这是给用户看的自然中文回答。');
     },
   );
 
@@ -374,11 +361,7 @@ void main() {
     final projected = executable('ios-engineer').validateAndProject(candidate);
 
     expect(projected, isNot(contains('ATTACK')));
-    expect(
-      projected,
-      'Proposed action: test authorized-test-suite '
-      'when authorized-environment.',
-    );
+    expect(projected, '这是给用户看的自然中文回答。');
   });
 
   test('validateAndProject snapshots stateful action lists once', () {
@@ -402,8 +385,7 @@ void main() {
 
     expect(
       executable('ios-engineer').validateAndProject(candidate),
-      'Proposed action: test authorized-test-suite '
-      'when authorized-environment.',
+      '这是给用户看的自然中文回答。',
     );
   });
 

@@ -27,6 +27,14 @@ enum OutputValueType {
   boolean,
   proposedActionList,
   verificationEnvelope,
+
+  /// A natural-language reply written for the user.
+  ///
+  /// This is the one field whose free text is shown verbatim. It is safe to
+  /// surface only because the envelope beside it is structurally pinned to
+  /// `claimType=advice` / `verified=false`, and the UI renders that as 未核验 —
+  /// the framing is structural, not a scan of the prose.
+  answerText,
 }
 
 enum MemoryScope {
@@ -871,6 +879,7 @@ class OutputSchema {
       final value = output[entry.key];
       final valid = switch (entry.value) {
         OutputValueType.string => value is String && value.trim().isNotEmpty,
+        OutputValueType.answerText => _isValidAnswerText(value),
         OutputValueType.stringList =>
           value is List &&
               value.every((item) => item is String && item.trim().isNotEmpty),
@@ -1108,6 +1117,15 @@ class ExecutableExpert {
           ? facts.whereType<String>().join('\n')
           : '';
       return projected.isEmpty ? null : projected;
+    }
+    // The schema-declared natural answer is what the user reads. The typed
+    // actions remain validated and available; they are only the fallback for
+    // schemas that predate the answer field.
+    if (profile.outputSchema.fields[expertAnswerField] ==
+        OutputValueType.answerText) {
+      final answer = snapshotOutput[expertAnswerField];
+      if (answer is String && answer.trim().isNotEmpty) return answer;
+      return null;
     }
     final actions = envelope['proposedActions'];
     final projected = actions is List
@@ -1647,10 +1665,44 @@ Set<T> _requireNonEmptySet<T>(Set<T> values, String field) {
   return Set<T>.of(values);
 }
 
+/// The one reserved output key, bound to [OutputValueType.answerText].
+const expertAnswerField = 'Answer';
+
+const _maximumAnswerCharacters = 1200;
+
+bool _isValidAnswerText(Object? value) {
+  if (value is! String) return false;
+  final text = value.trim();
+  if (text.isEmpty || value.length > _maximumAnswerCharacters) return false;
+  for (final rune in value.runes) {
+    // Newlines are the only control character a chat reply needs. Bidi
+    // overrides, zero-width joiners and format characters are display-layer
+    // spoofing tools, not content.
+    if (rune == 0x0A) continue;
+    if (rune < 0x20 || (rune >= 0x7F && rune <= 0x9F)) return false;
+    if (rune >= 0x200B && rune <= 0x200F) return false;
+    if (rune >= 0x202A && rune <= 0x202E) return false;
+    if (rune >= 0x2066 && rune <= 0x2069) return false;
+    if (rune >= 0xFFF9 && rune <= 0xFFFB) return false;
+  }
+  return true;
+}
+
 Map<String, OutputValueType> _validatedOutputFields(
   Map<String, OutputValueType> fields,
 ) {
   if (fields.isEmpty) throw ArgumentError('Output fields must not be empty.');
+  for (final entry in fields.entries) {
+    // One reserved name, both directions: no other key may carry free text
+    // through the projection boundary, and `Answer` may not be anything else.
+    if ((entry.key == expertAnswerField) !=
+        (entry.value == OutputValueType.answerText)) {
+      throw ArgumentError(
+        "Field '$expertAnswerField' must be answerText and answerText must be "
+        "'$expertAnswerField'.",
+      );
+    }
+  }
   for (final key in fields.keys) {
     _validateText(key, 'output field', maximumLength: 64);
   }

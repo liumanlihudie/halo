@@ -46,7 +46,7 @@ void main() {
       expect(request.messages.last.content, contains('当前用户问题：请评估架构边界'));
       expect(request.messages.last.content, contains('上一位专家的公开结论'));
       expect(result, contains('"uncertainty":"unverified"'));
-      expect(result, contains('Proposed action: review product-requirements'));
+      expect(result, contains('建议先把架构分层'));
     },
   );
 
@@ -334,6 +334,7 @@ ChatResponse _response(
 );
 
 String _adviceOutput() => jsonEncode({
+  'Answer': '建议先把架构分层，再逐步验证。',
   'Context': '已知需求',
   'Decision': '分层',
   'Components': ['边界'],

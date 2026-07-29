@@ -173,6 +173,7 @@ void main() {
     );
     expect(
       structural.preflight(const {
+        'Answer': '这是给用户看的自然中文回答。',
         'Analysis': 'A bounded analysis.',
         'Recommendations': [
           {
