@@ -51,6 +51,123 @@ void main() {
     }
   });
 
+  test('present empty catalog round-trips directly and after reopen', () async {
+    final fixture = _DatabaseFixture.create();
+    final discoveredAt = DateTime.utc(2026, 7, 29, 8, 31, 0, 123);
+    final store = SqliteProviderConfigurationStore.open(fixture.path);
+    final created = await store.replaceProviderConfiguration(
+      expectedRevision: null,
+      replacement: ProviderConfigurationReplacement(
+        config: ProviderConfig.deepSeek(),
+        modelCatalog: _emptyDeepSeekCatalog(discoveredAt),
+      ),
+    );
+    final direct = await store.loadProviderModelCatalog('deepseek');
+    expect(direct, isNotNull);
+    expect(direct!.models, isEmpty);
+    expect(direct.discoveredAt, discoveredAt);
+    final directAll = await store.loadAllProviderModelCatalogs();
+    expect(directAll, hasLength(1));
+    expect(directAll.single.discoveredAt, discoveredAt);
+    await store.finalizeProviderMutation(created);
+    await store.close();
+
+    final reopened = SqliteProviderConfigurationStore.open(fixture.path);
+    try {
+      final persisted = await reopened.loadProviderModelCatalog('deepseek');
+      expect(persisted, isNotNull);
+      expect(persisted!.models, isEmpty);
+      expect(persisted.discoveredAt, discoveredAt);
+      final all = await reopened.loadAllProviderModelCatalogs();
+      expect(all, hasLength(1));
+      expect(all.single.providerId, 'deepseek');
+      expect(all.single.models, isEmpty);
+      expect(all.single.discoveredAt, discoveredAt);
+    } finally {
+      await reopened.close();
+      fixture.delete();
+    }
+  });
+
+  test('rollback restores a present empty catalog and its timestamp', () async {
+    final fixture = _DatabaseFixture.create();
+    final originalDiscoveredAt = DateTime.utc(2026, 7, 29, 8, 32, 0, 456);
+    final store = SqliteProviderConfigurationStore.open(fixture.path);
+    try {
+      final created = await store.replaceProviderConfiguration(
+        expectedRevision: null,
+        replacement: ProviderConfigurationReplacement(
+          config: ProviderConfig.deepSeek(),
+          modelCatalog: _emptyDeepSeekCatalog(originalDiscoveredAt),
+        ),
+      );
+      await store.finalizeProviderMutation(created);
+      final before = (await store.loadProvider('deepseek'))!;
+      final replacement = await store.replaceProviderConfiguration(
+        expectedRevision: before.revision,
+        replacement: ProviderConfigurationReplacement(
+          config: ProviderConfig.deepSeek(enabled: false),
+          modelCatalog: _deepSeekCatalog(
+            DateTime.utc(2026, 7, 29, 8, 33, 0, 789),
+          ),
+        ),
+      );
+
+      await store.rollbackProviderMutation(replacement);
+
+      final restored = await store.loadProviderModelCatalog('deepseek');
+      expect(restored, isNotNull);
+      expect(restored!.models, isEmpty);
+      expect(restored.discoveredAt, originalDiscoveredAt);
+    } finally {
+      await store.close();
+      fixture.delete();
+    }
+  });
+
+  test(
+    'removal restore restores a present empty catalog and its timestamp',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final discoveredAt = DateTime.utc(2026, 7, 29, 8, 34, 0, 321);
+      final store = SqliteProviderConfigurationStore.open(fixture.path);
+      try {
+        final created = await store.replaceProviderConfiguration(
+          expectedRevision: null,
+          replacement: ProviderConfigurationReplacement(
+            config: ProviderConfig.deepSeek(),
+            modelCatalog: _emptyDeepSeekCatalog(discoveredAt),
+          ),
+        );
+        await store.finalizeProviderMutation(created);
+        final before = (await store.loadProvider('deepseek'))!;
+        final removal = await store.removeProviderAtomically(
+          providerId: 'deepseek',
+          expectedRevision: before.revision,
+        );
+
+        await store.restoreRemovedProvider(removal);
+
+        final restored = await store.loadProviderModelCatalog('deepseek');
+        expect(restored, isNotNull);
+        expect(restored!.models, isEmpty);
+        expect(restored.discoveredAt, discoveredAt);
+      } finally {
+        await store.close();
+        fixture.delete();
+      }
+    },
+  );
+
+  test('persisted catalog rejects sub-millisecond discovery time', () {
+    expect(
+      () => _emptyDeepSeekCatalog(
+        DateTime.utc(2026, 7, 29, 8, 35).add(const Duration(microseconds: 1)),
+      ),
+      throwsArgumentError,
+    );
+  });
+
   test(
     'schema v3 migrates configs and bindings without inventing models',
     () async {
@@ -1983,6 +2100,13 @@ PersistedProviderModelCatalog _deepSeekCatalog(DateTime discoveredAt) =>
           ),
         ),
       ],
+      discoveredAt: discoveredAt,
+    );
+
+PersistedProviderModelCatalog _emptyDeepSeekCatalog(DateTime discoveredAt) =>
+    PersistedProviderModelCatalog(
+      providerId: 'deepseek',
+      models: const [],
       discoveredAt: discoveredAt,
     );
 

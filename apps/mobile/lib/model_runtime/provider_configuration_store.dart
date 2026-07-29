@@ -178,6 +178,9 @@ class PersistedProviderModelCatalog {
     if (!isCanonicalRuntimeId(providerId) ||
         !discoveredAt.isUtc ||
         discoveredAt.millisecondsSinceEpoch <= 0 ||
+        discoveredAt.microsecondsSinceEpoch %
+                Duration.microsecondsPerMillisecond !=
+            0 ||
         this.models.any(
           (model) =>
               model.ref.providerId != providerId ||

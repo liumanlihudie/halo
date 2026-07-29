@@ -65,10 +65,17 @@ final class SqliteProviderConfigurationStore
         )
       ) STRICT
     ''';
+  static const _providerModelCatalogsSql = '''
+      CREATE TABLE provider_model_catalogs (
+        provider_id TEXT PRIMARY KEY
+          REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+        discovered_at_ms INTEGER NOT NULL CHECK (discovered_at_ms > 0)
+      ) STRICT
+    ''';
   static const _providerModelsSql = '''
       CREATE TABLE provider_models (
         provider_id TEXT NOT NULL
-          REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+          REFERENCES provider_model_catalogs(provider_id) ON DELETE CASCADE,
         model_id TEXT NOT NULL CHECK (length(model_id) > 0),
         display_name TEXT NOT NULL CHECK (length(display_name) > 0),
         text_generation INTEGER NOT NULL
@@ -199,6 +206,7 @@ final class SqliteProviderConfigurationStore
     _database.execute(_providerConfigsSql);
     _database.execute(_headerRefsSql);
     _database.execute(_modelBindingsSql);
+    _database.execute(_providerModelCatalogsSql);
     _database.execute(_providerModelsSql);
     _database.execute(_credentialBindingsSql);
     _database.execute(_activeCredentialOwnerIndexSql);
@@ -207,6 +215,7 @@ final class SqliteProviderConfigurationStore
   }
 
   void _migrateV3ToV4() {
+    _database.execute(_providerModelCatalogsSql);
     _database.execute(_providerModelsSql);
     final mutationRows = _database.select('''
       SELECT lease_id, previous_snapshot_json, applied_config_json
@@ -253,6 +262,7 @@ final class SqliteProviderConfigurationStore
       'provider_configs',
       'provider_header_secret_refs',
       'model_bindings',
+      'provider_model_catalogs',
       'provider_models',
       'credential_bindings',
       'credential_bindings_active_owner',
@@ -306,6 +316,10 @@ final class SqliteProviderConfigurationStore
         ('scope_id', 'TEXT', 1, 2),
         ('provider_id', 'TEXT', 1, 0),
         ('model_id', 'TEXT', 1, 0),
+      ],
+      'provider_model_catalogs': [
+        ('provider_id', 'TEXT', 1, 1),
+        ('discovered_at_ms', 'INTEGER', 1, 0),
       ],
       'provider_models': [
         ('provider_id', 'TEXT', 1, 1),
@@ -362,14 +376,17 @@ final class SqliteProviderConfigurationStore
         }
       }
     }
-    for (final table in [
-      'provider_header_secret_refs',
-      'model_bindings',
-      'provider_models',
-    ]) {
+    const expectedForeignKeys = {
+      'provider_header_secret_refs': 'provider_configs',
+      'model_bindings': 'provider_configs',
+      'provider_model_catalogs': 'provider_configs',
+      'provider_models': 'provider_model_catalogs',
+    };
+    for (final entry in expectedForeignKeys.entries) {
+      final table = entry.key;
       final foreignKeys = _database.select('PRAGMA foreign_key_list($table)');
       if (foreignKeys.length != 1 ||
-          foreignKeys.single['table'] != 'provider_configs' ||
+          foreignKeys.single['table'] != entry.value ||
           foreignKeys.single['from'] != 'provider_id' ||
           foreignKeys.single['to'] != 'provider_id' ||
           foreignKeys.single['on_delete'] != 'CASCADE') {
@@ -385,6 +402,7 @@ final class SqliteProviderConfigurationStore
       'provider_configs': ['pk'],
       'provider_header_secret_refs': ['pk'],
       'model_bindings': ['pk'],
+      'provider_model_catalogs': ['pk'],
       'provider_models': ['pk'],
       'credential_bindings': ['c', 'pk'],
       'provider_removal_leases': ['pk', 'u', 'u'],
@@ -407,6 +425,7 @@ final class SqliteProviderConfigurationStore
       'provider_configs': {'provider_id'},
       'provider_header_secret_refs': {'provider_id,header_name'},
       'model_bindings': {'scope,scope_id'},
+      'provider_model_catalogs': {'provider_id'},
       'provider_models': {'provider_id,model_id'},
       'credential_bindings': {'secret_ref', 'provider_id,credential_slot'},
       'provider_removal_leases': {'lease_id', 'operation_id', 'provider_id'},
@@ -473,6 +492,22 @@ final class SqliteProviderConfigurationStore
           secret_ref, allow_insecure_http, revision
         ) VALUES ('probe', 'toApis', 'openAICompatible', 'Probe',
                   'https://example.invalid/v1', 1, NULL, 0, 1)
+      ''');
+      _expectConstraintFailure('''
+        INSERT INTO provider_model_catalogs (provider_id, discovered_at_ms)
+        VALUES ('probe', 0)
+      ''');
+      _expectConstraintFailure('''
+        INSERT INTO provider_model_catalogs (provider_id, discovered_at_ms)
+        VALUES ('missing-provider', 1)
+      ''');
+      _expectConstraintSuccess('''
+        INSERT INTO provider_model_catalogs (provider_id, discovered_at_ms)
+        VALUES ('probe', 1)
+      ''');
+      _expectConstraintFailure('''
+        INSERT INTO provider_model_catalogs (provider_id, discovered_at_ms)
+        VALUES ('probe', 2)
       ''');
       _expectConstraintSuccess('''
         INSERT INTO provider_models (
@@ -825,7 +860,7 @@ final class SqliteProviderConfigurationStore
       Future.sync(() {
         _requireOpen();
         final providerIds = _database.select('''
-      SELECT DISTINCT provider_id FROM provider_models ORDER BY provider_id
+      SELECT provider_id FROM provider_model_catalogs ORDER BY provider_id
     ''');
         return List.unmodifiable([
           for (final row in providerIds)
@@ -836,6 +871,15 @@ final class SqliteProviderConfigurationStore
   PersistedProviderModelCatalog? _loadProviderModelCatalogSync(
     String providerId,
   ) {
+    final catalogRows = _database.select(
+      '''
+        SELECT provider_id, discovered_at_ms
+        FROM provider_model_catalogs
+        WHERE provider_id = ?
+      ''',
+      [providerId],
+    );
+    if (catalogRows.isEmpty) return null;
     final rows = _database.select(
       '''
         SELECT provider_id, model_id, display_name, text_generation,
@@ -847,9 +891,12 @@ final class SqliteProviderConfigurationStore
       ''',
       [providerId],
     );
-    if (rows.isEmpty) return null;
     try {
-      final discoveredAtMs = rows.first['discovered_at_ms']! as int;
+      if (catalogRows.length != 1 ||
+          catalogRows.single['provider_id'] != providerId) {
+        throw const FormatException();
+      }
+      final discoveredAtMs = catalogRows.single['discovered_at_ms']! as int;
       if (rows.any(
         (row) =>
             row['provider_id'] != providerId ||
@@ -2209,10 +2256,18 @@ final class SqliteProviderConfigurationStore
         ProviderConfigurationMutationErrorCode.conflict,
       );
     }
-    _database.execute('DELETE FROM provider_models WHERE provider_id = ?', [
-      providerId,
-    ]);
+    _database.execute(
+      'DELETE FROM provider_model_catalogs WHERE provider_id = ?',
+      [providerId],
+    );
     if (catalog != null) {
+      _database.execute(
+        '''
+          INSERT INTO provider_model_catalogs (provider_id, discovered_at_ms)
+          VALUES (?, ?)
+        ''',
+        [providerId, catalog.discoveredAt.millisecondsSinceEpoch],
+      );
       final models = [...catalog.models]
         ..sort((left, right) => left.ref.modelId.compareTo(right.ref.modelId));
       for (final model in models) {
@@ -2256,10 +2311,6 @@ final class SqliteProviderConfigurationStore
     PersistedProviderModelCatalog? left,
     PersistedProviderModelCatalog? right,
   ) {
-    if ((left == null || left.models.isEmpty) &&
-        (right == null || right.models.isEmpty)) {
-      return true;
-    }
     if (left == null || right == null) return left == right;
     if (left.providerId != right.providerId ||
         left.discoveredAt != right.discoveredAt ||
