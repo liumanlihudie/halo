@@ -46,7 +46,31 @@ GoRouter createAppRouter({
           _branch('/conversations', const ConversationsPage()),
           _branch('/experts', const ExpertTeamPage()),
           _branch('/circle', const CirclePage()),
-          _branch('/settings', const SettingsPage()),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/settings',
+                pageBuilder: (context, state) {
+                  Widget buildPage(AppDependencies? current) => SettingsPage(
+                    key: ValueKey(current),
+                    modelRouting: current?.modelRouting,
+                  );
+                  final listenable = dependencyListenable;
+                  if (listenable == null) {
+                    return NoTransitionPage(
+                      child: buildPage(fixedDependencies),
+                    );
+                  }
+                  return NoTransitionPage(
+                    child: ListenableBuilder(
+                      listenable: listenable,
+                      builder: (context, _) => buildPage(resolveDependencies()),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ],
       ),
       GoRoute(
