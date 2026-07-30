@@ -43,6 +43,7 @@ class ServiceCredentialStatus {
     required this.configured,
     required this.enabled,
     this.configuredAt,
+    this.unreadable = false,
   });
 
   static const absent = ServiceCredentialStatus(
@@ -51,6 +52,10 @@ class ServiceCredentialStatus {
   );
 
   final bool configured;
+
+  /// A key was saved but can no longer be read back, so it must be entered
+  /// again. Distinct from never having configured one.
+  final bool unreadable;
   final bool enabled;
   final DateTime? configuredAt;
 }
@@ -118,22 +123,26 @@ final class ServiceCredentialsController extends ChangeNotifier {
   Future<void> load() async {
     try {
       final records = await _persistence.loadServiceCredentials();
-      _statuses
-        ..clear()
-        ..addEntries(
-          records
-              .where((record) => KeyOnlyService.byId(record.serviceId) != null)
-              .map(
-                (record) => MapEntry(
-                  record.serviceId,
-                  ServiceCredentialStatus(
-                    configured: true,
-                    enabled: record.enabled,
-                    configuredAt: record.configuredAt,
-                  ),
-                ),
-              ),
+      _statuses.clear();
+      for (final record in records) {
+        if (KeyOnlyService.byId(record.serviceId) == null) continue;
+        // A row proves a key was saved once, not that it can still be read.
+        // Showing 已配置 on the row alone is how the settings page came to
+        // disagree with the features, which report 尚未配置 when the secret no
+        // longer resolves. The row is only believed if the key comes back.
+        var readable = false;
+        try {
+          readable = await _credentials.get(record.secretRef) != null;
+        } catch (_) {
+          readable = false;
+        }
+        _statuses[record.serviceId] = ServiceCredentialStatus(
+          configured: readable,
+          enabled: record.enabled && readable,
+          configuredAt: record.configuredAt,
+          unreadable: !readable,
         );
+      }
     } catch (_) {
       // Leaves the rows reading 未配置 rather than claiming a key exists.
       _statuses.clear();

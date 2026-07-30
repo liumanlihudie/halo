@@ -198,6 +198,26 @@ void main() {
     }
     expect(KeyOnlyService.byId('nope'), isNull);
   });
+
+  test('a key that no longer reads back asks to be entered again', () async {
+    final credentials = _FakeCredentials();
+    final controller = build(credentials: credentials);
+    await controller.save(KeyOnlyService.doubaoSpeech, 'test-key');
+    expect(
+      controller.statusFor(KeyOnlyService.doubaoSpeech).configured,
+      isTrue,
+    );
+
+    // The row survives, the secret does not — a reinstall, a changed signing
+    // identity, a wiped keychain. The page used to keep saying 已配置 while
+    // every feature reported 尚未配置.
+    credentials.stored.clear();
+    await controller.load();
+
+    final status = controller.statusFor(KeyOnlyService.doubaoSpeech);
+    expect(status.unreadable, isTrue);
+    expect(status.configured, isFalse);
+  });
 }
 
 class _SequentialRefs implements ProviderSecretRefFactory {

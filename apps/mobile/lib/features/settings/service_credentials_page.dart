@@ -227,8 +227,16 @@ class _ServiceCard extends StatelessWidget {
                 ),
               ),
               HaloTag(
-                status.configured ? '已配置' : '未配置',
-                tone: status.configured ? HaloTagTone.green : HaloTagTone.gray,
+                // A key that cannot be read back is worse than none: the page
+                // used to say 已配置 while every feature reported 尚未配置.
+                status.unreadable
+                    ? '需重新填写'
+                    : (status.configured ? '已配置' : '未配置'),
+                tone: status.unreadable
+                    ? HaloTagTone.red
+                    : (status.configured
+                          ? HaloTagTone.green
+                          : HaloTagTone.gray),
               ),
             ],
           ),
