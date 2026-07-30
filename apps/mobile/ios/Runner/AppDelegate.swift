@@ -12,5 +12,11 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    guard let registrar = engineBridge.pluginRegistry.registrar(
+      forPlugin: "HaloSecureCredentialStore"
+    ) else {
+      return
+    }
+    SecureCredentialStoreBridge.register(with: registrar.messenger())
   }
 }

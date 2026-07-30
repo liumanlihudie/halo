@@ -78,7 +78,7 @@ void main() {
     await _collectCompletedRun(runner, first.runId);
 
     expect(second.runId, first.runId);
-    final replay = await runner.watchRun(first.runId).take(8).toList();
+    final replay = await runner.watchRun(first.runId).take(7).toList();
     expect(
       replay.where((event) => event.type == OrchestrationEventType.runCreated),
       hasLength(1),
@@ -163,7 +163,6 @@ void main() {
           ConversationStage.collectingOpinions,
           ConversationStage.crossDiscussion,
           ConversationStage.summarizing,
-          ConversationStage.completed,
         ]),
       );
       expect(
@@ -264,7 +263,7 @@ void main() {
         hostAgentId: 'product-manager',
         input: '分析风险',
         replyMode: ConversationReplyMode.auto,
-        memberAgentIds: ['product-manager', 'technical-architect'],
+        memberAgentIds: ['technical-architect', 'product-manager'],
       ),
     );
     final events = await _collectCompletedRun(runner, handle.runId);
@@ -278,6 +277,35 @@ void main() {
       ['product-manager'],
     );
     expect(events.last.type, OrchestrationEventType.runCompleted);
+  });
+
+  test('invalid selector output falls back to the frozen group host', () async {
+    final runner = BasicDurableRunner(
+      store: InMemoryRunEventStore(),
+      selector: const _FixedSelector(['outsider']),
+      runtime: const _EchoRuntime(),
+    );
+
+    final handle = await runner.startRun(
+      const StartConversationRunCommand(
+        clientCommandId: 'command-invalid-selector-fallback',
+        conversationId: 'group-product',
+        hostAgentId: 'product-manager',
+        input: '分析风险',
+        replyMode: ConversationReplyMode.auto,
+        memberAgentIds: ['technical-architect', 'product-manager'],
+      ),
+    );
+    final events = await _collectCompletedRun(runner, handle.runId);
+
+    expect(
+      events
+          .singleWhere(
+            (event) => event.type == OrchestrationEventType.agentsSelected,
+          )
+          .selectedAgentIds,
+      ['product-manager'],
+    );
   });
 
   test(
@@ -537,6 +565,65 @@ void main() {
       isEmpty,
     );
   });
+
+  test(
+    'shutdown rejects new runs and drains a blocked selector without writes',
+    () async {
+      final selector = _BlockingSelector();
+      final store = InMemoryRunEventStore();
+      final runner = BasicDurableRunner(
+        store: store,
+        selector: selector,
+        runtime: const _EchoRuntime(),
+      );
+      final handle = await runner.startRun(
+        const StartConversationRunCommand(
+          clientCommandId: 'command-shutdown-selector',
+          conversationId: 'group-product',
+          hostAgentId: 'product-manager',
+          input: '开始分析',
+          replyMode: ConversationReplyMode.auto,
+          memberAgentIds: ['product-manager'],
+        ),
+      );
+      await runner
+          .watchRun(handle.runId)
+          .firstWhere(
+            (event) => event.stage == ConversationStage.selectingAgents,
+          );
+
+      var drained = false;
+      final shutdown = runner.shutdown().then((_) => drained = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(drained, isFalse);
+      await expectLater(
+        runner.startRun(
+          const StartConversationRunCommand(
+            clientCommandId: 'command-after-shutdown',
+            conversationId: 'group-product',
+            hostAgentId: 'product-manager',
+            input: '不能启动',
+            replyMode: ConversationReplyMode.auto,
+            memberAgentIds: ['product-manager'],
+          ),
+        ),
+        throwsStateError,
+      );
+
+      selector.complete(['product-manager']);
+      await shutdown.timeout(const Duration(seconds: 2));
+      final work = store.getWorkItem(handle.runId);
+      final events = store.loadEvents(handle.runId);
+      expect(work.checkpoint, RunCheckpoint.selectingAgents);
+      expect(
+        events.where(
+          (event) => event.type == OrchestrationEventType.agentsSelected,
+        ),
+        isEmpty,
+      );
+      await runner.shutdown();
+    },
+  );
 }
 
 Future<List<OrchestrationEvent>> _collectCompletedRun(
@@ -589,7 +676,10 @@ class _InspectingSelector implements AgentSelector {
   }
 }
 
-class _EchoRuntime implements AgentRuntime {
+class _EchoRuntime implements AgentRuntime, IdempotentAgentRuntimeCapability {
+  @override
+  bool get supportsIdempotency => true;
+
   const _EchoRuntime();
 
   @override

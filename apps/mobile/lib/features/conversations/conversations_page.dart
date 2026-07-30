@@ -5,19 +5,31 @@ import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
-class ConversationsPage extends StatelessWidget {
+class ConversationsPage extends StatefulWidget {
   const ConversationsPage({super.key});
 
   @override
+  State<ConversationsPage> createState() => _ConversationsPageState();
+}
+
+class _ConversationsPageState extends State<ConversationsPage> {
+  String _query = '';
+
+  @override
   Widget build(BuildContext context) {
+    final query = _query.trim();
+    final conversations = query.isEmpty
+        ? HaloFixtures.conversations
+        : HaloFixtures.conversations
+              .where(
+                (conversation) =>
+                    conversation.title.contains(query) ||
+                    conversation.preview.contains(query),
+              )
+              .toList();
     return HaloPageScaffold(
       title: '对话',
       actions: [
-        HaloIconButton(
-          prototypeIconClass: 'ph ph-magnifying-glass',
-          semanticLabel: '搜索对话',
-          onPressed: () {},
-        ),
         HaloIconButton(
           prototypeIconClass: 'ph ph-plus',
           semanticLabel: '新建对话',
@@ -26,20 +38,23 @@ class ConversationsPage extends StatelessWidget {
       ],
       body: Column(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(15, 2, 15, 6),
-            child: HaloSearchField(placeholder: '搜索联系人、群聊、文件和来源'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(15, 2, 15, 6),
+            child: HaloSearchField(
+              placeholder: '搜索联系人、群聊、文件和来源',
+              readOnly: false,
+              onChanged: (value) => setState(() => _query = value),
+            ),
           ),
           Expanded(
             child: ListView.separated(
               key: const PageStorageKey('conversations'),
               padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
-              itemCount: HaloFixtures.conversations.length,
+              itemCount: conversations.length,
               separatorBuilder: (_, _) =>
                   const Divider(height: 1, indent: 61, color: HaloColors.line),
-              itemBuilder: (context, index) => _ConversationRow(
-                conversation: HaloFixtures.conversations[index],
-              ),
+              itemBuilder: (context, index) =>
+                  _ConversationRow(conversation: conversations[index]),
             ),
           ),
         ],
@@ -69,14 +84,25 @@ class _ConversationRow extends StatelessWidget {
           height: 72,
           child: Row(
             children: [
-              if (conversation.groupAvatarTiles case final tiles?)
-                HaloGroupAvatar(tiles: tiles)
-              else
-                HaloAvatar(
-                  imageUrl: conversation.imageUrl,
-                  letter: conversation.avatarLetter,
-                  tone: conversation.avatarTone,
-                ),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  if (conversation.groupAvatarTiles case final tiles?)
+                    HaloGroupAvatar(tiles: tiles)
+                  else
+                    HaloAvatar(
+                      imageUrl: conversation.imageUrl,
+                      letter: conversation.avatarLetter,
+                      tone: conversation.avatarTone,
+                    ),
+                  if (conversation.unread > 0)
+                    Positioned(
+                      top: -5,
+                      right: -6,
+                      child: _UnreadBadge(count: conversation.unread),
+                    ),
+                ],
+              ),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(
@@ -85,20 +111,32 @@ class _ConversationRow extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Flexible(
-                          child: Text(
-                            conversation.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: HaloTextStyles.rowTitle,
+                        // The title row must never squeeze the timestamp: it
+                        // stays flush right while the title ellipsizes.
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  conversation.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: HaloTextStyles.rowTitle,
+                                ),
+                              ),
+                              if (conversation.tag case final tag?) ...[
+                                const SizedBox(width: 6),
+                                HaloTag(tag, tone: conversation.tagTone),
+                              ],
+                            ],
                           ),
                         ),
-                        if (conversation.tag case final tag?) ...[
-                          const SizedBox(width: 6),
-                          HaloTag(tag, tone: conversation.tagTone),
-                        ],
-                        const Spacer(),
-                        Text(conversation.time, style: HaloTextStyles.caption),
+                        const SizedBox(width: 8),
+                        Text(
+                          conversation.time,
+                          textAlign: TextAlign.right,
+                          style: HaloTextStyles.caption,
+                        ),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -124,33 +162,46 @@ class _ConversationRow extends StatelessWidget {
                             style: HaloTextStyles.secondary,
                           ),
                         ),
-                        if (conversation.unread > 0) ...[
-                          const SizedBox(width: 7),
-                          Container(
-                            constraints: const BoxConstraints(minWidth: 18),
-                            height: 18,
-                            padding: const EdgeInsets.symmetric(horizontal: 5),
-                            decoration: BoxDecoration(
-                              color: HaloColors.accent,
-                              borderRadius: BorderRadius.circular(9),
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              '${conversation.unread}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ],
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UnreadBadge extends StatelessWidget {
+  const _UnreadBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 99 ? '99+' : '$count';
+    return Semantics(
+      label: '未读 $label',
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 18),
+        height: 18,
+        padding: const EdgeInsets.symmetric(horizontal: 5),
+        decoration: BoxDecoration(
+          color: HaloColors.accent,
+          borderRadius: BorderRadius.circular(9),
+          border: Border.all(color: HaloColors.paper, width: 1.5),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w600,
+            height: 1,
           ),
         ),
       ),

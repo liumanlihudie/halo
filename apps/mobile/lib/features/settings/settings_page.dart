@@ -1,15 +1,56 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
-class SettingsPage extends StatelessWidget {
-  const SettingsPage({super.key});
+class SettingsPage extends StatefulWidget {
+  const SettingsPage({this.modelRouting, super.key});
+
+  final ModelRoutingController? modelRouting;
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  @override
+  void initState() {
+    super.initState();
+    final routing = widget.modelRouting;
+    if (routing != null) {
+      routing.addListener(_refresh);
+      routing.load().catchError((Object _) {});
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.modelRouting?.removeListener(_refresh);
+    super.dispose();
+  }
+
+  void _refresh() {
+    if (mounted) setState(() {});
+  }
+
+  String get _defaultModelDetail {
+    final routing = widget.modelRouting;
+    if (routing == null) return '暂不可用';
+    final ref = routing.globalDefault;
+    if (ref == null) return '未设置';
+    for (final option in routing.availableModels) {
+      if (option.ref == ref) return option.modelName;
+    }
+    return ref.modelId;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final routing = widget.modelRouting;
+    final modelCount = routing?.availableModels.length;
     return HaloPageScaffold(
       title: '设置',
       backgroundColor: HaloColors.soft,
@@ -17,45 +58,113 @@ class SettingsPage extends StatelessWidget {
         key: const PageStorageKey('settings'),
         padding: const EdgeInsets.fromLTRB(15, 2, 15, 24),
         children: [
-          const _LocalProfileCard(),
-          for (final section in HaloFixtures.settings.entries) ...[
-            HaloSectionLabel(section.key),
-            HaloSettingsGroup(
-              children: [
-                for (final item in section.value)
-                  HaloSettingsRow(
-                    label: item.title,
-                    detail: item.detail.isEmpty ? null : item.detail,
-                    prototypeIconClass: item.iconClass,
-                    onTap: () {
-                      switch (item.title) {
-                        case '模型服务':
-                          context.push('/settings/providers');
-                        case '自托管 Gateway':
-                          context.push('/settings/gateway');
-                        case '本地数据与备份':
-                          context.push('/settings/local-data');
-                      }
-                    },
-                    trailing: item.toggle == null
-                        ? Icon(
-                            HaloIcon.requirePrototypeClass('ph ph-caret-right'),
-                            size: 14,
-                            color: HaloColors.muted,
-                          )
-                        : HaloSwitch(value: item.toggle!, onChanged: (_) {}),
-                  ),
-              ],
-            ),
-          ],
+          _LocalProfileCard(
+            agentCount: HaloFixtures.installedExperts.length,
+            modelCount: modelCount,
+            conversationCount: HaloFixtures.conversations.length,
+          ),
+          const HaloSectionLabel('模型服务'),
+          HaloSettingsGroup(
+            children: [
+              HaloSettingsRow(
+                label: '模型服务',
+                detail: modelCount == null ? '配置与启停' : '$modelCount 个可用模型',
+                prototypeIconClass: 'ph ph-cpu',
+                onTap: () => context.push('/settings/providers'),
+                trailing: const _Chevron(),
+              ),
+              HaloSettingsRow(
+                label: '默认文字模型',
+                detail: _defaultModelDetail,
+                prototypeIconClass: 'ph ph-path',
+                onTap: () => context.push('/settings/providers'),
+                trailing: const _Chevron(),
+              ),
+            ],
+          ),
+          const HaloSectionLabel('自托管与本地数据'),
+          HaloSettingsGroup(
+            children: [
+              HaloSettingsRow(
+                label: '自托管 Gateway',
+                detail: '可选 · 未配置',
+                prototypeIconClass: 'ph ph-hard-drives',
+                onTap: () => context.push('/settings/gateway'),
+                trailing: const _Chevron(),
+              ),
+              HaloSettingsRow(
+                label: '本地数据与备份',
+                detail: '导出与清理尚未开放',
+                prototypeIconClass: 'ph ph-database',
+                onTap: () => context.push('/settings/local-data'),
+                trailing: const _Chevron(),
+              ),
+            ],
+          ),
+          const HaloSectionLabel('规划中'),
+          const HaloSettingsGroup(
+            children: [
+              HaloSettingsRow(
+                label: '语音消息',
+                detail: '设计已定稿 · 按计划最后实现',
+                prototypeIconClass: 'ph ph-waveform',
+              ),
+              HaloSettingsRow(
+                label: '记忆与个性化',
+                detail: '规划中',
+                prototypeIconClass: 'ph ph-brain',
+              ),
+              HaloSettingsRow(
+                label: 'Face ID 保护',
+                detail: '规划中',
+                prototypeIconClass: 'ph ph-scan',
+              ),
+            ],
+          ),
+          const HaloSectionLabel('开源项目'),
+          const HaloSettingsGroup(
+            children: [
+              HaloSettingsRow(
+                label: 'GitHub 项目',
+                detail: '开源准备中，尚未发布',
+                prototypeIconClass: 'ph ph-github-logo',
+              ),
+              HaloSettingsRow(
+                label: '版本',
+                detail: '1.0.0 (1)',
+                prototypeIconClass: 'ph ph-info',
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 }
 
+class _Chevron extends StatelessWidget {
+  const _Chevron();
+
+  @override
+  Widget build(BuildContext context) {
+    return Icon(
+      HaloIcon.requirePrototypeClass('ph ph-caret-right'),
+      size: 14,
+      color: HaloColors.muted,
+    );
+  }
+}
+
 class _LocalProfileCard extends StatelessWidget {
-  const _LocalProfileCard();
+  const _LocalProfileCard({
+    required this.agentCount,
+    required this.modelCount,
+    required this.conversationCount,
+  });
+
+  final int agentCount;
+  final int? modelCount;
+  final int conversationCount;
 
   @override
   Widget build(BuildContext context) {
@@ -68,15 +177,15 @@ class _LocalProfileCard extends StatelessWidget {
         padding: const EdgeInsets.all(15),
         child: Column(
           children: [
-            Row(
+            const Row(
               children: [
-                const HaloAvatar(
+                HaloAvatar(
                   letter: 'H',
                   size: 58,
                   backgroundColor: HaloColors.navy,
                 ),
-                const SizedBox(width: 12),
-                const Expanded(
+                SizedBox(width: 12),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -96,11 +205,6 @@ class _LocalProfileCard extends StatelessWidget {
                       ),
                     ],
                   ),
-                ),
-                Icon(
-                  HaloIcon.requirePrototypeClass('ph ph-caret-right'),
-                  size: 16,
-                  color: HaloColors.muted,
                 ),
               ],
             ),
@@ -123,16 +227,19 @@ class _LocalProfileCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 13),
-            const Row(
+            Row(
               children: [
                 Expanded(
-                  child: _Stat(value: '9', label: '已添加 Agent'),
+                  child: _Stat(value: '$agentCount', label: '已添加 Agent'),
                 ),
                 Expanded(
-                  child: _Stat(value: '5', label: '已配置模型'),
+                  child: _Stat(
+                    value: modelCount == null ? '—' : '$modelCount',
+                    label: '可用模型',
+                  ),
                 ),
                 Expanded(
-                  child: _Stat(value: '128', label: '共享记忆'),
+                  child: _Stat(value: '$conversationCount', label: '会话'),
                 ),
               ],
             ),

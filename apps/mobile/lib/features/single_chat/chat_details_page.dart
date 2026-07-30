@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
 class ChatDetailsPage extends StatelessWidget {
   const ChatDetailsPage({required this.conversationId, super.key});
@@ -24,7 +26,7 @@ class ChatDetailsPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(0, 8, 0, 24),
         children: [
-          const _PeerGrid(),
+          _PeerGrid(conversationId: conversationId),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('聊天内容'),
@@ -99,26 +101,55 @@ class ChatDetailsPage extends StatelessWidget {
 }
 
 class _PeerGrid extends StatelessWidget {
-  const _PeerGrid();
+  const _PeerGrid({required this.conversationId});
+
+  final String conversationId;
 
   @override
   Widget build(BuildContext context) {
+    final identity = ExecutableExpertRegistry.installedExpertIdentities
+        .where((identity) => identity.conversationId == conversationId)
+        .firstOrNull;
+    final installed = identity == null
+        ? null
+        : HaloFixtures.installedExperts
+              .where((expert) => expert.id == identity.profileId)
+              .firstOrNull;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
       child: Row(
         children: [
-          const SizedBox(
+          SizedBox(
             width: 78,
-            child: Column(
-              children: [
-                HaloAvatar(
-                  imageUrl:
-                      'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120',
-                  letter: '助',
+            child: Semantics(
+              button: identity != null,
+              label: '${installed?.name ?? '通用助理'} 资料',
+              child: InkWell(
+                // Only an installed profile has a profile page to open.
+                onTap: identity == null
+                    ? null
+                    : () => context.push('/expert/${identity.profileId}'),
+                borderRadius: BorderRadius.circular(HaloRadii.avatar),
+                child: Column(
+                  children: [
+                    HaloAvatar(
+                      imageUrl:
+                          installed?.imageUrl ??
+                          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120',
+                      letter: installed?.avatarLetter ?? '助',
+                      tone: installed?.avatarTone ?? HaloAvatarTone.blue,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      installed?.name ?? '通用助理',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: HaloTextStyles.caption,
+                    ),
+                  ],
                 ),
-                SizedBox(height: 6),
-                Text('通用助理', style: HaloTextStyles.caption),
-              ],
+              ),
             ),
           ),
           SizedBox(

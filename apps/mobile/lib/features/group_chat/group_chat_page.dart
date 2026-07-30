@@ -1,51 +1,55 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
+import 'package:halo_mobile/features/group_chat/group_chat_history_repository.dart';
+import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
-import 'package:halo_mobile/orchestration/orchestration_kernel.dart';
 import 'package:halo_mobile/orchestration/orchestration_models.dart';
-import 'package:halo_mobile/orchestration/orchestration_providers.dart';
 
-enum _ComposerChoice { auto, mentioned, all, discuss }
+enum _ComposerChoice { auto, mentioned, all }
 
-class GroupChatPage extends ConsumerStatefulWidget {
+class GroupChatPage extends StatefulWidget {
   const GroupChatPage({
     required this.groupId,
-    this.orchestrationKernel,
+    this.runPort,
+    this.membersRepository = const PrototypeGroupMembersRepository(),
+    this.historyRepository = const PrototypeGroupChatHistoryRepository(),
     super.key,
   });
 
   final String groupId;
-  final OrchestrationKernel? orchestrationKernel;
+  final GroupChatRunPort? runPort;
+  final GroupMembersRepository membersRepository;
+  final GroupChatHistoryRepository historyRepository;
 
   @override
-  ConsumerState<GroupChatPage> createState() => _GroupChatPageState();
+  State<GroupChatPage> createState() => _GroupChatPageState();
 }
 
-class _GroupChatPageState extends ConsumerState<GroupChatPage> {
+class _GroupChatPageState extends State<GroupChatPage> {
   final _inputController = TextEditingController();
   final _scrollController = ScrollController();
-  GroupChatController? _controller;
+  late final GroupChatController _controller;
   _ComposerChoice _choice = _ComposerChoice.auto;
-  String? _mentionedAgentId;
+  List<String> _mentionedAgentIds = const [];
 
   @override
   void initState() {
     super.initState();
-    final OrchestrationKernel kernel =
-        widget.orchestrationKernel ?? ref.read(orchestrationKernelProvider);
     _controller = GroupChatController(
-      kernel: kernel,
+      runPort: widget.runPort,
       conversationId: widget.groupId,
+      membersRepository: widget.membersRepository,
+      historyRepository: widget.historyRepository,
     )..addListener(_refresh);
+    _controller.initialize();
   }
 
   @override
   void dispose() {
     _controller
-      ?..removeListener(_refresh)
+      ..removeListener(_refresh)
       ..dispose();
     _inputController.dispose();
     _scrollController.dispose();
@@ -63,100 +67,146 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
   }
 
   String get _modeDescription => switch (_choice) {
-    _ComposerChoice.auto => '自动选择 1–2 个合适的 Agent',
+    _ComposerChoice.auto => '自动选择 1–2 位合适成员',
     _ComposerChoice.mentioned =>
-      _mentionedAgentId == null
-          ? '选择一个 Agent 回答'
-          : '仅${_agent(_mentionedAgentId!).name}回答',
-    _ComposerChoice.all => '所有 Agent 依次回答',
-    _ComposerChoice.discuss => '所有 Agent 讨论并生成总结',
+      _mentionedAgentIds.isEmpty
+          ? '选择 1–4 位成员'
+          : '仅 ${_mentionedAgentIds.map(_memberName).join('、')}回答',
+    _ComposerChoice.all => '所有 ${_controller.members.length} 位成员依次回答并总结',
+  };
+
+  String get _inputHint => switch (_choice) {
+    _ComposerChoice.auto => '向小组提问，系统将自动选择成员',
+    _ComposerChoice.mentioned =>
+      _mentionedAgentIds.isEmpty
+          ? '先选择 1–4 位成员'
+          : '向已选 ${_mentionedAgentIds.length} 位成员提问',
+    _ComposerChoice.all => '向全部成员提问',
   };
 
   ConversationReplyMode get _replyMode => switch (_choice) {
     _ComposerChoice.auto => ConversationReplyMode.auto,
     _ComposerChoice.mentioned => ConversationReplyMode.mentioned,
-    _ComposerChoice.all || _ComposerChoice.discuss => ConversationReplyMode.all,
+    _ComposerChoice.all => ConversationReplyMode.all,
   };
 
   Future<void> _selectChoice(_ComposerChoice choice) async {
-    if (_controller?.isRunning ?? false) return;
+    if (_controller.isRunning) return;
     if (choice == _ComposerChoice.mentioned) {
       final selected = await _showAgentPicker();
       if (selected == null || !mounted) return;
       setState(() {
         _choice = choice;
-        _mentionedAgentId = selected;
+        _mentionedAgentIds = selected;
       });
       return;
     }
     setState(() {
       _choice = choice;
-      _mentionedAgentId = null;
+      _mentionedAgentIds = const [];
     });
   }
 
-  Future<String?> _showAgentPicker() => showModalBottomSheet<String>(
-    context: context,
-    showDragHandle: true,
-    builder: (context) => SafeArea(
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.55,
-        child: Column(
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 2, 20, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('选择回答的 Agent', style: HaloTextStyles.compactTitle),
-              ),
-            ),
-            Expanded(
-              child: ListView(
-                children: [
-                  for (final agentId in groupChatMemberAgentIds)
-                    ListTile(
-                      leading: HaloAvatar(
-                        letter: _agent(agentId).letter,
-                        size: 36,
-                      ),
-                      title: Text(_agent(agentId).name),
-                      subtitle: Text(_agent(agentId).role),
-                      onTap: () => Navigator.pop(context, agentId),
+  Future<List<String>?> _showAgentPicker() {
+    final selectedIds = <String>{..._mentionedAgentIds};
+    return showModalBottomSheet<List<String>>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => SafeArea(
+          child: SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.62,
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 2, 20, 8),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '选择 1–4 位成员',
+                      style: HaloTextStyles.compactTitle,
                     ),
-                ],
-              ),
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (final member in _controller.members)
+                        CheckboxListTile(
+                          value: selectedIds.contains(member.expertId),
+                          secondary: HaloAvatar(
+                            letter: member.avatarLetter,
+                            size: 36,
+                          ),
+                          title: Text(member.displayName),
+                          subtitle: Text(member.role),
+                          onChanged:
+                              selectedIds.contains(member.expertId) ||
+                                  selectedIds.length < 4
+                              ? (selected) => setModalState(() {
+                                  if (selected ?? false) {
+                                    selectedIds.add(member.expertId);
+                                  } else {
+                                    selectedIds.remove(member.expertId);
+                                  }
+                                })
+                              : null,
+                        ),
+                    ],
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: FilledButton(
+                    onPressed: selectedIds.isEmpty
+                        ? null
+                        : () => Navigator.pop(
+                            context,
+                            _controller.members
+                                .where(
+                                  (member) =>
+                                      selectedIds.contains(member.expertId),
+                                )
+                                .map((member) => member.expertId)
+                                .toList(growable: false),
+                          ),
+                    child: Text('确定（${selectedIds.length}）'),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   Future<void> _send() async {
-    final controller = _controller;
-    if (controller == null) return;
-    if (_choice == _ComposerChoice.mentioned && _mentionedAgentId == null) {
+    if (_choice == _ComposerChoice.mentioned && _mentionedAgentIds.isEmpty) {
       await _selectChoice(_ComposerChoice.mentioned);
-      if (_mentionedAgentId == null) return;
+      if (_mentionedAgentIds.isEmpty) return;
     }
     final input = _inputController.text;
     if (input.trim().isEmpty) return;
     _inputController.clear();
-    await controller.submit(
+    await _controller.submit(
       input: input,
       mode: _replyMode,
-      mentionedAgentIds: _mentionedAgentId == null
-          ? const []
-          : [_mentionedAgentId!],
+      mentionedAgentIds: _mentionedAgentIds,
     );
   }
 
+  String _memberName(String expertId) =>
+      _controller.memberById(expertId)?.displayName ?? expertId;
+
+  _AgentPresentation _presentation(String expertId) =>
+      _agent(expertId, _controller.memberById(expertId));
+
   @override
   Widget build(BuildContext context) {
-    final controller = _controller;
     return HaloPageScaffold(
       title: 'iOS 产品小组',
-      titleBadge: '4 AI',
+      titleBadge: '${_controller.members.length} AI',
       compactTitle: true,
       backgroundColor: HaloColors.soft,
       leading: HaloIconButton(
@@ -182,54 +232,55 @@ class _GroupChatPageState extends ConsumerState<GroupChatPage> {
         padding: const EdgeInsets.fromLTRB(12, 11, 12, 16),
         children: [
           const _CenterNotice('群目标：判断个人 AI 通讯产品的 iOS MVP 是否值得做'),
-          const _HistoricalGroupTimeline(),
-          if (controller != null)
-            for (final turn in controller.pastTurns) ...[
-              _MineGroupBubble(text: turn.input),
-              for (final message in turn.messages)
-                _ExpertGroupBubble(message: message),
-              if (turn.summary case final summary?)
-                _SummaryCard(summary: summary),
-              _RunStatus(
-                status: turn.status,
-                stage: turn.stage,
-                errorCode: turn.errorCode,
-              ),
-            ],
-          if (controller?.submittedInput case final input?)
-            _MineGroupBubble(text: input),
-          if (controller != null) ...[
-            if (controller.selectedAgentIds.isNotEmpty)
-              _CenterNotice(
-                '已选择 ${controller.selectedAgentIds.map((id) => _agent(id).name).join('、')}',
-              ),
-            if (controller.replyMode == ConversationReplyMode.all &&
-                controller.runId != null)
-              _DiscussionProgress(stage: controller.stage),
-            for (final message in controller.messages)
-              _ExpertGroupBubble(message: message),
-            if (controller.summary case final summary?)
+          _HistoricalGroupTimeline(
+            items: _controller.historyItems,
+            presentation: _presentation,
+          ),
+          for (final turn in _controller.pastTurns) ...[
+            _MineGroupBubble(text: turn.input),
+            for (final message in turn.messages)
+              _ExpertGroupBubble(message: message, presentation: _presentation),
+            if (turn.summary case final summary?)
               _SummaryCard(summary: summary),
-            if (controller.status case final status?)
-              _RunStatus(
-                status: status,
-                stage: controller.stage,
-                errorCode: controller.errorCode,
-              ),
+            _RunStatus(
+              status: turn.status,
+              stage: turn.stage,
+              errorCode: turn.errorCode,
+            ),
           ],
+          if (_controller.submittedInput case final input?)
+            _MineGroupBubble(text: input),
+          if (_controller.selectedAgentIds.isNotEmpty)
+            _CenterNotice(
+              '已选择 ${_controller.selectedAgentIds.map(_memberName).join('、')}',
+            ),
+          if (_controller.replyMode == ConversationReplyMode.all &&
+              _controller.runId != null)
+            _DiscussionProgress(stage: _controller.stage),
+          for (final message in _controller.messages)
+            _ExpertGroupBubble(message: message, presentation: _presentation),
+          if (_controller.summary case final summary?)
+            _SummaryCard(summary: summary),
+          if (_controller.status case final status?)
+            _RunStatus(
+              status: status,
+              stage: _controller.stage,
+              errorCode: _controller.errorCode,
+            ),
         ],
       ),
       bottom: _GroupComposer(
         selected: _choice,
         description: _modeDescription,
+        inputHint: _inputHint,
         inputController: _inputController,
-        enabled: controller != null,
-        isRunning: controller?.isRunning ?? false,
-        stopRequested: controller?.stopRequested ?? false,
+        enabled: _controller.canSubmit,
+        isRunning: _controller.isRunning,
+        stopRequested: _controller.stopRequested,
         onSelected: _selectChoice,
         onMention: () => _selectChoice(_ComposerChoice.mentioned),
         onSend: _send,
-        onStop: controller?.stop,
+        onStop: _controller.stop,
       ),
     );
   }
@@ -242,13 +293,10 @@ class _AgentPresentation {
   final String letter;
 }
 
-_AgentPresentation _agent(String agentId) => switch (agentId) {
-  'product-manager' => const _AgentPresentation('产品经理', '产品判断与需求拆解', '产'),
-  'interaction-designer' => const _AgentPresentation('交互设计师', '体验与交互方案', '设'),
-  'technical-architect' => const _AgentPresentation('技术架构师', '架构与工程风险', '技'),
-  'growth-advisor' => const _AgentPresentation('增长顾问', '增长与验证策略', '增'),
-  _ => _AgentPresentation(agentId, 'Agent', 'AI'),
-};
+_AgentPresentation _agent(String expertId, GroupChatMember? member) =>
+    member == null
+    ? _AgentPresentation(expertId, 'Agent', 'AI')
+    : _AgentPresentation(member.displayName, member.role, member.avatarLetter);
 
 class _CenterNotice extends StatelessWidget {
   const _CenterNotice(this.text);
@@ -273,33 +321,38 @@ class _CenterNotice extends StatelessWidget {
 }
 
 class _HistoricalGroupTimeline extends StatelessWidget {
-  const _HistoricalGroupTimeline();
+  const _HistoricalGroupTimeline({
+    required this.items,
+    required this.presentation,
+  });
+
+  final List<GroupChatHistoryItem> items;
+  final _AgentPresentation Function(String) presentation;
 
   @override
-  Widget build(BuildContext context) {
-    return const Column(
-      children: [
-        _CenterNotice('今天 10:12'),
-        _MineGroupBubble(text: '先从用户价值、实现难度和商业化三个角度判断一下。'),
-        _CenterNotice('自动选择了 产品经理、技术架构师'),
-        _ExpertGroupBubble(
-          message: GroupChatAgentMessage(
-            agentId: 'product-manager',
-            text: '用户价值是成立的，但首版必须把“联系人就是能力”做透。',
-            status: GroupChatMessageStatus.completed,
+  Widget build(BuildContext context) => Column(
+    children: [
+      for (final item in items)
+        switch (item.type) {
+          GroupChatHistoryItemType.notice => _CenterNotice(item.text),
+          GroupChatHistoryItemType.userMessage => _MineGroupBubble(
+            text: item.text,
           ),
-        ),
-        _ExpertGroupBubble(
-          message: GroupChatAgentMessage(
-            agentId: 'technical-architect',
-            text: '工程上可行。最大的风险不是 UI，而是消息可靠性、模型编排和长期记忆边界。',
-            status: GroupChatMessageStatus.completed,
+          GroupChatHistoryItemType.agentMessage => _ExpertGroupBubble(
+            message: GroupChatAgentMessage(
+              agentId: item.agentId!,
+              text: item.text,
+              status: GroupChatMessageStatus.completed,
+            ),
+            presentation: presentation,
           ),
-        ),
-        _SummaryCard(title: '群聊阶段总结', summary: '首版聚焦文字对话、可控群聊、Agent 市场和结果沉淀。'),
-      ],
-    );
-  }
+          GroupChatHistoryItemType.summary => _SummaryCard(
+            title: item.title ?? '群聊总结',
+            summary: item.text,
+          ),
+        },
+    ],
+  );
 }
 
 class _MineGroupBubble extends StatelessWidget {
@@ -325,12 +378,13 @@ class _MineGroupBubble extends StatelessWidget {
 }
 
 class _ExpertGroupBubble extends StatelessWidget {
-  const _ExpertGroupBubble({required this.message});
+  const _ExpertGroupBubble({required this.message, required this.presentation});
   final GroupChatAgentMessage message;
+  final _AgentPresentation Function(String) presentation;
 
   @override
   Widget build(BuildContext context) {
-    final agent = _agent(message.agentId);
+    final agent = presentation(message.agentId);
     final isRunning = message.status == GroupChatMessageStatus.running;
     final isFailed = message.status == GroupChatMessageStatus.failed;
     return Padding(
@@ -499,6 +553,7 @@ class _GroupComposer extends StatelessWidget {
   const _GroupComposer({
     required this.selected,
     required this.description,
+    required this.inputHint,
     required this.inputController,
     required this.enabled,
     required this.isRunning,
@@ -511,6 +566,7 @@ class _GroupComposer extends StatelessWidget {
 
   final _ComposerChoice selected;
   final String description;
+  final String inputHint;
   final TextEditingController inputController;
   final bool enabled;
   final bool isRunning;
@@ -524,9 +580,8 @@ class _GroupComposer extends StatelessWidget {
   Widget build(BuildContext context) {
     const modes = <(_ComposerChoice, String)>[
       (_ComposerChoice.auto, '自动选择'),
-      (_ComposerChoice.mentioned, '@某个 Agent'),
-      (_ComposerChoice.all, '@所有人'),
-      (_ComposerChoice.discuss, '让大家讨论'),
+      (_ComposerChoice.mentioned, '@指定成员'),
+      (_ComposerChoice.all, '@所有成员'),
     ];
     return DecoratedBox(
       decoration: const BoxDecoration(
@@ -595,7 +650,7 @@ class _GroupComposer extends StatelessWidget {
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => onSend(),
                       decoration: InputDecoration(
-                        hintText: enabled ? '发消息给这个 AI 小组' : '编排服务待接入',
+                        hintText: enabled ? inputHint : '群聊运行服务待接入',
                         filled: true,
                         fillColor: Colors.white,
                         border: const OutlineInputBorder(

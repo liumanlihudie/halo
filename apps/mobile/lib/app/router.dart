@@ -1,6 +1,8 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/app/app_kernel.dart';
 import 'package:halo_mobile/app/app_shell.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/circle/circle_page.dart';
 import 'package:halo_mobile/features/circle/moment_detail_page.dart';
 import 'package:halo_mobile/features/conversations/conversations_page.dart';
@@ -23,7 +25,16 @@ import 'package:halo_mobile/features/settings/model_providers_page.dart';
 import 'package:halo_mobile/features/settings/provider_detail_page.dart';
 import 'package:halo_mobile/features/settings/self_hosted_gateway_page.dart';
 
-GoRouter createAppRouter({String initialLocation = '/conversations'}) {
+GoRouter createAppRouter({
+  String initialLocation = '/conversations',
+  AppDependencies? dependencies,
+  AppDependencies Function()? dependencyResolver,
+  Listenable? dependencyListenable,
+}) {
+  final fixedDependencies = dependencies;
+  AppDependencies? resolveDependencies() =>
+      dependencyResolver?.call() ?? fixedDependencies;
+
   return GoRouter(
     initialLocation: initialLocation,
     routes: [
@@ -35,14 +46,52 @@ GoRouter createAppRouter({String initialLocation = '/conversations'}) {
           _branch('/conversations', const ConversationsPage()),
           _branch('/experts', const ExpertTeamPage()),
           _branch('/circle', const CirclePage()),
-          _branch('/settings', const SettingsPage()),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/settings',
+                pageBuilder: (context, state) {
+                  Widget buildPage(AppDependencies? current) => SettingsPage(
+                    key: ValueKey(current),
+                    modelRouting: current?.modelRouting,
+                  );
+                  final listenable = dependencyListenable;
+                  if (listenable == null) {
+                    return NoTransitionPage(
+                      child: buildPage(fixedDependencies),
+                    );
+                  }
+                  return NoTransitionPage(
+                    child: ListenableBuilder(
+                      listenable: listenable,
+                      builder: (context, _) => buildPage(resolveDependencies()),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
         ],
       ),
       GoRoute(
         path: '/chat/:conversationId',
-        builder: (context, state) => SingleChatPage(
-          conversationId: state.pathParameters['conversationId']!,
-        ),
+        builder: (context, state) {
+          Widget buildPage(AppDependencies? current) => SingleChatPage(
+            key: ValueKey(current),
+            conversationId: state.pathParameters['conversationId']!,
+            service: current?.singleChatPort,
+            repository: current?.chatRepository,
+            modelRouting: current?.modelRouting,
+            allowEphemeralRepositoryForTesting:
+                current?.allowEphemeralChatRepositoryForTesting ?? false,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/chat/:conversationId/details',
@@ -62,8 +111,20 @@ GoRouter createAppRouter({String initialLocation = '/conversations'}) {
       ),
       GoRoute(
         path: '/group/:groupId',
-        builder: (context, state) =>
-            GroupChatPage(groupId: state.pathParameters['groupId']!),
+        builder: (context, state) {
+          final groupId = state.pathParameters['groupId']!;
+          Widget buildPage(AppDependencies? current) => GroupChatPage(
+            key: ValueKey(current),
+            groupId: groupId,
+            runPort: current?.groupChatPort,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/group/:groupId/info',
@@ -112,8 +173,23 @@ GoRouter createAppRouter({String initialLocation = '/conversations'}) {
       ),
       GoRoute(
         path: '/expert/:expertId',
-        builder: (context, state) =>
-            ExpertProfilePage(expertId: state.pathParameters['expertId']!),
+        builder: (context, state) {
+          final expertId = state.pathParameters['expertId']!;
+          final installedIdentity = _executableExperts
+              .installedIdentityForProfileId(expertId);
+          Widget buildPage(AppDependencies? current) => ExpertProfilePage(
+            key: ValueKey(current),
+            expertId: expertId,
+            installedIdentity: installedIdentity,
+            routingController: current?.modelRouting,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/expert/:expertId/data',
@@ -122,12 +198,35 @@ GoRouter createAppRouter({String initialLocation = '/conversations'}) {
       ),
       GoRoute(
         path: '/settings/providers',
-        builder: (context, state) => const ModelProvidersPage(),
+        builder: (context, state) {
+          Widget buildPage(AppDependencies? current) => ModelProvidersPage(
+            key: ValueKey(current),
+            controller: current?.providerSettings,
+            routingController: current?.modelRouting,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/settings/providers/:providerId',
-        builder: (context, state) =>
-            ProviderDetailPage(providerId: state.pathParameters['providerId']!),
+        builder: (context, state) {
+          Widget buildPage(AppDependencies? current) => ProviderDetailPage(
+            key: ValueKey(current),
+            providerId: state.pathParameters['providerId']!,
+            controller: current?.providerSettings,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/settings/gateway',
@@ -140,6 +239,10 @@ GoRouter createAppRouter({String initialLocation = '/conversations'}) {
     ],
   );
 }
+
+final _executableExperts = ExecutableExpertRegistry(
+  gateway: const ExpertOutputValidationGateway(),
+);
 
 StatefulShellBranch _branch(String path, Widget child) {
   return StatefulShellBranch(

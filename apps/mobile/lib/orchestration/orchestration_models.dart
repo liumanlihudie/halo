@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 
 enum ConversationReplyMode { auto, mentioned, all }
@@ -16,6 +19,15 @@ enum ConversationStage {
 
 enum OrchestrationRunStatus { running, completed, failed, stopped }
 
+enum RunCheckpoint {
+  created,
+  selectingAgents,
+  responding,
+  summarizing,
+  finalizing,
+  terminal,
+}
+
 enum OrchestrationEventType {
   runCreated,
   agentsSelected,
@@ -29,6 +41,73 @@ enum OrchestrationEventType {
   runStopped,
 }
 
+enum PublicEventTextProvenance { trustedApplication, modelOutput }
+
+@immutable
+class PublicEventText {
+  const PublicEventText._(this.value, this.provenance);
+
+  factory PublicEventText.trustedApplication(String value) {
+    return PublicEventText._(
+      value,
+      PublicEventTextProvenance.trustedApplication,
+    );
+  }
+
+  factory PublicEventText.fromModelOutput(String value) {
+    var redacted = value;
+    final patterns = <RegExp>[
+      RegExp(
+        r'authorization\s*:\s*(?:bearer|basic)\s+\S+',
+        caseSensitive: false,
+      ),
+      RegExp(r'\bbearer\s+\S+', caseSensitive: false),
+      RegExp(r'\bsk-[A-Za-z0-9_-]{12,}\b', caseSensitive: false),
+      RegExp(
+        r'\b(?:password|token|credential|api[_-]?key)\s*[:=]\s*\S+',
+        caseSensitive: false,
+      ),
+      RegExp(r'\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b'),
+      RegExp(r'\b[A-Fa-f0-9]{40,}\b'),
+      RegExp(r'\b[A-Za-z0-9+/]{32,}={0,2}\b'),
+    ];
+    for (final pattern in patterns) {
+      redacted = redacted.replaceAll(pattern, '[REDACTED]');
+    }
+    if (redacted.length > 4096) {
+      redacted = redacted.substring(0, 4096);
+    }
+    return PublicEventText._(redacted, PublicEventTextProvenance.modelOutput);
+  }
+
+  final String value;
+  final PublicEventTextProvenance provenance;
+
+  Map<String, Object?> toJson() => {
+    'value': value,
+    'provenance': provenance.name,
+  };
+
+  factory PublicEventText.fromJson(Map<String, Object?> json) {
+    return PublicEventText._(
+      json['value']! as String,
+      PublicEventTextProvenance.values.byName(json['provenance']! as String),
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is PublicEventText &&
+      value == other.value &&
+      provenance == other.provenance;
+
+  @override
+  int get hashCode => Object.hash(value, provenance);
+
+  @override
+  String toString() => value;
+}
+
 @immutable
 class StartConversationRunCommand {
   const StartConversationRunCommand({
@@ -39,6 +118,8 @@ class StartConversationRunCommand {
     required this.replyMode,
     required this.memberAgentIds,
     this.mentionedAgentIds = const [],
+    this.inputRef,
+    this.contextRef,
   });
 
   factory StartConversationRunCommand.fromJson(Map<String, Object?> json) {
@@ -52,6 +133,8 @@ class StartConversationRunCommand {
       ),
       memberAgentIds: List<String>.from(json['memberAgentIds']! as List),
       mentionedAgentIds: List<String>.from(json['mentionedAgentIds']! as List),
+      inputRef: json['inputRef'] as String?,
+      contextRef: json['contextRef'] as String?,
     );
   }
 
@@ -62,6 +145,22 @@ class StartConversationRunCommand {
   final ConversationReplyMode replyMode;
   final List<String> memberAgentIds;
   final List<String> mentionedAgentIds;
+  final String? inputRef;
+  final String? contextRef;
+
+  String get requestHash {
+    final identity = jsonEncode({
+      'conversationId': conversationId,
+      'hostAgentId': hostAgentId,
+      'inputRef': inputRef,
+      'inputHash': sha256.convert(utf8.encode(input)).toString(),
+      'contextRef': contextRef,
+      'replyMode': replyMode.name,
+      'memberAgentIds': memberAgentIds,
+      'mentionedAgentIds': mentionedAgentIds,
+    });
+    return sha256.convert(utf8.encode(identity)).toString();
+  }
 
   Map<String, Object?> toJson() => {
     'clientCommandId': clientCommandId,
@@ -71,6 +170,8 @@ class StartConversationRunCommand {
     'replyMode': replyMode.name,
     'memberAgentIds': memberAgentIds,
     'mentionedAgentIds': mentionedAgentIds,
+    'inputRef': inputRef,
+    'contextRef': contextRef,
   };
 
   @override
@@ -81,6 +182,8 @@ class StartConversationRunCommand {
           conversationId == other.conversationId &&
           hostAgentId == other.hostAgentId &&
           input == other.input &&
+          inputRef == other.inputRef &&
+          contextRef == other.contextRef &&
           replyMode == other.replyMode &&
           listEquals(memberAgentIds, other.memberAgentIds) &&
           listEquals(mentionedAgentIds, other.mentionedAgentIds);
@@ -91,6 +194,8 @@ class StartConversationRunCommand {
     conversationId,
     hostAgentId,
     input,
+    inputRef,
+    contextRef,
     replyMode,
     Object.hashAll(memberAgentIds),
     Object.hashAll(mentionedAgentIds),
@@ -137,10 +242,12 @@ class OrchestrationEvent {
     required this.type,
     required this.stage,
     this.agentId,
-    this.text,
+    PublicEventText? text,
     this.selectedAgentIds = const [],
     this.errorCode,
-  });
+    this.causationId = '',
+    this.dedupeKey = '',
+  }) : publicText = text;
 
   factory OrchestrationEvent.fromJson(Map<String, Object?> json) {
     return OrchestrationEvent(
@@ -150,9 +257,17 @@ class OrchestrationEvent {
       type: OrchestrationEventType.values.byName(json['type']! as String),
       stage: ConversationStage.values.byName(json['stage']! as String),
       agentId: json['agentId'] as String?,
-      text: json['text'] as String?,
+      text: switch (json['text']) {
+        final Map<String, Object?> value => PublicEventText.fromJson(value),
+        final Map value => PublicEventText.fromJson(
+          Map<String, Object?>.from(value),
+        ),
+        _ => null,
+      },
       selectedAgentIds: List<String>.from(json['selectedAgentIds']! as List),
       errorCode: json['errorCode'] as String?,
+      causationId: json['causationId'] as String? ?? '',
+      dedupeKey: json['dedupeKey'] as String? ?? '',
     );
   }
 
@@ -162,9 +277,12 @@ class OrchestrationEvent {
   final OrchestrationEventType type;
   final ConversationStage stage;
   final String? agentId;
-  final String? text;
+  final PublicEventText? publicText;
+  String? get text => publicText?.value;
   final List<String> selectedAgentIds;
   final String? errorCode;
+  final String causationId;
+  final String dedupeKey;
 
   Map<String, Object?> toJson() => {
     'eventId': eventId,
@@ -173,9 +291,11 @@ class OrchestrationEvent {
     'type': type.name,
     'stage': stage.name,
     'agentId': agentId,
-    'text': text,
+    'text': publicText?.toJson(),
     'selectedAgentIds': selectedAgentIds,
     'errorCode': errorCode,
+    'causationId': causationId,
+    'dedupeKey': dedupeKey,
   };
 
   @override
@@ -188,9 +308,11 @@ class OrchestrationEvent {
           type == other.type &&
           stage == other.stage &&
           agentId == other.agentId &&
-          text == other.text &&
+          publicText == other.publicText &&
           listEquals(selectedAgentIds, other.selectedAgentIds) &&
-          errorCode == other.errorCode;
+          errorCode == other.errorCode &&
+          causationId == other.causationId &&
+          dedupeKey == other.dedupeKey;
 
   @override
   int get hashCode => Object.hash(
@@ -200,8 +322,10 @@ class OrchestrationEvent {
     type,
     stage,
     agentId,
-    text,
+    publicText,
     Object.hashAll(selectedAgentIds),
     errorCode,
+    causationId,
+    dedupeKey,
   );
 }

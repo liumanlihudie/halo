@@ -13,15 +13,26 @@ class ExpertMarketPage extends StatefulWidget {
 }
 
 class _ExpertMarketPageState extends State<ExpertMarketPage> {
+  final TextEditingController _searchController = TextEditingController();
   String category = '推荐';
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final experts = category == '推荐'
-        ? HaloFixtures.marketExperts
-        : HaloFixtures.marketExperts
-              .where((expert) => expert.category == category)
-              .toList();
+    final query = _query.trim().toLowerCase();
+    final experts = HaloFixtures.marketExperts
+        .where(
+          (expert) =>
+              (category == '推荐' || expert.category == category) &&
+              (query.isEmpty || expert.name.toLowerCase().contains(query)),
+        )
+        .toList();
     return HaloPageScaffold(
       title: 'AI 市场',
       compactTitle: true,
@@ -32,13 +43,6 @@ class _ExpertMarketPageState extends State<ExpertMarketPage> {
         onPressed: () =>
             context.canPop() ? context.pop() : context.go('/experts'),
       ),
-      actions: [
-        HaloIconButton(
-          prototypeIconClass: 'ph ph-magnifying-glass',
-          semanticLabel: '搜索',
-          onPressed: () {},
-        ),
-      ],
       body: Column(
         children: [
           Expanded(
@@ -48,9 +52,14 @@ class _ExpertMarketPageState extends State<ExpertMarketPage> {
               itemBuilder: (context, index) {
                 if (index == 0) return const _MarketHero();
                 if (index == 1) {
-                  return const Padding(
-                    padding: EdgeInsets.only(top: 11),
-                    child: HaloSearchField(placeholder: '搜索 Agent、技能或工作场景'),
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 11),
+                    child: HaloSearchField(
+                      placeholder: '搜索 Agent、技能或工作场景',
+                      readOnly: false,
+                      controller: _searchController,
+                      onChanged: (value) => setState(() => _query = value),
+                    ),
                   );
                 }
                 if (index == 2) {
@@ -146,26 +155,24 @@ class _CategoryChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const categories = ['推荐', '效率', '研究', '内容', '数据', '法律财税', '生活'];
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+    return Padding(
       padding: const EdgeInsets.only(top: 10),
-      child: Row(
+      child: Wrap(
+        spacing: 7,
+        runSpacing: 7,
         children: [
           for (final category in categories)
-            Padding(
-              padding: const EdgeInsets.only(right: 7),
-              child: ChoiceChip(
-                label: Text(category),
-                selected: selected == category,
-                onSelected: (_) => onSelected(category),
-                showCheckmark: false,
-                selectedColor: HaloColors.accent,
-                backgroundColor: Colors.white,
-                side: BorderSide.none,
-                labelStyle: TextStyle(
-                  color: selected == category ? Colors.white : HaloColors.muted,
-                  fontSize: 11,
-                ),
+            ChoiceChip(
+              label: Text(category),
+              selected: selected == category,
+              onSelected: (_) => onSelected(category),
+              showCheckmark: false,
+              selectedColor: HaloColors.accent,
+              backgroundColor: Colors.white,
+              side: BorderSide.none,
+              labelStyle: TextStyle(
+                color: selected == category ? Colors.white : HaloColors.muted,
+                fontSize: 11,
               ),
             ),
         ],

@@ -1,11 +1,53 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:path_provider/path_provider.dart';
 
-class LocalDataPage extends StatelessWidget {
-  const LocalDataPage({super.key});
+/// Bytes actually occupied by the app's own storage directory.
+typedef LocalDataUsageLoader = Future<int> Function();
+
+class LocalDataPage extends StatefulWidget {
+  const LocalDataPage({this.usageLoader, super.key});
+
+  /// Injectable so tests do not touch the real application support directory.
+  final LocalDataUsageLoader? usageLoader;
+
+  @override
+  State<LocalDataPage> createState() => _LocalDataPageState();
+}
+
+class _LocalDataPageState extends State<LocalDataPage> {
+  int? _usedBytes;
+  var _usageFailed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadUsage());
+  }
+
+  Future<void> _loadUsage() async {
+    try {
+      final bytes = await (widget.usageLoader ?? _measureSupportDirectory)();
+      if (!mounted) return;
+      setState(() => _usedBytes = bytes);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _usageFailed = true);
+    }
+  }
+
+  String get _usageLabel {
+    if (_usageFailed) return '无法读取';
+    final bytes = _usedBytes;
+    if (bytes == null) return '统计中';
+    return _formatBytes(bytes);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,27 +100,27 @@ class LocalDataPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          const Row(
+          Row(
             children: [
-              Expanded(child: _Metric('2.8 GB', '本地文件')),
-              Expanded(child: _Metric('12,460', '消息')),
-              Expanded(child: _Metric('128', '记忆')),
+              Expanded(child: _Metric(_usageLabel, '本地文件')),
+              // Message and memory counters are not implemented yet; showing a
+              // number here would be inventing one.
+              const Expanded(child: _Metric('—', '消息')),
+              const Expanded(child: _Metric('—', '记忆')),
             ],
           ),
           const HaloSectionLabel('迁移与备份'),
           HaloSettingsGroup(
             children: [
-              HaloSettingsRow(
+              const HaloSettingsRow(
                 label: '导出数据包',
-                detail: 'JSON + 文件',
+                detail: '尚未开放',
                 prototypeIconClass: 'ph ph-export',
-                onTap: () {},
               ),
-              HaloSettingsRow(
+              const HaloSettingsRow(
                 label: '导入数据包',
-                detail: '从其他设备恢复',
+                detail: '尚未开放',
                 prototypeIconClass: 'ph ph-download-simple',
-                onTap: () {},
               ),
             ],
           ),
@@ -127,19 +169,26 @@ class LocalDataPage extends StatelessWidget {
           const HaloSectionLabel('存储管理'),
           HaloSettingsGroup(
             children: [
-              HaloSettingsRow(
+              const HaloSettingsRow(
                 label: '清理缓存',
-                detail: '486 MB',
+                detail: '尚未开放',
                 prototypeIconClass: 'ph ph-broom',
-                onTap: () {},
               ),
             ],
           ),
           const SizedBox(height: 14),
           OutlinedButton(
-            onPressed: () {},
+            // Destructive and irreversible: it must do nothing visible rather
+            // than look armed while being a no-op.
+            onPressed: null,
             style: OutlinedButton.styleFrom(foregroundColor: HaloColors.red),
             child: const Text('清除本机数据'),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            '导出、导入、清理缓存与清除数据尚未实现，因此这些操作当前不可用。',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 9, color: HaloColors.muted),
           ),
           const SizedBox(height: 5),
           const Text(
@@ -183,4 +232,28 @@ class _Metric extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<int> _measureSupportDirectory() async {
+  final directory = await getApplicationSupportDirectory();
+  if (!directory.existsSync()) return 0;
+  var total = 0;
+  await for (final entity in directory.list(recursive: true)) {
+    if (entity is File) total += await entity.length();
+  }
+  return total;
+}
+
+String _formatBytes(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var value = bytes.toDouble();
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  final rendered = unit == 0 || value >= 100
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return '$rendered ${units[unit]}';
 }
