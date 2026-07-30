@@ -3,27 +3,31 @@
 日期：2026-07-30（当日修订：主路改为火山引擎直连）
 依据：`docs/04-feature-specs/07-voice-message-design.md`
 前置事实：ToAPIs 当前无音频端点（设计 §3.1）；产品决策直接接火山引擎
-豆包语音（设计 §3.2），端上层与 ToAPIs 层留座不建。
+豆包语音。TTS 接口形态与参数已从产品负责人跑通的 HTML_xl3.0 项目实证冻结
+（设计 §3.2）；ASR 是唯一待定段（T0）。端上层与 ToAPIs 层留座不建。
 
 ## 任务拆分（每项一个提交，附验证门槛）
 
-### T0 火山接口探针（需产品负责人提供测试凭证，凭证不入库不入文档）
+### T0 ASR 路线定案（唯一未实证段；TTS 参数已从 HTML_xl3.0 工作代码冻结）
 
-- 用真实三元组实测并记录到本文档：录音文件识别对 m4a 的支持与格式参数、
-  TTS 单次响应的实际体积上限、两个接口的错误响应形状与限流头
-- 产出：把设计 §3.2 的「检索核实」升级为「实测核实」，
-  修订 T2 的响应大小上限参数
-- 门槛：结论回写本文档；探针脚本不提交（含凭证风险）
+- 由产品负责人用自己的 Key 实测：`X-Api-Key` 认证是否适用于
+  `/api/v3/auc/bigmodel/submit` 录音文件识别，以及 m4a 支持情况
+  （测法可参考 HTML_xl3.0 的调用风格；凭证不入库不入文档）
+- 不通则 ASR 取 iOS 端上 `SFSpeechRecognizer`（延续 HTML_xl3.0 用本地
+  vosk 的架构先例），火山侧只做 TTS
+- 门槛：结论回写本文档 §依据；不阻塞 T1–T4 动工
 
 ### T1 语音供给接口 + 火山 Provider 配置
 
 - Create: `lib/model_runtime/speech_runtime.dart`
   （`SpeechTranscriber` / `SpeechSynthesizer` / 请求响应模型 / 安全错误映射）
 - Modify: `provider_config.dart`（新 ProviderKind.volcanoSpeech：
-  三元组中仅 Access Token 走 SecretRef/Keychain，App ID 与 Cluster 为
-  非敏感配置字段）
-- Modify: 端点白名单新增 `openspeech.bytedance.com` 与三条路径
-  （tts / auc submit / auc query）——安全边界改动，独立小提交便于评审
+  单 API Key 走 SecretRef/Keychain；speaker / resource id / 采样率为
+  非敏感配置字段，默认值取 HTML_xl3.0 实证参数：
+  `seed-tts-2.0` / `zh_female_vv_uranus_bigtts` / mp3 / 24000）
+- Modify: 端点白名单新增 `openspeech.bytedance.com` 与
+  `/api/v3/tts/unidirectional`（ASR 路径视 T0 结论增补）——
+  安全边界改动，独立小提交便于评审
 - Modify: 设置页新增「火山引擎 · 豆包语音」Provider 卡片
   （三字段，Token 用显式粘贴；连接测试复用现有只读探测模式）
 - Test: 配置持久化轮转、Token 不出 Keychain、白名单拒绝其余路径
@@ -32,12 +36,17 @@
 ### T2 火山语音适配器
 
 - Create: `lib/model_runtime/volcano_speech.dart`
-  （ASR：submit → 有界轮询（间隔与上限来自 T0 实测）→ 文字；
-  TTS：单次 POST → base64 解码 → 写目标路径；
-  全部走 unary 安全传输 + `SqliteModelCallJournal` 计费围栏 + 错误脱敏）
-- Test: 文档形状合同测试（fake transport 喂官方响应形状，
-  照 ToAPIs list-models 回归测试先例）：成功链、轮询超时、限流 Retry-After、
-  错误正文不外泄、base64 损坏 fail-closed
+  （TTS：POST unidirectional → 读完整分块响应 → 逐行解析 JSON、拼接
+  base64 片段 → 写目标路径；文本先过 markdown 剥离（HTML_xl3.0 实证坑：
+  LLM 输出直接合成会读出格式符号）；≤1000 字上限对齐 Answer 的 1200 字
+  需截断策略：超长按句边界分两次合成拼接；
+  ASR 按 T0 定案实现（火山 auc 或端上）；
+  全部走安全传输 + `SqliteModelCallJournal` 计费围栏 + 错误脱敏；
+  分块响应总量上限独立设定并评审——mp3@24kHz 每分钟约 180KB，
+  预留 4MB 足够且有界）
+- Test: 形状合同测试用 HTML_xl3.0 实证响应形状（JSON 行 + base64 data）：
+  成功链、片段损坏 fail-closed、超长文本分段、限流 Retry-After、
+  错误正文不外泄
 - 门槛：`flutter analyze` 干净
 
 ### T3 录音服务

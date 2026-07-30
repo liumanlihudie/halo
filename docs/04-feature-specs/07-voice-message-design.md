@@ -47,25 +47,39 @@
 据此产品决策（2026-07-30）：**语音直接接火山引擎（豆包语音）**，
 ToAPIs 音频端点上线后再评估是否迁移。
 
-### 3.2 火山引擎豆包语音：接口形态（检索核实，实现前需以官方文档逐项复核）
+### 3.2 火山引擎豆包语音：接口形态（源自已跑通项目 `~/HTML_xl3.0`，实证）
 
-- 域名：`openspeech.bytedance.com`
-- **TTS**：HTTP `POST /api/v1/tts` 单次合成（返回 base64 音频），另有
-  WSS 流式变体（语音消息不需要）。
-- **ASR**：大模型录音文件识别为异步 HTTP —
-  `POST /api/v3/auc/bigmodel/submit` 提交 + 查询接口轮询，
-  认证头 `X-Api-App-Key` / `X-Api-Access-Token`；另有 WSS 流式（不需要）。
-- **凭证是三元组**：App ID + Access Token + Cluster ID。仅 Access Token
-  是密钥（进 iOS Keychain）；App ID 与 Cluster 为非敏感标识符（可存 SQLite 配置）。
+产品负责人的 Electron 项目 HTML_xl3.0 已在生产使用这两套 v3 接口，
+以下形态直接取自其工作代码（`main.cjs` / `tts-bidi.cjs` / `realtime-dialog.cjs`），
+无需再靠检索推测：
 
-**架构上重要的结论：语音消息全程只需 HTTP 单次/轮询调用，
-不需要 WebSocket** ——完整落在现有 unary 安全传输（DNS/TLS/重定向/响应
-大小边界、错误脱敏、计费围栏）之内。流式与双工留给「语音通话」。
+- **TTS（语音消息用这条）**：HTTP
+  `POST https://openspeech.bytedance.com/api/v3/tts/unidirectional`
+  - 认证头：`X-Api-Key: <key>`、`X-Api-Resource-Id: seed-tts-2.0`、
+    `X-Api-Request-Id: <uuid>`
+  - 请求体：`req_params{ text(≤1000 字), speaker(如
+    zh_female_vv_uranus_bigtts), audio_params{format: mp3, sample_rate: 24000},
+    additions{silence_duration: 800, disable_markdown_filter: true} }`
+  - 响应：分块传输的 JSON 行，每行 `data` 字段为 base64 音频片段；
+    语音消息不需要边收边播，**读完整个响应后拼接片段落盘即可**
+  - 已知坑（原项目注释）：尾部静音防止 mp3 时长低估截字；
+    LLM 输出需过 markdown 过滤
+- **双向流式 TTS**：`wss://openspeech.bytedance.com/api/v3/tts/bidirection`
+  （`X-Api-Key` + `X-Api-Connect-Id`）——语音消息不需要，留给流式场景
+- **端到端对话**：`wss://openspeech.bytedance.com/api/v3/realtime/dialogue`
+  （`X-Api-Resource-Id: volc.speech.dialog`）——即「语音通话」的底座，本设计不覆盖
 
-两个实现前必须用真实凭证实测的点（T0 探针任务）：
-1. 录音文件识别对 m4a 的支持（不支持则录音侧改 wav/mp3）；
-2. TTS 单次响应体积：Answer 上限 1200 字的合成音频 base64 可能超过现有
-   2MB 响应上限，语音传输可能需要独立的更高上限（安全评审项）。
+**凭证模型（实证）**：v3 族用**单个 API Key**（`X-Api-Key`），
+speaker / resource id / 采样率是非敏感配置——与现有 SecretRef 单密钥
+Keychain 体系完全一致，无需三元组特殊处理。
+
+**ASR 是唯一未实证段**：HTML_xl3.0 的用户语音转文字走本地 vosk
+（中文模型内置），未用火山 ASR。我们的候选：
+1. 火山大模型录音文件识别（`/api/v3/auc/bigmodel/submit` + 查询轮询，
+   检索来源；`X-Api-Key` 是否适用于该端点**需 T0 实测**）；
+2. iOS 端上 `SFSpeechRecognizer`（与 vosk 同类的本地路线，零 Key，
+   延续原项目的架构先例）。
+T0 实测 1 不通则取 2，不阻塞 TTS 侧。
 
 ## 4. 语音供给分层（Speech Provider Seam）
 
@@ -87,7 +101,7 @@ abstract interface class SpeechSynthesizer {
 
 | 层 | 实现 | 状态 | 说明 |
 |---|---|---|---|
-| A | **火山引擎豆包语音直连** | 本期实现（主路） | 新 Provider「volcano-speech」：三元组凭证、`openspeech.bytedance.com` 端点白名单、unary 传输、计费围栏、错误脱敏 |
+| A | **火山引擎豆包语音直连** | 本期实现（主路） | 新 Provider「volcano-speech」：单 API Key（SecretRef/Keychain 复用）、`openspeech.bytedance.com` 端点白名单、HTTP 分块响应读取、计费围栏、错误脱敏 |
 | B | ToAPIs 音频端点 | 待其上线 | 上线后评估迁移（可共用现有 ToAPIs Key）；接口座位保留 |
 | C | Apple 端上（`SFSpeechRecognizer` + `AVSpeechSynthesizer`） | 可选兜底 | 零 Key、离线可用；音质有差距。本期不实现，座位保留给离线场景 |
 
@@ -122,9 +136,9 @@ abstract interface class SpeechSynthesizer {
 ## 7. 安全与计费边界
 
 - `NSMicrophoneUsageDescription`（中文、如实：录制语音消息用于对话）；
-- 火山凭证：Access Token 仅存 iOS Keychain（SecretRef 机制复用），
-  App ID / Cluster 存 SQLite Provider 配置（非敏感标识符）；三者均不进日志；
-  设置页 Token 输入沿用「显式粘贴」交互；
+- 火山凭证：单个 API Key 仅存 iOS Keychain（SecretRef 机制复用）；
+  speaker / resource id / 采样率为非敏感配置存 SQLite；Key 不进日志；
+  设置页 Key 输入沿用「显式粘贴」交互；
 - 端上层（C）不产生网络调用与计费；A/B 层每次 ASR/TTS 都过
   `SqliteModelCallJournal` 计费围栏（reserve→dispatched→completed），
   与聊天推理同等对待；
