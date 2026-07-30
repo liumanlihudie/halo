@@ -107,8 +107,13 @@
   （如 ParseException 拼接 responseBody），映射层必须只输出固定安全
   文案、绝不落 exception.toString()——与现行纪律一致。
   结论：流式改造落地后按此路线替换 OpenAI 兼容 transport 的形状层。
-- [ ] spike：mcp_dart 远程 Streamable HTTP 最小连通（参考
-  flutter-mcp-ai-chat 样例），验证与端点白名单/错误脱敏的组合
+- [x] spike：mcp_dart 远程 Streamable HTTP 最小连通 —— **已验证可行**
+  （2026-07-30，分支 `spike/openai-dart-adapter`，提交 4389bec）：
+  进程内起真实 StreamableMcpServer（回环随机端口），客户端按 app 将用
+  的路径 connect → listTools → callTool 全通，协议协商到 2026-07-28；
+  端点授权在我们这层（transport 的 Uri 由我们构造，白名单先于连接）。
+  **注意事项**：库自带 INFO/DEBUG 日志（含 server/工具名），接入时须
+  按我们的日志纪律收敛日志级别与内容。
 - [ ] 结论同步进 `08-agent-web-search-design.md` 的实现选型
 - [ ] MCP 工具面的信封/未核验语义设计（工具结果=外部主张，
   沿用结构性披露）——立项时新开 feature spec
