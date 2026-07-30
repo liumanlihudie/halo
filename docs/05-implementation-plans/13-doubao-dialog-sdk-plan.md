@@ -14,6 +14,26 @@ SDK 内置 AEC 回声消除，是这个问题的正解。
 - 人设注入方式不变：SDK 的 `DIRECTIVE_START_ENGINE` 参数就是现在发的
   `dialog.bot_name/system_role/speaking_style`，专家人设不会丢。
 
+## 实测阻塞（2026-07-31 凌晨）：iOS SDK 拉不到
+
+`pod 'SpeechEngineToB'` 在 CocoaPods 公共索引里**存在**（版本 1.0.0.0，
+分片 7_7_0），但它的 podspec 指向字节**内网私有 Git**：
+
+```
+git clone git@code.byted.org:lab-speech/speech_sdk_release.git
+```
+
+外部账号没有该仓库权限，`pod install` 直接失败。所以 T1–T5 在拿到以下任一
+条件之前**无法开工**：
+
+1. 火山工单/商务渠道索取 iOS SDK 的 **framework 压缩包或可访问的私有源**，
+   本地 `pod` 用 `:path` 引用；
+2. 或对方提供能访问 `code.byted.org` 的凭证（不推荐：内网权限不该进
+   开源仓库的构建链）。
+
+文档里给的 `0.0.14.7` 版本在公共索引里也不存在，只有 1.0.0.0。
+Podfile 已回滚，主线不受影响。
+
 ## T0（先做，且独立于 SDK）：连续 PCM 播放
 
 真机实测：**即使用听筒也断续**，而同一套服务在桌面端稳定。原因不在 AEC，
