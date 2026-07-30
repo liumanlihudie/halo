@@ -1,6 +1,7 @@
 // ignore_for_file: prefer_initializing_formals
 
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:dartantic_ai/dartantic_ai.dart' as dartantic;
 import 'package:dartantic_interface/dartantic_interface.dart' as llm;
@@ -114,7 +115,14 @@ final class DartanticSingleChatPort implements SingleChatPort {
       return const SingleAgentRunOutcome.failed(
         failure: SingleAgentRunFailure.notConfigured,
       );
-    } catch (_) {
+    } catch (error) {
+      // Diagnostic only: the exception *type*, never provider text, headers or
+      // model output. Without it a failed send is indistinguishable from any
+      // other, and the only way to find the cause is to guess.
+      developer.log(
+        'single-chat run failed: ${error.runtimeType}',
+        name: 'halo.chat',
+      );
       // Transport or provider error. Whatever text already arrived is still
       // the model's reply and is kept; only an empty run fails.
       final partial = expert.sanitizePlainAnswer(answer.toString());
