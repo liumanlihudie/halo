@@ -129,9 +129,11 @@ final class VolcanoRealtimeDialog {
       );
     } on WebSocketException catch (_) {
       await events.close();
-      // The handshake reached the service and was refused: the credential or
-      // the resource is wrong, and retrying changes nothing.
-      throw const RealtimeDialogException('语音通话被拒绝，请检查语音 Key');
+      // The handshake reached the service and was refused, but the WebSocket
+      // exception carries no status. Asking the same endpoint once over HTTPS
+      // returns the code and the server's log id, which is the difference
+      // between "your token is wrong" and "this account lacks the resource".
+      throw RealtimeDialogException(await _describeRefusal());
     } on SocketException catch (_) {
       await events.close();
       throw const RealtimeDialogException('网络不可用，无法接通通话');
@@ -186,6 +188,37 @@ final class VolcanoRealtimeDialog {
     }
     await _events?.close();
     _events = null;
+  }
+
+  /// Explains a refused handshake using the status the service itself returns.
+  ///
+  /// Only the status code and log id are surfaced — never a response body.
+  Future<String> _describeRefusal() async {
+    try {
+      final client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 8);
+      final request = await client.getUrl(endpoint.replace(scheme: 'https'));
+      request.headers
+        ..set('X-Api-App-ID', _appId)
+        ..set('X-Api-Access-Key', _accessToken)
+        ..set('X-Api-Resource-Id', 'volc.speech.dialog')
+        ..set('X-Api-App-Key', appKey);
+      final response = await request.close();
+      final logId = response.headers.value('x-tt-logid') ?? '';
+      await response.drain<void>();
+      client.close();
+      final reason = switch (response.statusCode) {
+        401 || 403 => 'App ID 或 Access Token 不正确',
+        404 => '账号未开通端到端实时语音',
+        429 => '并发或配额已用满',
+        _ => '服务端拒绝',
+      };
+      return '语音通话被拒绝：$reason'
+          '（HTTP ${response.statusCode}'
+          '${logId.isEmpty ? '' : ' · $logId'}）';
+    } catch (_) {
+      return '语音通话被拒绝，请检查 App ID 与 Access Token';
+    }
   }
 
   void _fail(Completer<void> connected, String message) {
