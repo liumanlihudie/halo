@@ -66,7 +66,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('通用助理'), findsOneWidget);
+      expect(find.text('Halo 助理'), findsOneWidget);
       expect(find.text('个人 AI 通讯竞品分析.pdf'), findsOneWidget);
       expect(find.text('任务进行中'), findsOneWidget);
       expect(find.bySemanticsLabel('语音通话'), findsNothing);

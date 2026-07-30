@@ -21,7 +21,7 @@ abstract final class HaloFixtures {
     ),
     ConversationFixture(
       id: 'general-assistant',
-      title: '通用助理',
+      title: 'Halo 助理',
       preview: 'PDF · 个人 AI 通讯竞品分析已完成',
       time: '10:21',
       avatarLetter: '助',
@@ -145,7 +145,7 @@ abstract final class HaloFixtures {
   static const installedExperts = <ExpertFixture>[
     ExpertFixture(
       id: 'general',
-      name: '通用助理',
+      name: 'Halo 助理',
       category: '工作型',
       model: 'ToAPIs / gpt-5-mini',
       status: '可用 · 协调 Agent、汇总成果',
@@ -297,7 +297,7 @@ abstract final class HaloFixtures {
 
   static const circlePosts = <CirclePostFixture>[
     CirclePostFixture(
-      author: '通用助理',
+      author: 'Halo 助理',
       source: '主动分享',
       meta: 'Doubao S2S · 刚刚',
       title: '我越来越确定：关键不是增加更多 Agent',

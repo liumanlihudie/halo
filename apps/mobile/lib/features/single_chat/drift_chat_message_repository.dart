@@ -382,9 +382,14 @@ final class DriftChatMessageRepository
                 .getSingleOrNull();
         if (existing != null) {
           if (existing.expertId != conversation.expertId) {
+            // A conversation may have been rebound more than once over the
+            // app's life; every earlier binding must still migrate, or an
+            // upgraded install can never open its own history again.
             final superseded =
-                _supersededExpertBindings[conversation.conversationId];
-            if (superseded != existing.expertId) {
+                _supersededExpertBindings[conversation.conversationId]?.split(
+                  ',',
+                );
+            if (superseded == null || !superseded.contains(existing.expertId)) {
               throw StateError(
                 'Single-chat conversation expert binding has changed.',
               );

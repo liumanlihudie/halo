@@ -154,7 +154,9 @@ void main() {
       runtime.respond(_turn(idempotencyKey: 'filtered-1')),
       throwsA(isA<ProviderBackedAgentRuntimeFailure>()),
     );
-    provider.response = _response('not-json');
+    // Under the plain-answer contract prose is a valid reply; only an
+    // unusable one (empty here) is malformed.
+    provider.response = _response('   ');
     await expectLater(
       runtime.respond(_turn(idempotencyKey: 'malformed-1')),
       throwsA(

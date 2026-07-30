@@ -1088,6 +1088,79 @@ class ExecutableExpert {
       profile.validationPolicy == ExpertValidationPolicy.structural &&
       _structuralValidator.preflight(output);
 
+  /// Whether this expert answers in plain text instead of a JSON envelope.
+  ///
+  /// The advice envelope is a constant the application pins, so for these
+  /// experts the JSON wrapper carried no information and only created a way
+  /// for a finished answer to be thrown away. Experts that adjudicate
+  /// evidence still return structured output.
+  bool get usesPlainAnswer =>
+      profile.validationPolicy == ExpertValidationPolicy.structural &&
+      profile.outputSchema.fields[expertAnswerField] ==
+          OutputValueType.answerText &&
+      !profile.outputSchema.hasDirectionalEvidenceContract;
+
+  /// Makes a plain-text reply safe to display without ever discarding it.
+  ///
+  /// Rejecting a reply the user already watched arrive is the worst possible
+  /// outcome, and the reasons the strict path rejects — a stray tab, a
+  /// zero-width character — are display concerns, not safety ones, so they are
+  /// repaired rather than fatal. Length is not a reason to touch a reply at
+  /// all. Null is returned only when there was genuinely nothing to show.
+  String? sanitizePlainAnswer(String raw) {
+    if (!usesPlainAnswer) return null;
+    final buffer = StringBuffer();
+    for (final rune in raw.runes) {
+      if (rune == 0x0A) {
+        buffer.writeCharCode(rune);
+        continue;
+      }
+      if (rune == 0x09) {
+        buffer.write('  ');
+        continue;
+      }
+      // Control characters, bidi overrides and zero-width joiners are
+      // display-layer spoofing tools, never content.
+      if (rune < 0x20 || (rune >= 0x7F && rune <= 0x9F)) continue;
+      if (rune >= 0x200B && rune <= 0x200F) continue;
+      if (rune >= 0x202A && rune <= 0x202E) continue;
+      if (rune >= 0x2066 && rune <= 0x2069) continue;
+      if (rune >= 0xFFF9 && rune <= 0xFFFB) continue;
+      buffer.writeCharCode(rune);
+    }
+    final cleaned = buffer.toString().trim();
+    // No length ceiling: a long answer is a long answer. Cutting one off (or
+    // worse, discarding it) is a product decision nobody asked for.
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
+  /// Projects a natural answer when only the answer itself is trustworthy.
+  ///
+  /// The advice envelope this expert would otherwise have to echo
+  /// (claimType=advice, tense=proposed, verified=false, source=none) is a
+  /// constant the application pins regardless of model output, so demanding
+  /// the model reproduce it exactly adds no safety while routinely destroying
+  /// complete answers over a stray verb or a non-kebab-case target.
+  ///
+  /// This path is therefore deliberately narrow: structural policy only, an
+  /// `Answer` field the schema itself declares as answer text, and no
+  /// directional evidence contract — a verdict/evidence expert must still go
+  /// through [validateAndProject], where evidence is actually adjudicated. The
+  /// answer text passes the same content rules as the strict path, and no
+  /// model-supplied verification or execution claim is consulted at all.
+  String? projectAdviceAnswer(Object? answerValue) {
+    if (profile.validationPolicy != ExpertValidationPolicy.structural) {
+      return null;
+    }
+    final schema = profile.outputSchema;
+    if (schema.fields[expertAnswerField] != OutputValueType.answerText ||
+        schema.hasDirectionalEvidenceContract) {
+      return null;
+    }
+    if (!_isValidAnswerText(answerValue)) return null;
+    return answerValue! as String;
+  }
+
   /// Returns the only structural text safe for direct user presentation.
   ///
   /// Raw model fields such as `Analysis` are deliberately excluded. Advice is
@@ -1225,6 +1298,7 @@ class ExecutableExpertRegistry {
   });
 
   static const _singleChatIds = <String>[
+    'halo-assistant',
     'product-manager',
     'technical-architect',
     'ux-designer',
@@ -1286,7 +1360,7 @@ class ExecutableExpertRegistry {
     InstalledExpertIdentity(
       profileId: 'general',
       conversationId: 'general-assistant',
-      canonicalExpertId: 'project-manager',
+      canonicalExpertId: 'halo-assistant',
     ),
     InstalledExpertIdentity(
       profileId: 'product',

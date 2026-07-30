@@ -18,7 +18,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('iOS 产品小组'), findsOneWidget);
-    expect(find.text('通用助理'), findsOneWidget);
+    expect(find.text('Halo 助理'), findsOneWidget);
 
     await tester.tap(find.text('专家团'));
     await tester.pumpAndSettle();

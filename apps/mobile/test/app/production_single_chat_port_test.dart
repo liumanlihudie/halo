@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/app/production_single_chat_port.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
 import 'package:halo_mobile/model_runtime/chat_stream_models.dart';
@@ -58,11 +59,11 @@ void main() {
     },
   );
 
-  test('request tells the model the complete advice JSON contract', () async {
+  test('request tells the model to answer in plain Markdown', () async {
     runtime.response = ChatResponse(
       requestId: 'command-contract',
       model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      outputText: jsonEncode(_adviceOutput('生产建议')),
+      outputText: '先把需求澄清清楚，再决定优先级。',
       finishReason: ChatFinishReason.completed,
       usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
     );
@@ -78,33 +79,167 @@ void main() {
     await handle.outcome;
 
     final systemPrompt = runtime.requests.single.messages.first.content;
-    for (final requiredField in const [
-      '"Problem"',
-      '"TargetUsers"',
-      '"Recommendation"',
-      '"Priorities"',
-      '"Risks"',
-      '"Verification"',
-    ]) {
-      expect(systemPrompt, contains(requiredField));
-    }
-    expect(systemPrompt, contains('"claimType":"advice"'));
-    expect(systemPrompt, contains('"tense":"proposed"'));
-    expect(systemPrompt, contains('"verified":false'));
-    expect(systemPrompt, contains('"source":"none"'));
-    expect(systemPrompt, contains('"proposedActions"'));
-    expect(systemPrompt, contains('"executedFacts":[]'));
+    expect(systemPrompt, contains('直接用自然中文回答用户'));
+    expect(systemPrompt, contains('支持 Markdown'));
+    // The JSON envelope is gone: it was a constant the app pins, and every
+    // model slip destroyed a finished answer.
+    expect(systemPrompt, isNot(contains('"Verification"')));
     expect(
       systemPrompt,
-      contains('Verification.proposedActions MUST contain at least one action'),
+      isNot(contains('Return exactly one valid JSON object')),
     );
-    expect(
-      systemPrompt,
-      contains(
-        'analyze, compare, document, implement, measure, plan, query, '
-        'review, test, train, verify',
+  });
+
+  test('a complete answer survives a botched advice envelope', () async {
+    // Field failure (2026-07-30): the model answered fully but used an
+    // uncontrolled verb and a non-kebab-case target, so the whole reply was
+    // dropped as 发送失败. The advice envelope is app-pinned; losing the
+    // answer to it is pure damage.
+    final sloppy = Map<String, Object?>.from(_adviceOutput('生产建议'))
+      ..['Answer'] = '亚马逊女鞋行业竞争激烈，建议先做选品验证。'
+      ..['Verification'] = {
+        'claimType': 'advice',
+        'tense': 'proposed',
+        'verified': false,
+        'source': 'none',
+        'proposedActions': [
+          {'verb': 'suggest', 'target': '美国亚马逊市场', 'conditions': <String>[]},
+        ],
+        'executedFacts': <String>[],
+      };
+    runtime.response = ChatResponse(
+      requestId: 'command-sloppy',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: jsonEncode(sloppy),
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-sloppy',
+        expertId: 'product-manager',
+        text: '分析下亚马逊女鞋行业',
+        clientCommandId: 'command-sloppy',
       ),
     );
+    final outcome = await handle.outcome;
+
+    expect(outcome.answer, '亚马逊女鞋行业竞争激烈，建议先做选品验证。');
+    expect(outcome.failure, SingleAgentRunFailure.none);
+    // No repair round trip is needed when the answer itself is sound.
+    expect(runtime.requests, hasLength(1));
+  });
+
+  test('an answer-only reply still projects', () async {
+    runtime.response = ChatResponse(
+      requestId: 'command-answer-only',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: jsonEncode({'Answer': '直接回答，没有其他字段。'}),
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-answer-only',
+        expertId: 'product-manager',
+        text: '你好',
+        clientCommandId: 'command-answer-only',
+      ),
+    );
+
+    expect((await handle.outcome).answer, '直接回答，没有其他字段。');
+  });
+
+  test('a self-claimed execution envelope is still refused', () async {
+    final forged = Map<String, Object?>.from(_executionOutput())
+      ..['Verification'] = {
+        ...(_executionOutput()['Verification']! as Map<String, Object?>),
+        'source': '',
+      };
+    runtime.response = ChatResponse(
+      requestId: 'command-forged',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: jsonEncode(forged),
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-forged',
+        expertId: 'product-manager',
+        text: '发布了吗',
+        clientCommandId: 'command-forged',
+      ),
+    );
+    final outcome = await handle.outcome;
+
+    expect(outcome.answer, isEmpty);
+    expect(outcome.failure, SingleAgentRunFailure.malformedOutput);
+  });
+
+  test(
+    'earlier turns are sent so the expert can follow the conversation',
+    () async {
+      runtime.response = ChatResponse(
+        requestId: 'command-history',
+        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+        outputText: '继续分析如下。',
+        finishReason: ChatFinishReason.completed,
+        usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+      );
+
+      final handle = await port.startSingleAgentRun(
+        const StartSingleAgentRunRequest(
+          conversationId: 'conversation-history',
+          expertId: 'product-manager',
+          text: '继续分析',
+          clientCommandId: 'command-history',
+          history: [
+            SingleChatHistoryTurn(fromUser: true, text: '分析下亚马逊女鞋行业'),
+            SingleChatHistoryTurn(fromUser: false, text: '该行业竞争激烈。'),
+          ],
+        ),
+      );
+      await handle.outcome;
+
+      final messages = runtime.requests.single.messages;
+      expect(messages.map((message) => message.role).toList(), [
+        ChatRole.system,
+        ChatRole.user,
+        ChatRole.assistant,
+        ChatRole.user,
+      ]);
+      expect(messages[1].content, '分析下亚马逊女鞋行业');
+      expect(messages[2].content, '该行业竞争激烈。');
+      expect(messages.last.content, '继续分析');
+    },
+  );
+
+  test('a long answer is delivered whole, never trimmed', () async {
+    final long = '这是一个很长的回答。' * 200;
+    runtime.response = ChatResponse(
+      requestId: 'command-long',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: long,
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-long',
+        expertId: 'product-manager',
+        text: '详细讲讲',
+        clientCommandId: 'command-long',
+      ),
+    );
+
+    final outcome = await handle.outcome;
+    expect(outcome.answer, long);
+    expect(runtime.requests, hasLength(1));
   });
 
   test('rejects catalog-only expert that is not executable in single chat', () {
@@ -122,84 +257,75 @@ void main() {
     expect(runtime.requests, isEmpty);
   });
 
-  test(
-    'raw model text never crosses the trusted projection boundary',
-    () async {
-      runtime.response = ChatResponse(
-        requestId: 'command-raw',
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-        outputText: '我已经执行并验证全部操作',
-        finishReason: ChatFinishReason.completed,
-        usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
-      );
-
-      final handle = await port.startSingleAgentRun(
-        const StartSingleAgentRunRequest(
-          conversationId: 'conversation-raw',
-          expertId: 'product-manager',
-          text: '执行操作',
-          clientCommandId: 'command-raw',
-        ),
-      );
-
-      final outcome = await handle.outcome;
-      expect(outcome.failure, SingleAgentRunFailure.malformedOutput);
-      expect(outcome.failure, isNot(SingleAgentRunFailure.contentFiltered));
-    },
-  );
-
-  test(
-    'one silent repair retry salvages a non-conforming first reply',
-    () async {
-      runtime.response = ChatResponse(
-        requestId: 'command-repair',
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-        outputText: '好的，我来帮你分析一下。',
-        finishReason: ChatFinishReason.completed,
-        usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
-      );
-      runtime.queuedResponses.add(runtime.response!);
-      runtime.response = ChatResponse(
-        requestId: 'command-repair-2',
-        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-        outputText: jsonEncode(_adviceOutput('修复后的回答')),
-        finishReason: ChatFinishReason.completed,
-        usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
-      );
-
-      final handle = await port.startSingleAgentRun(
-        const StartSingleAgentRunRequest(
-          conversationId: 'conversation-repair',
-          expertId: 'product-manager',
-          text: '分析一下',
-          clientCommandId: 'command-repair',
-        ),
-      );
-
-      final outcome = await handle.outcome;
-      expect(outcome.failure, SingleAgentRunFailure.none);
-      expect(runtime.requests, hasLength(2));
-      // The repair turn carries the failed reply and an explicit correction.
-      final repair = runtime.requests.last;
-      expect(repair.requestId, 'command-repair-repair');
-      expect(repair.messages.last.content, contains('只返回一个符合模板的 JSON'));
-      expect(
-        repair.messages.map((message) => message.role),
-        contains(ChatRole.assistant),
-      );
-    },
-  );
-
-  test('a second non-conforming reply still reports malformedOutput', () async {
-    final garbage = ChatResponse(
-      requestId: 'command-repair-fail',
+  test('prose that claims execution is still only unverified advice', () async {
+    runtime.response = ChatResponse(
+      requestId: 'command-raw',
       model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      outputText: '还是不按格式回答。',
+      outputText: '我已经执行并验证全部操作',
       finishReason: ChatFinishReason.completed,
       usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
     );
-    runtime.queuedResponses.add(garbage);
-    runtime.response = garbage;
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-raw',
+        expertId: 'product-manager',
+        text: '执行操作',
+        clientCommandId: 'command-raw',
+      ),
+    );
+
+    final outcome = await handle.outcome;
+    // The text is shown — it is the reply — but the claim carries no weight:
+    // the envelope is pinned by the app, so this stays model output, never
+    // verified evidence. Safety is structural, not lexical.
+    expect(outcome.answer, '我已经执行并验证全部操作');
+    expect(outcome.sourceType, ChatMessageSourceType.modelOutput);
+    expect(outcome.evidenceReferences, isEmpty);
+    expect(outcome.verifierToken, isNull);
+  });
+
+  test('an empty reply is repaired once, then reported', () async {
+    runtime.response = ChatResponse(
+      requestId: 'command-repair',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: '   ',
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
+    );
+    runtime.queuedResponses.add(runtime.response!);
+    runtime.response = ChatResponse(
+      requestId: 'command-repair-2',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: '修复后的回答。',
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-repair',
+        expertId: 'product-manager',
+        text: '分析一下',
+        clientCommandId: 'command-repair',
+      ),
+    );
+
+    final outcome = await handle.outcome;
+    expect(outcome.answer, '修复后的回答。');
+    expect(runtime.requests, hasLength(2));
+  });
+
+  test('two unusable replies report malformedOutput', () async {
+    final empty = ChatResponse(
+      requestId: 'command-repair-fail',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: '',
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
+    );
+    runtime.response = empty;
+    runtime.queuedResponses.add(empty);
 
     final handle = await port.startSingleAgentRun(
       const StartSingleAgentRunRequest(
@@ -212,30 +338,7 @@ void main() {
 
     final outcome = await handle.outcome;
     expect(outcome.failure, SingleAgentRunFailure.malformedOutput);
-    expect(runtime.requests, hasLength(2));
-  });
-
-  test('markdown-fenced JSON output still decodes and projects', () async {
-    runtime.response = ChatResponse(
-      requestId: 'command-fenced',
-      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-      outputText: '```json\n${jsonEncode(_adviceOutput('生产建议'))}\n```',
-      finishReason: ChatFinishReason.completed,
-      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
-    );
-
-    final handle = await port.startSingleAgentRun(
-      const StartSingleAgentRunRequest(
-        conversationId: 'conversation-fenced',
-        expertId: 'product-manager',
-        text: '请分析需求',
-        clientCommandId: 'command-fenced',
-      ),
-    );
-
-    final outcome = await handle.outcome;
-    expect(outcome.isCompleted, isTrue);
-    expect(outcome.answer, '先把需求澄清清楚，再决定优先级。');
+    expect(outcome.failure, isNot(SingleAgentRunFailure.contentFiltered));
   });
 
   test('prose-wrapped JSON output still decodes and projects', () async {
@@ -454,7 +557,7 @@ void main() {
         await pumpEventQueue();
 
         final events = streamingRuntime.streams.single;
-        final payload = jsonEncode(_adviceOutput('生产建议'));
+        const payload = '先把需求澄清清楚，再决定优先级。';
         var seq = 0;
         for (var i = 0; i < payload.length; i += 6) {
           events.add(
@@ -492,6 +595,36 @@ void main() {
         expect(streamingRuntime.requests.single.requestId, 'command-stream');
       },
     );
+
+    test('a legacy JSON stream still yields just the answer', () async {
+      final handle = await streamingPort.startSingleAgentRun(
+        const StartSingleAgentRunRequest(
+          conversationId: 'conversation-stream-legacy',
+          expertId: 'product-manager',
+          text: '请分析需求',
+          clientCommandId: 'command-stream-legacy',
+        ),
+      );
+      await pumpEventQueue();
+
+      final events = streamingRuntime.streams.single;
+      events.add(
+        ChatStreamEvent.delta(seq: 1, text: jsonEncode(_adviceOutput('生产建议'))),
+      );
+      events.add(
+        ChatStreamEvent.finish(
+          seq: 2,
+          finishReason: ChatFinishReason.completed,
+        ),
+      );
+      await events.close();
+      await pumpEventQueue();
+
+      // A model that ignores the plain-text contract must not dump raw JSON
+      // into the bubble.
+      expect((await handle.outcome).answer, '先把需求澄清清楚，再决定优先级。');
+      expect(runtime.requests, isEmpty);
+    });
 
     test(
       'retryable stream error falls back silently to the unary path',
@@ -534,51 +667,36 @@ void main() {
       },
     );
 
-    test(
-      'streamed text failing validation fires the one-shot repair retry',
-      () async {
-        runtime.response = ChatResponse(
-          requestId: 'command-stream-repair-response',
-          model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-          outputText: jsonEncode(_adviceOutput('修复后的回答')),
+    test('streamed prose is the answer, with no repair round trip', () async {
+      // Under the plain-text contract there is nothing to "fix": prose is
+      // exactly what was asked for, so the unary transport is never touched.
+      final handle = await streamingPort.startSingleAgentRun(
+        const StartSingleAgentRunRequest(
+          conversationId: 'conversation-stream-prose',
+          expertId: 'product-manager',
+          text: '分析一下',
+          clientCommandId: 'command-stream-prose',
+        ),
+      );
+      await pumpEventQueue();
+
+      final events = streamingRuntime.streams.single;
+      events.add(ChatStreamEvent.delta(seq: 1, text: '好的，我来'));
+      events.add(ChatStreamEvent.delta(seq: 2, text: '帮你分析一下。'));
+      events.add(
+        ChatStreamEvent.finish(
+          seq: 3,
           finishReason: ChatFinishReason.completed,
-          usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
-        );
-        final handle = await streamingPort.startSingleAgentRun(
-          const StartSingleAgentRunRequest(
-            conversationId: 'conversation-stream-repair',
-            expertId: 'product-manager',
-            text: '分析一下',
-            clientCommandId: 'command-stream-repair',
-          ),
-        );
-        await pumpEventQueue();
+        ),
+      );
+      await events.close();
+      await pumpEventQueue();
 
-        final events = streamingRuntime.streams.single;
-        events.add(ChatStreamEvent.delta(seq: 1, text: '好的，我来'));
-        events.add(ChatStreamEvent.delta(seq: 2, text: '帮你分析一下。'));
-        events.add(
-          ChatStreamEvent.finish(
-            seq: 3,
-            finishReason: ChatFinishReason.completed,
-          ),
-        );
-        await events.close();
-
-        final outcome = await handle.outcome;
-        expect(outcome.isCompleted, isTrue);
-        expect(outcome.answer, '先把需求澄清清楚，再决定优先级。');
-        // Exactly one unary call, and it is the repair turn.
-        expect(runtime.requests, hasLength(1));
-        final repair = runtime.requests.single;
-        expect(repair.requestId, 'command-stream-repair-repair');
-        expect(repair.messages.last.content, contains('只返回一个符合模板的 JSON'));
-        expect(
-          repair.messages.map((message) => message.role),
-          contains(ChatRole.assistant),
-        );
-      },
-    );
+      final outcome = await handle.outcome;
+      expect(outcome.isCompleted, isTrue);
+      expect(outcome.answer, '好的，我来帮你分析一下。');
+      expect(runtime.requests, isEmpty);
+    });
 
     test('stop cancels the streaming request', () async {
       final handle = await streamingPort.startSingleAgentRun(

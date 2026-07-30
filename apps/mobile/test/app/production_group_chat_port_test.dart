@@ -1,18 +1,22 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:dartantic_ai/dartantic_ai.dart' as dartantic;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:halo_mobile/app/dartantic_single_chat_port.dart';
 import 'package:halo_mobile/app/production_group_chat_port.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
-import 'package:halo_mobile/model_runtime/provider_registry.dart';
 import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
 import 'package:halo_mobile/orchestration/basic_durable_runner.dart';
 import 'package:halo_mobile/orchestration/sqlite_model_call_journal.dart';
 
 void main() {
+  late HttpServer server;
   final deepSeek = ProviderConfig.deepSeek();
   final chatModel = ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat');
   final flashModel = ModelRef(
@@ -57,14 +61,47 @@ void main() {
   });
 
   tearDown(() async {
+    await server.close(force: true);
     journal.close();
     await store.close();
     await directory.delete(recursive: true);
   });
 
-  LiveRoutingAgentRuntime runtime(_CapturingChatRuntime chat) =>
+  setUp(() async {
+    server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    unawaited(() async {
+      await for (final request in server) {
+        await utf8.decodeStream(request);
+        request.response.headers.contentType = ContentType(
+          'text',
+          'event-stream',
+          charset: 'utf-8',
+        );
+        request.response.add(
+          utf8.encode(
+            'data: ${jsonEncode({
+              'id': 'chatcmpl-1',
+              'object': 'chat.completion.chunk',
+              'created': 0,
+              'model': 'deepseek-chat',
+              'choices': [
+                {
+                  'index': 0,
+                  'delta': {'content': '最大的风险是消息可靠性与模型编排边界。'},
+                },
+              ],
+            })}\n\n',
+          ),
+        );
+        request.response.add(utf8.encode('data: [DONE]\n\n'));
+        await request.response.close();
+      }
+    }());
+  });
+
+  LiveRoutingAgentRuntime runtime(_CapturingAgents chat) =>
       LiveRoutingAgentRuntime(
-        modelRuntime: chat,
+        agents: chat,
         experts: ExecutableExpertRegistry(
           gateway: const ExpertOutputValidationGateway(),
         ),
@@ -89,25 +126,25 @@ void main() {
       // so the group turn must too, instead of failing 尚未配置默认模型.
       await store.setAgentModelOverride('product-manager', flashModel);
 
-      final chat = _CapturingChatRuntime();
+      final chat = _CapturingAgents(server.port);
       await runtime(chat).respond(turnFor('product-manager'));
 
-      expect(chat.lastRequest?.model, flashModel);
+      expect(chat.lastModel, flashModel);
     },
   );
 
   test('the global default answers an expert without an override', () async {
     await store.setGlobalDefaultModel(chatModel);
 
-    final chat = _CapturingChatRuntime();
+    final chat = _CapturingAgents(server.port);
     await runtime(chat).respond(turnFor('product-manager'));
 
-    expect(chat.lastRequest?.model, chatModel);
+    expect(chat.lastModel, chatModel);
   });
 
   test('an expert with neither an override nor a global default fails as a '
       'configuration gap, not a transient error', () async {
-    final chat = _CapturingChatRuntime();
+    final chat = _CapturingAgents(server.port);
 
     await expectLater(
       runtime(chat).respond(turnFor('product-manager')),
@@ -119,34 +156,27 @@ void main() {
         ),
       ),
     );
-    expect(chat.lastRequest, isNull);
+    expect(chat.lastModel, isNull);
   });
 }
 
-final class _CapturingChatRuntime implements ChatModelRuntime {
-  ChatRequest? lastRequest;
+/// Records which model binding a turn resolved to, then answers plainly.
+final class _CapturingAgents implements ModelAgentFactory {
+  _CapturingAgents(this.port);
+
+  final int port;
+  ModelRef? lastModel;
 
   @override
-  Future<ChatResponse> chat(ChatRequest request) async {
-    lastRequest = request;
-    return ChatResponse(
-      requestId: request.requestId,
-      model: request.model,
-      outputText: _validExpertOutput,
-      finishReason: ChatFinishReason.completed,
-      usage: const ChatUsage(inputTokens: 10, outputTokens: 20),
+  Future<dartantic.Agent> agentForModel(ModelRef model) async {
+    lastModel = model;
+    return dartantic.Agent.forProvider(
+      dartantic.OpenAIProvider(
+        name: 'halo-test',
+        apiKey: 'test-key-never-real',
+        baseUrl: Uri.parse('http://127.0.0.1:$port/v1'),
+      ),
+      chatModelName: model.modelId,
     );
   }
 }
-
-const _validExpertOutput =
-    '{"Answer":"最大的风险是消息可靠性与模型编排边界。",'
-    '"Problem":"风险识别",'
-    '"TargetUsers":"个人用户",'
-    '"Recommendation":"先把可靠性做透",'
-    '"Priorities":["消息可靠性"],'
-    '"Risks":["编排复杂度"],'
-    '"Verification":{"claimType":"advice","tense":"proposed",'
-    '"verified":false,"source":"none",'
-    '"proposedActions":[{"verb":"review","target":"reliability-plan",'
-    '"conditions":[]}],"executedFacts":[]}}';

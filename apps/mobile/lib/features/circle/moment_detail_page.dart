@@ -49,7 +49,7 @@ class MomentDetailPage extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        Text('通用助理', style: HaloTextStyles.rowTitle),
+                        Text('Halo 助理', style: HaloTextStyles.rowTitle),
                         SizedBox(width: 6),
                         HaloTag('主动分享'),
                       ],

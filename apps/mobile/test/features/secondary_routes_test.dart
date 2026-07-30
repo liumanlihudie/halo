@@ -71,7 +71,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('通用助理'), findsOneWidget);
+      expect(find.text('Halo 助理'), findsOneWidget);
       expect(find.text('允许发布到圈层'), findsOneWidget);
       expect(find.text('添加到群聊'), findsOneWidget);
       expect(find.byType(HaloSwitch), findsNWidgets(2));

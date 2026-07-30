@@ -75,7 +75,7 @@ class CallDemoPage extends StatelessWidget {
                   ),
                 const SizedBox(height: 18),
                 const Text(
-                  '通用助理',
+                  'Halo 助理',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 24,

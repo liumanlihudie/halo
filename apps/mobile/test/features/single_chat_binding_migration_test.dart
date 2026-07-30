@@ -100,20 +100,27 @@ void main() {
     // Bindings shipped before installed contacts each got their own
     // conversation. Any future seed change must extend this list or existing
     // installs can never build a kernel again.
-    const previouslyShipped = <String, String>{
-      'general-assistant': 'product-manager',
-      'data-analyst-chat': 'technical-architect',
+    // A conversation can have shipped more than one binding over time; the
+    // migration entry lists every one of them, comma separated.
+    const previouslyShipped = <String, List<String>>{
+      'general-assistant': ['product-manager', 'project-manager'],
+      'data-analyst-chat': ['technical-architect'],
     };
 
     for (final entry in previouslyShipped.entries) {
       final current = productionSingleChatConversations[entry.key];
       expect(current, isNotNull, reason: 'seed ${entry.key}');
-      if (current!.expertId == entry.value) continue;
-      expect(
-        supersededSingleChatExpertBindings[entry.key],
-        entry.value,
-        reason: 'missing migration for ${entry.key}',
-      );
+      final declared =
+          supersededSingleChatExpertBindings[entry.key]?.split(',') ??
+          const <String>[];
+      for (final shipped in entry.value) {
+        if (current!.expertId == shipped) continue;
+        expect(
+          declared,
+          contains(shipped),
+          reason: 'missing migration for ${entry.key} -> $shipped',
+        );
+      }
     }
     expect(
       supersededSingleChatExpertBindings.keys,

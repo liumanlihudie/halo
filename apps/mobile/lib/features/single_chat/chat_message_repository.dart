@@ -13,6 +13,12 @@ enum ChatMessageKind {
   file,
   userImage,
   quote,
+
+  /// A voice message from either side. The audio lives in the sandbox at
+  /// [ChatMessageProjection.imageUrl]; [ChatMessageProjection.text] holds the
+  /// transcript, so 转文字 needs no second round trip and history stays
+  /// searchable. Older histories have none of these and decode unchanged.
+  voice,
 }
 
 enum ChatMessageSourceType { modelOutput, verifiedEvidence, userVisibleSummary }
@@ -1852,9 +1858,9 @@ class SingleChatCatalogRepository extends InMemoryChatMessageRepository {
 const _fixtureConversations = <String, SingleChatConversationProjection>{
   'general-assistant': SingleChatConversationProjection(
     conversationId: 'general-assistant',
-    expertId: 'project-manager',
-    title: '通用助理',
-    agentName: '通用助理',
+    expertId: 'halo-assistant',
+    title: 'Halo 助理',
+    agentName: 'Halo 助理',
     modelLabel: 'ToAPIs / gpt-5-mini',
     avatarLetter: '助',
     avatarImageUrl:

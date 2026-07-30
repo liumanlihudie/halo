@@ -4,7 +4,8 @@ import 'dart:io';
 
 import 'package:halo_mobile/app/app_kernel.dart';
 import 'package:halo_mobile/app/production_group_chat_port.dart';
-import 'package:halo_mobile/app/production_single_chat_port.dart';
+import 'package:halo_mobile/app/dartantic_single_chat_port.dart';
+import 'package:halo_mobile/app/production_single_chat_agents.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
@@ -20,12 +21,9 @@ import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/production_model_runtime_factory.dart';
 import 'package:halo_mobile/model_runtime/production_provider_inspection_transport.dart';
-import 'package:halo_mobile/model_runtime/production_sse_transport.dart';
-import 'package:halo_mobile/model_runtime/production_streaming_chat_runtime.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
-import 'package:halo_mobile/model_runtime/provider_registry.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
@@ -78,7 +76,7 @@ final class ProductionAppKernelFactory {
   Future<ApplicationKernel> create() async {
     ProviderConfigurationStore? settingsStore;
     ProductionModelRuntimeSlot? runtimeSlot;
-    ProductionSingleChatPort? singleChatPort;
+    DartanticSingleChatPort? singleChatPort;
     DurableChatMessageRepository? chatRepository;
     SqliteModelCallJournal? modelCallJournal;
     OrchestrationKernelFactory? orchestrationFactory;
@@ -119,31 +117,20 @@ final class ProductionAppKernelFactory {
       final runtimeReloader = SerializedProviderRuntimeReloader(
         _SlotRuntimeReloader(runtimeSlot, runtimeFactory),
       );
-      final streamingRuntime = ProductionStreamingChatRuntime(
+      // Single chat runs on dartantic_ai: system prompt + history + message
+      // in, streamed plain markdown out. No envelope, no projection, nothing
+      // that can discard a reply the user has already read.
+      final agentFactory = ProductionSingleChatAgentFactory(
         store: settingsStore,
         secretResolver: KeychainSecretResolver(store: _credentials),
-        transportFactory:
-            ({
-              required endpoint,
-              required jsonBody,
-              required headers,
-              required sensitiveHeaderNames,
-              cancellationToken,
-            }) => ProductionSseFrameTransport(
-              endpoint: endpoint,
-              jsonBody: jsonBody,
-              headers: headers,
-              sensitiveHeaderNames: sensitiveHeaderNames,
-              endpointPolicy: _endpointPolicy,
-              cancellationToken: cancellationToken,
-            ),
+        resolveModel: ({required agentId}) =>
+            runtimeSlot!.resolveConfiguredModel(agentId: agentId),
       );
-      singleChatPort = ProductionSingleChatPort(
-        runtime: _SlotSingleChatRuntime(runtimeSlot),
+      singleChatPort = DartanticSingleChatPort(
+        agents: agentFactory,
         experts: ExecutableExpertRegistry(
           gateway: const ExpertOutputValidationGateway(),
         ),
-        streaming: streamingRuntime,
       );
       final experts = ExecutableExpertRegistry(
         gateway: const ExpertOutputValidationGateway(),
@@ -155,7 +142,7 @@ final class ProductionAppKernelFactory {
         appSupportDirectory: _FixedAppSupportDirectory(supportDirectory.path),
         selector: RoutingCardAgentSelector(experts),
         runtime: LiveRoutingAgentRuntime(
-          modelRuntime: _SlotChatModelRuntime(runtimeSlot),
+          agents: agentFactory,
           experts: experts,
           journal: modelCallJournal,
           store: settingsStore,
@@ -309,23 +296,10 @@ final class _SlotRuntimeReloader implements ProviderRuntimeReloader {
   Future<void> reload() => slot.replaceWith(factory);
 }
 
-final class _SlotSingleChatRuntime implements ProductionSingleChatRuntime {
-  const _SlotSingleChatRuntime(this.slot);
-
-  final ProductionModelRuntimeSlot slot;
-
-  @override
-  Future<ChatResponse> chat(ChatRequest request) => slot.chat(request);
-
-  @override
-  Future<ModelRef> resolveConfiguredModel({required String agentId}) =>
-      slot.resolveConfiguredModel(agentId: agentId);
-}
-
 final class _ProductionAppKernel implements ApplicationKernel {
   _ProductionAppKernel({
     required this.dependencies,
-    required ProductionSingleChatPort port,
+    required DartanticSingleChatPort port,
     required DurableChatMessageRepository chatRepository,
     required ProviderSettingsController settings,
     required ModelRoutingController modelRouting,
@@ -347,7 +321,7 @@ final class _ProductionAppKernel implements ApplicationKernel {
 
   @override
   final AppDependencies dependencies;
-  final ProductionSingleChatPort _port;
+  final DartanticSingleChatPort _port;
   final DurableChatMessageRepository _chatRepository;
   final ProviderSettingsController _settings;
   final ModelRoutingController _modelRouting;
@@ -429,7 +403,9 @@ final class _ProductionProviderModelCatalogFetcher
 /// upgrade path, so without this the fail-closed rebinding guard would keep
 /// every upgraded install from ever building a kernel again.
 const supersededSingleChatExpertBindings = <String, String>{
-  'general-assistant': 'product-manager',
+  // 通用助理 has pointed at two different experts before it got its own
+  // profile; both must keep decoding or an upgraded install cannot boot.
+  'general-assistant': 'product-manager,project-manager',
   'data-analyst-chat': 'technical-architect',
 };
 
@@ -443,9 +419,9 @@ const supersededSingleChatExpertBindings = <String, String>{
 const productionSingleChatConversations = {
   'general-assistant': SingleChatConversationProjection(
     conversationId: 'general-assistant',
-    expertId: 'project-manager',
-    title: '通用助理',
-    agentName: '通用助理',
+    expertId: 'halo-assistant',
+    title: 'Halo 助理',
+    agentName: 'Halo 助理',
     modelLabel: '文字模型',
     avatarLetter: '助',
   ),
@@ -522,15 +498,6 @@ final class _FixedAppSupportDirectory implements AppSupportDirectoryProvider {
 
   @override
   Future<String> getDirectoryPath() async => path;
-}
-
-final class _SlotChatModelRuntime implements ChatModelRuntime {
-  const _SlotChatModelRuntime(this.slot);
-
-  final ProductionModelRuntimeSlot slot;
-
-  @override
-  Future<ChatResponse> chat(ChatRequest request) => slot.chat(request);
 }
 
 /// Routes the auto-default binding through the same store the runtime reads.

@@ -331,6 +331,42 @@ final class ProviderBackedAgentRuntime
       );
     }
     if (response.finishReason != ChatFinishReason.completed) return null;
+    if (expert.usesPlainAnswer) {
+      // Advice-only experts answer in plain text; the advice envelope below is
+      // pinned by this runtime, never by the model. A model that still sends
+      // the old JSON envelope must not have it dumped into the transcript, so
+      // its Answer field is honoured too.
+      final text = response.outputText.trim();
+      Object? legacyAnswer;
+      if (text.startsWith('{') ||
+          text.startsWith('```') ||
+          text.contains('"$expertAnswerField"')) {
+        try {
+          final decoded = jsonDecode(_unwrapModelJsonObjectText(text));
+          if (decoded is Map) {
+            final verification = decoded['Verification'];
+            if (verification is Map &&
+                verification['claimType'] == 'execution') {
+              return null;
+            }
+            legacyAnswer = decoded[expertAnswerField];
+          }
+        } catch (_) {
+          legacyAnswer = null;
+        }
+      }
+      final answer = expert.sanitizePlainAnswer(
+        legacyAnswer is String ? legacyAnswer : text,
+      );
+      if (answer == null || answer.length > _policy.maxPublicAnswerCharacters) {
+        return null;
+      }
+      return TruthfulOutputEnvelope(
+        answer: answer,
+        uncertainty: 'unverified',
+        evidenceReferences: const [],
+      );
+    }
     try {
       final decoded = jsonDecode(
         _unwrapModelJsonObjectText(response.outputText),
@@ -339,7 +375,17 @@ final class ProviderBackedAgentRuntime
         return null;
       }
       final output = Map<String, Object?>.from(decoded);
-      final projected = expert.validateAndProject(output);
+      // Same rescue as single chat: the constant advice envelope is pinned by
+      // the app, so a complete answer must not be lost to the model's failure
+      // to echo it. Execution claims and evidence experts are still refused.
+      final verification = output['Verification'];
+      final claimsExecution =
+          verification is Map && verification['claimType'] == 'execution';
+      final projected =
+          expert.validateAndProject(output) ??
+          (claimsExecution
+              ? null
+              : expert.projectAdviceAnswer(output[expertAnswerField]));
       if (projected == null ||
           projected.length > _policy.maxPublicAnswerCharacters) {
         return null;
