@@ -84,29 +84,74 @@ App 挂起后 Dart 一行不跑；即便声明了，`BGAppRefreshTask` 只有约
   - **独立 drift 库 `halo_circle.sqlite`**，不动 `halo_single_chat.sqlite`：
     后者 schema v1 无升级路径，加表会让所有已装 App 开不了（本轮已踩过一次，
     见 `supersededSingleChatExpertBindings` 那次 P0）。
-  - `circle_posts`：`id` PK、`agent_id`、`source_type`
-    (`conversation|task|schedule|monitor|spontaneous`)、`source_id` nullable、
-    `source_label`、`title` nullable、`body`、`content_type`
-    (`text|image|gallery|file|video|data|status`)、`assets` JSON、
+  - `circle_posts`：`id` PK、**`author_type`(`expert|group`)**、
+    **`author_id`**（专家用 canonicalExpertId，群用 groupId）、
+    **`member_agent_ids` JSON**（群动态的成员头像排，按发言顺序；专家动态为空）、
+    `source_type`(`conversation|task|schedule|monitor|spontaneous`)、
+    `source_id` nullable、`source_label`、`title` nullable、`body`、
+    `content_type`(`text|image|gallery|file|video|data|status`)、`assets` JSON、
     `created_at_epoch_ms`、`state`(`published|deleted`)、
     `origin_key` **UNIQUE**（幂等键）。
+
+    > **为什么不是规格里的单个 `agent_id`**：群聊总结由独立的总结身份产出
+    > （`production_group_chat_port.dart:70`，只用全局默认模型、不吃专家 override），
+    > 它不属于任何单个专家。硬塞进某个成员名下就是伪造署名。所以作者拆成
+    > `author_type` + `author_id`，成员另存一列只用于头像展示。
   - `agent_circle_settings`：`agent_id` PK、`can_publish_to_circle`。
     **缺行 = 允许**（规格默认 true）。
-  - 写入 API `publish(...)` 内部先查 `canPublishToCircle`，被禁止时返回明确的
-    拒绝结果而不是静默丢弃。
+  - `group_circle_settings`：`group_id` PK、`can_publish_to_circle`。
+    对应 `group_info_page.dart:61` 那个「讨论总结发布到圈层」开关
+    （**现在是 `onChanged: null` 的死开关**，本期接真）。
+  - 写入 API `publish(...)` 内部先查权限，被禁止时返回明确的拒绝结果而不是
+    静默丢弃。**群动态查群开关，专家动态查专家开关**——群总结不是成员发的，
+    不该被某个成员的禁令连带拦掉；反之禁了群也不影响成员各自发。
   - `state=deleted` 是软删：规格 §4.4 要求禁止发布后「当前动态保留」，
     删除是独立动作，两者不能互相牵连。
 - Test（真实 SQLite）：时间倒序；幂等键冲突只留一条；权限缺省允许；
   **禁止发布后历史动态仍可读**；被禁专家的新发布被拒。
 
-### T2 页面接真数据
+### T2 页面接真数据 + 群动态卡片
 
 - Modify: `circle_page.dart` → `CircleController`(ChangeNotifier) 驱动；
   真空态（「还没有动态」），不是假数据兜底。
 - Modify: `moment_detail_page.dart` 同上。
-- 视觉不动（规格 §5 已验收）：不要封面、不要压边头像、不要点赞评论条、
-  卡片间保持明确间距、不用九宫格。
 - Test：空 / 有数据 / 读取失败三态；**断言 `HaloFixtures.circlePosts` 不再出现**。
+
+#### 群动态卡片结构（2026-07-30 产品决策）
+
+```text
+[群头像] iOS 产品小组                       10:36
+         群聊总结 · 未核验
+         ─────────────────────────────
+         本轮结论：先把 MVP 收敛到三条……
+         ─────────────────────────────
+         [头][头][头][头]  4 位专家参与       进入群聊 ›
+```
+
+- **署名是群**（`author_type=group`），不是某个专家。
+- **成员头像排**：按参与顺序展示 `member_agent_ids`，超出 N 个折叠成 `+K`。
+- 头像排是「谁参与了」的信息，不是点赞位——**不做点赞评论条**。
+
+#### 导航（照微信的通用范式，逐条钉死）
+
+| 点哪里 | 去哪里 |
+| --- | --- |
+| 群头像 / 群名 | 进该群聊 `/group/:groupId` |
+| 成员头像排里的某个头像 | 该专家资料页 `/expert/:profileId` |
+| 「进入群聊 ›」 | 同群头像 |
+| 专家动态的头像 / 名字 | 该专家资料页 |
+| 卡片正文 | 动态详情 `/circle/:postId` |
+
+- 存的是 `canonicalExpertId`，跳资料页要**映射回 `profileId`**
+  （见 §0.5 第 1 条）；映射不到时头像不可点，**不能跳到空白页**。
+- Test：每一行都有一个点击断言；映射缺失时不可点。
+
+#### 视觉界线（规格 §2.2 保留，其余照微信）
+
+**交互范式照做**（头像排、点头像进资料、点卡片进群、时间右对齐）。
+**但不碰品牌资产**：不用微信名称与「朋友圈」称谓、不用其绿色品牌色、不用其官方图标、
+不做大封面 + 压边头像的逐像素复刻、不做点赞评论条。
+理由是这几项是可识别的品牌与版面特征，与「模仿交互习惯」是两件事。
 
 ### T3 更多菜单（规格 §4.4 六项）
 
@@ -135,8 +180,30 @@ App 挂起后 Dart 一行不跑；即便声明了，`BGAppRefreshTask` 只有约
 
 ## 3. P2 — 从对话结果发布
 
+### 群聊总结（第一条真实通路，最省事）
+
+群聊侧的总结编排**已经是真的**，不用新建：
+`ConversationStage.summarizing` → `BasicDurableRunner._invokeSummary` →
+`AgentRuntime.summarize(DiscussionSummaryRequest)`（带 idempotencyKey、
+走 `ExternalCallKind.summarize`、进 `SqliteModelCallJournal` 计费账本）→
+发 `OrchestrationEventType.summaryCompleted`（`dedupeKey: 'summary-completed'`）。
+
+- 在 `summaryCompleted` 事件上挂发布订阅者，`author_type=group`，
+  幂等键直接用现成的 `(runId, 'summary-completed')`——**不需要新造幂等机制**。
+- `member_agent_ids` 取本轮实际发言的成员，按发言顺序。
+- 接活 `group_info_page.dart` 那两个死开关：「每次讨论自动总结」控制要不要跑
+  总结阶段，「讨论总结发布到圈层」控制跑完要不要发。
+- Test：关掉发布开关后 `summaryCompleted` 不产生动态但总结仍在群里；
+  同一 runId 重放两次只出一条。
+
+### 单聊（不额外花钱）
+
 - 长按消息菜单（另一会话已做的 `MessageActionsService`）加「发布到圈层」，
-  `sourceType=conversation`，幂等键 `(commandId, 'conversation')`。
+  `sourceType=conversation`、`author_type=expert`，
+  幂等键 `(commandId, 'conversation')`。
+- **发的是那条答案本身，不新增摘要调用。** 单聊是一问一答，用户刚看完这条回答，
+  再花一次模型调用把它压短收益很低。真要「总结后发布」应当是用户显式选择的
+  另一个动作，而不是每条都自动摘要——那是一笔隐形的持续开销。
 - 运行失败落一条 `content_type=status` 动态 + 重试入口，
   幂等键 `(commandId, 'failure')`；**只发用户可见的失败**，
   内部重试噪音不倒进圈层。
