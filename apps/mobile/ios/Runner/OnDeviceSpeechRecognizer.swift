@@ -9,7 +9,66 @@ import Speech
 /// real service, so a voice message died in transcription with no way to see
 /// why. This path has no third-party contract to guess at, needs no key, and
 /// keeps the audio on the device.
+/// Gapless PCM playback for a live call.
+///
+/// One engine stays running for the whole call and every arriving chunk is
+/// scheduled onto it, so audio plays continuously instead of one clip
+/// interrupting the next.
+final class CallAudioOutput {
+  private let engine = AVAudioEngine()
+  private let node = AVAudioPlayerNode()
+  private var format: AVAudioFormat?
+
+  func enqueue(_ pcm: Data) {
+    let rate: Double = 24000
+    if format == nil {
+      guard
+        let sourceFormat = AVAudioFormat(
+          commonFormat: .pcmFormatFloat32,
+          sampleRate: rate,
+          channels: 1,
+          interleaved: false
+        )
+      else { return }
+      format = sourceFormat
+      engine.attach(node)
+      engine.connect(node, to: engine.mainMixerNode, format: sourceFormat)
+      try? engine.start()
+      node.play()
+    }
+    guard let format = format else { return }
+    let sampleCount = pcm.count / 2
+    guard
+      sampleCount > 0,
+      let buffer = AVAudioPCMBuffer(
+        pcmFormat: format,
+        frameCapacity: AVAudioFrameCount(sampleCount)
+      )
+    else { return }
+    buffer.frameLength = AVAudioFrameCount(sampleCount)
+    pcm.withUnsafeBytes { raw in
+      guard let source = raw.bindMemory(to: Int16.self).baseAddress,
+            let target = buffer.floatChannelData?[0]
+      else { return }
+      for index in 0..<sampleCount {
+        // 16-bit little endian to float, the format the engine mixes in.
+        target[index] = Float(Int16(littleEndian: source[index])) / 32768.0
+      }
+    }
+    node.scheduleBuffer(buffer, completionHandler: nil)
+  }
+
+  /// Drops anything still queued, so an interruption goes quiet at once.
+  func stop() {
+    node.stop()
+    engine.stop()
+    format = nil
+  }
+}
+
 final class OnDeviceSpeechRecognizer: NSObject {
+  private let output = CallAudioOutput()
+
   static let channelName = "halo.speech/on_device"
 
   static func register(with registrar: FlutterPluginRegistrar) {
@@ -53,6 +112,19 @@ final class OnDeviceSpeechRecognizer: NSObject {
       } catch {
         result(FlutterError(code: "audio_route_failed", message: nil, details: nil))
       }
+    case "playPcm":
+      // Continuous playback:每块 PCM 直接排进播放队列，而不是每几百毫秒起一个
+      // 新播放器——后者会打断上一段，正是通话断续的原因。
+      guard let data = (call.arguments as? [String: Any])?["pcm"] as? FlutterStandardTypedData
+      else {
+        result(FlutterError(code: "invalid_arguments", message: nil, details: nil))
+        return
+      }
+      output.enqueue(data.data)
+      result(true)
+    case "stopPcm":
+      output.stop()
+      result(true)
     case "setProximityRouting":
       // Holding the phone to your ear should switch to the earpiece the way a
       // phone call does, and taking it away should go back to the loudspeaker.
