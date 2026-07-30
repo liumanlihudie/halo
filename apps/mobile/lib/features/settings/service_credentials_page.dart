@@ -27,6 +27,13 @@ class _ServiceCredentialsPageState extends State<ServiceCredentialsPage> {
       service: TextEditingController(),
   };
 
+  /// The realtime dialogue needs three values, not one: App ID, App Key and
+  /// Access Token. They are stored as a single joined secret so the schema
+  /// stays as it is, but the user should see the three fields the console
+  /// gives them.
+  final _appId = TextEditingController();
+  final _appKey = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -40,11 +47,23 @@ class _ServiceCredentialsPageState extends State<ServiceCredentialsPage> {
     for (final field in _fields.values) {
       field.dispose();
     }
+    _appId.dispose();
+    _appKey.dispose();
     super.dispose();
   }
 
   void _refresh() {
     if (mounted) setState(() {});
+  }
+
+  /// Joins the dialogue fields, leaving the App Key out when it is blank so
+  /// the documented fixed value is used.
+  String _joinDialogCredential() {
+    final appId = _appId.text.trim();
+    final appKey = _appKey.text.trim();
+    final token = _fields[KeyOnlyService.doubaoRealtimeAudio]!.text.trim();
+    if (appId.isEmpty || token.isEmpty) return '';
+    return appKey.isEmpty ? '$appId:$token' : '$appId:$appKey:$token';
   }
 
   Future<void> _paste(KeyOnlyService service) async {
@@ -63,7 +82,10 @@ class _ServiceCredentialsPageState extends State<ServiceCredentialsPage> {
   Future<void> _save(KeyOnlyService service) async {
     final controller = widget.controller;
     if (controller == null) return;
-    final saved = await controller.save(service, _fields[service]!.text);
+    final value = service == KeyOnlyService.doubaoRealtimeAudio
+        ? _joinDialogCredential()
+        : _fields[service]!.text;
+    final saved = await controller.save(service, value);
     if (!mounted) return;
     if (saved) {
       // Cleared on success so the key does not linger in a widget the user can
@@ -166,6 +188,12 @@ class _ServiceCredentialsPageState extends State<ServiceCredentialsPage> {
                   controller?.statusFor(service) ??
                   ServiceCredentialStatus.absent,
               field: _fields[service]!,
+              appId: service == KeyOnlyService.doubaoRealtimeAudio
+                  ? _appId
+                  : null,
+              appKey: service == KeyOnlyService.doubaoRealtimeAudio
+                  ? _appKey
+                  : null,
               busy: controller?.busy ?? false,
               enabled: controller != null,
               onPaste: () => _paste(service),
@@ -185,6 +213,8 @@ class _ServiceCard extends StatelessWidget {
     required this.status,
     required this.field,
     required this.busy,
+    this.appId,
+    this.appKey,
     required this.enabled,
     required this.onPaste,
     required this.onSave,
@@ -195,6 +225,11 @@ class _ServiceCard extends StatelessWidget {
   final KeyOnlyService service;
   final ServiceCredentialStatus status;
   final TextEditingController field;
+
+  /// Present only for the realtime dialogue, which authenticates with three
+  /// values instead of one.
+  final TextEditingController? appId;
+  final TextEditingController? appKey;
   final bool busy;
   final bool enabled;
   final VoidCallback onPaste;
@@ -243,6 +278,28 @@ class _ServiceCard extends StatelessWidget {
           const SizedBox(height: 3),
           Text(service.purpose, style: HaloTextStyles.caption),
           const SizedBox(height: 10),
+          if (appId case final appIdField?) ...[
+            TextField(
+              controller: appIdField,
+              enabled: enabled && !busy,
+              onChanged: onChanged,
+              decoration: const InputDecoration(
+                hintText: 'App ID（控制台应用管理）',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: appKey!,
+              enabled: enabled && !busy,
+              onChanged: onChanged,
+              decoration: const InputDecoration(
+                hintText: 'App Key（留空则用官方固定值）',
+                isDense: true,
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           TextField(
             controller: field,
             obscureText: true,
@@ -251,7 +308,11 @@ class _ServiceCard extends StatelessWidget {
             decoration: InputDecoration(
               // Never the stored key: it is not readable back by design, and a
               // masked placeholder would only imply it could be.
-              hintText: status.configured ? '输入新的 Key 以替换' : '输入 API Key',
+              hintText: appId != null
+                  ? (status.configured
+                        ? '输入新的 Access Token 以替换'
+                        : 'Access Token')
+                  : (status.configured ? '输入新的 Key 以替换' : '输入 API Key'),
               prefixIcon: Icon(
                 HaloIcon.requirePrototypeClass('ph ph-key'),
                 size: 18,

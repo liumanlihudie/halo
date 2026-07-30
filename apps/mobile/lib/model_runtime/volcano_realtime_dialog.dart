@@ -65,12 +65,14 @@ final class VolcanoRealtimeDialog {
     required String appId,
     required String accessToken,
     required String Function() newId,
+    String appKey = defaultAppKey,
     Future<WebSocket> Function(Uri, {Map<String, dynamic>? headers})? connect,
     int sampleRate = 24000,
     String speaker = 'zh_female_vv_jupiter_bigtts',
     String model = '1.2.1.1',
   }) : _appId = appId,
        _accessToken = accessToken,
+       _appKey = appKey,
        _speaker = speaker,
        _model = model,
        _newId = newId,
@@ -80,6 +82,7 @@ final class VolcanoRealtimeDialog {
   /// Console App ID and Access Token: the dialogue handshake requires both.
   final String _appId;
   final String _accessToken;
+  final String _appKey;
   final String _speaker;
 
   /// Model version, a required StartSession field. 1.2.1.1 is O2.0, the line
@@ -96,8 +99,9 @@ final class VolcanoRealtimeDialog {
     'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
   );
 
-  /// Fixed app key the dialogue resource requires.
-  static const appKey = 'PlgvMymc7f3tQnJ6';
+  /// The app key the dialogue resource documents as a fixed value. Accounts
+  /// issued their own can pass it instead.
+  static const defaultAppKey = 'PlgvMymc7f3tQnJ6';
 
   WebSocket? _socket;
   String? _sessionId;
@@ -123,7 +127,7 @@ final class VolcanoRealtimeDialog {
           'X-Api-App-ID': _appId,
           'X-Api-Access-Key': _accessToken,
           'X-Api-Resource-Id': 'volc.speech.dialog',
-          'X-Api-App-Key': appKey,
+          'X-Api-App-Key': _appKey,
           'X-Api-Connect-Id': _newId(),
         },
       );
@@ -202,7 +206,7 @@ final class VolcanoRealtimeDialog {
         ..set('X-Api-App-ID', _appId)
         ..set('X-Api-Access-Key', _accessToken)
         ..set('X-Api-Resource-Id', 'volc.speech.dialog')
-        ..set('X-Api-App-Key', appKey);
+        ..set('X-Api-App-Key', _appKey);
       final response = await request.close();
       final logId = response.headers.value('x-tt-logid') ?? '';
       await response.drain<void>();

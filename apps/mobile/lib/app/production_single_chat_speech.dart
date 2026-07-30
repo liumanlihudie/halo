@@ -98,19 +98,30 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
   Future<VolcanoRealtimeDialog?> openCall() async {
     final config = await _config(KeyOnlyService.doubaoRealtimeAudio);
     if (config == null) return null;
-    final separator = config.apiKey.indexOf(':');
-    if (separator <= 0 || separator == config.apiKey.length - 1) {
-      // A key is stored, it just is not the pair this API needs. Saying
-      // "not configured" would send the user looking for a missing key that
-      // is in fact already there.
-      throw const RealtimeDialogException('通话 Key 需填成「App ID:Access Token」');
+    // Settings keeps the dialogue fields as one secret joined by colons:
+    // App ID, App Key, Access Token. Two parts means the documented fixed app
+    // key is in use.
+    final parts = config.apiKey.split(':');
+    if (parts.length == 3 && parts.every((part) => part.isNotEmpty)) {
+      return VolcanoRealtimeDialog(
+        appId: parts[0],
+        appKey: parts[1],
+        accessToken: parts[2],
+        newId: _newRequestId,
+        sampleRate: config.sampleRate,
+      );
     }
-    return VolcanoRealtimeDialog(
-      appId: config.apiKey.substring(0, separator),
-      accessToken: config.apiKey.substring(separator + 1),
-      newId: _newRequestId,
-      sampleRate: config.sampleRate,
-    );
+    if (parts.length == 2 && parts.every((part) => part.isNotEmpty)) {
+      return VolcanoRealtimeDialog(
+        appId: parts[0],
+        accessToken: parts[1],
+        newId: _newRequestId,
+        sampleRate: config.sampleRate,
+      );
+    }
+    // A secret is stored, it just is not what this API needs. Saying "not
+    // configured" would send the user hunting for a key that is already there.
+    throw const RealtimeDialogException('通话凭证需填 App ID、App Key 与 Access Token');
   }
 
   Future<VolcanoSpeechConfig?> _config([
