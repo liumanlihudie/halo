@@ -90,10 +90,23 @@
 5. **持续观察**：Genkit Dart 转正（脱离 preview）后重评一次；
    官方 dart_mcp 若补上 Streamable HTTP 再对比 mcp_dart。
 
+## 4a. 复用优先方针（产品负责人定，2026-07-30）
+
+「以后所有的这些复杂的编排和大功能，都用现成的。」——大功能开工前
+先查本文档与开源生态，自研仅限 §1 列出的无现成替代层；引入依赖须过
+许可证（兼容开源发布）与维护活跃度检查。
+
 ## 5. 后续动作
 
-- [ ] spike：openai_dart 嵌入 SecureJsonHttpClient 可行性（独立分支，
-  不进主线；流式改造落地后做，避免与在途 transport 改动冲突）
+- [x] spike：openai_dart 嵌入安全壳可行性 —— **已验证可行**
+  （2026-07-30，分支 `spike/openai-dart-adapter`，提交 cf58bb5，
+  4 条离线形状测试全过）：自定义 baseUrl 指 ToAPIs 生效；注入的
+  http.Client 能在字节出程序前 fail-closed 执行端点白名单（unary 与
+  streaming 同一注入口，无旁路）；上游错误封在类型化异常内可由我们
+  的脱敏层统一映射。**注意事项**：库的异常 message 可能内嵌上游正文
+  （如 ParseException 拼接 responseBody），映射层必须只输出固定安全
+  文案、绝不落 exception.toString()——与现行纪律一致。
+  结论：流式改造落地后按此路线替换 OpenAI 兼容 transport 的形状层。
 - [ ] spike：mcp_dart 远程 Streamable HTTP 最小连通（参考
   flutter-mcp-ai-chat 样例），验证与端点白名单/错误脱敏的组合
 - [ ] 结论同步进 `08-agent-web-search-design.md` 的实现选型
