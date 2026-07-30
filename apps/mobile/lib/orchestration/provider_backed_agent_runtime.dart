@@ -355,7 +355,9 @@ final class ProviderBackedAgentRuntime
           legacyAnswer = null;
         }
       }
-      final answer = expert.projectAdviceAnswer(legacyAnswer ?? text);
+      final answer = expert.sanitizePlainAnswer(
+        legacyAnswer is String ? legacyAnswer : text,
+      );
       if (answer == null || answer.length > _policy.maxPublicAnswerCharacters) {
         return null;
       }

@@ -14,7 +14,6 @@ String _renderPlainAnswerPrompt() => [
       '不要用任何包装结构，你写的全部内容就是用户看到的回答。',
   '支持 Markdown：内容较长或分点时用标题、无序/有序列表、**加粗**、'
       '`行内代码` 与代码块（```）来组织；简短回答保持纯文本即可。',
-  '回答不得超过 1200 字。',
 ].join('\n');
 
 /// Renders the output contract an executable expert must satisfy.

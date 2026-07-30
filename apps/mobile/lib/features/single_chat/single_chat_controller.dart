@@ -10,18 +10,31 @@ import 'chat_message_repository.dart';
 
 enum SingleAgentRunMode { mentioned }
 
+/// One earlier turn of the conversation, as the model should see it.
+class SingleChatHistoryTurn {
+  const SingleChatHistoryTurn({required this.fromUser, required this.text});
+
+  final bool fromUser;
+  final String text;
+}
+
 class StartSingleAgentRunRequest {
   const StartSingleAgentRunRequest({
     required this.conversationId,
     required this.expertId,
     required this.text,
     required this.clientCommandId,
+    this.history = const [],
   });
 
   final String conversationId;
   final String expertId;
   final String text;
   final String clientCommandId;
+
+  /// Earlier turns, oldest first, so the expert can actually follow the
+  /// conversation. Without it every message is answered in isolation.
+  final List<SingleChatHistoryTurn> history;
   SingleAgentRunMode get mode => SingleAgentRunMode.mentioned;
   List<String> get memberExpertIds => [expertId];
 }
@@ -682,6 +695,7 @@ class SingleChatController extends ChangeNotifier {
           expertId: expertId,
           text: text,
           clientCommandId: commandId,
+          history: _historyForModel(excludingCommandId: commandId),
         ),
       );
       _activeHandle = handleFuture;
@@ -947,6 +961,38 @@ class SingleChatController extends ChangeNotifier {
       }
       return false;
     }
+  }
+
+  /// The earlier turns this run should be answered in the context of.
+  ///
+  /// Without this the expert answers every message in isolation and cannot
+  /// follow a conversation at all. Only user text and delivered expert replies
+  /// count: notices, progress rows and the turn being dispatched are not part
+  /// of the dialogue. The window is bounded by turns and by characters so a
+  /// long history cannot grow the request without limit.
+  List<SingleChatHistoryTurn> _historyForModel({
+    required String excludingCommandId,
+    int maxTurns = 20,
+    int maxCharacters = 12000,
+  }) {
+    final selected = <SingleChatHistoryTurn>[];
+    var budget = maxCharacters;
+    for (final message in _state.messages.reversed) {
+      if (selected.length >= maxTurns) break;
+      final text = message.text;
+      if (text == null || text.trim().isEmpty) continue;
+      if (message.id.startsWith('$excludingCommandId:')) continue;
+      final fromUser = switch (message.kind) {
+        ChatMessageKind.userText => true,
+        ChatMessageKind.agentText => false,
+        _ => null,
+      };
+      if (fromUser == null) continue;
+      if (text.length > budget) break;
+      budget -= text.length;
+      selected.add(SingleChatHistoryTurn(fromUser: fromUser, text: text));
+    }
+    return List.unmodifiable(selected.reversed);
   }
 
   Future<void> stop() async {

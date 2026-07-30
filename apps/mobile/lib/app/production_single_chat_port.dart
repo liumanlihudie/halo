@@ -291,14 +291,12 @@ final class ProductionSingleChatPort implements SingleChatPort {
       }
       if (projected == null) {
         // Last resort before failing: the user already watched this text
-        // arrive. Replacing what they read with 发送失败 destroys a real reply;
-        // keeping it while saying plainly that it may be cut short is both
-        // more useful and more honest. Content rules still apply.
-        final partial = expert.projectAdviceAnswer(
-          expert.usesPlainAnswer
-              ? raw.toString().trim()
-              : extractor.answerSoFar,
-        );
+        // arrive. Every mainstream client (ChatMCP, flutter_ai_toolkit,
+        // dartantic) keeps whatever text arrived and reports the problem
+        // elsewhere; only a reply with nothing at all in it is a failure.
+        final partial = expert.usesPlainAnswer
+            ? expert.sanitizePlainAnswer(raw.toString())
+            : expert.projectAdviceAnswer(extractor.answerSoFar);
         if (partial != null) {
           return SingleAgentRunOutcome.completed(
             answer: partial,
@@ -371,6 +369,13 @@ final class ProductionSingleChatPort implements SingleChatPort {
       role: ChatRole.system,
       content: _renderExpertSystemPrompt(expert),
     ),
+    // The conversation so far. Without it the expert cannot follow a dialogue:
+    // every "继续分析" arrives with no idea what came before.
+    for (final turn in request.history)
+      ChatMessage(
+        role: turn.fromUser ? ChatRole.user : ChatRole.assistant,
+        content: turn.text,
+      ),
     ChatMessage(role: ChatRole.user, content: request.text),
   ];
 
@@ -458,8 +463,9 @@ String? _decodeAndProject(ExecutableExpert expert, String rawModelOutput) {
       _logProjectionFailure('executionEnvelope');
       return null;
     }
-    final answer = expert.projectAdviceAnswer(
-      legacy?[expertAnswerField] ?? trimmed,
+    final source = legacy?[expertAnswerField];
+    final answer = expert.sanitizePlainAnswer(
+      source is String ? source : trimmed,
     );
     if (answer == null) {
       _logProjectionFailure(

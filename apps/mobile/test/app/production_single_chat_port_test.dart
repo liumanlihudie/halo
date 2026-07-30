@@ -81,7 +81,6 @@ void main() {
     final systemPrompt = runtime.requests.single.messages.first.content;
     expect(systemPrompt, contains('直接用自然中文回答用户'));
     expect(systemPrompt, contains('支持 Markdown'));
-    expect(systemPrompt, contains('1200'));
     // The JSON envelope is gone: it was a constant the app pins, and every
     // model slip destroyed a finished answer.
     expect(systemPrompt, isNot(contains('"Verification"')));
@@ -179,6 +178,68 @@ void main() {
 
     expect(outcome.answer, isEmpty);
     expect(outcome.failure, SingleAgentRunFailure.malformedOutput);
+  });
+
+  test(
+    'earlier turns are sent so the expert can follow the conversation',
+    () async {
+      runtime.response = ChatResponse(
+        requestId: 'command-history',
+        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+        outputText: '继续分析如下。',
+        finishReason: ChatFinishReason.completed,
+        usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+      );
+
+      final handle = await port.startSingleAgentRun(
+        const StartSingleAgentRunRequest(
+          conversationId: 'conversation-history',
+          expertId: 'product-manager',
+          text: '继续分析',
+          clientCommandId: 'command-history',
+          history: [
+            SingleChatHistoryTurn(fromUser: true, text: '分析下亚马逊女鞋行业'),
+            SingleChatHistoryTurn(fromUser: false, text: '该行业竞争激烈。'),
+          ],
+        ),
+      );
+      await handle.outcome;
+
+      final messages = runtime.requests.single.messages;
+      expect(messages.map((message) => message.role).toList(), [
+        ChatRole.system,
+        ChatRole.user,
+        ChatRole.assistant,
+        ChatRole.user,
+      ]);
+      expect(messages[1].content, '分析下亚马逊女鞋行业');
+      expect(messages[2].content, '该行业竞争激烈。');
+      expect(messages.last.content, '继续分析');
+    },
+  );
+
+  test('a long answer is delivered whole, never trimmed', () async {
+    final long = '这是一个很长的回答。' * 200;
+    runtime.response = ChatResponse(
+      requestId: 'command-long',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: long,
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-long',
+        expertId: 'product-manager',
+        text: '详细讲讲',
+        clientCommandId: 'command-long',
+      ),
+    );
+
+    final outcome = await handle.outcome;
+    expect(outcome.answer, long);
+    expect(runtime.requests, hasLength(1));
   });
 
   test('rejects catalog-only expert that is not executable in single chat', () {

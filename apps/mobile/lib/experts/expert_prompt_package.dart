@@ -1100,6 +1100,40 @@ class ExecutableExpert {
           OutputValueType.answerText &&
       !profile.outputSchema.hasDirectionalEvidenceContract;
 
+  /// Makes a plain-text reply safe to display without ever discarding it.
+  ///
+  /// Rejecting a reply the user already watched arrive is the worst possible
+  /// outcome, and the reasons the strict path rejects — a stray tab, a
+  /// zero-width character — are display concerns, not safety ones, so they are
+  /// repaired rather than fatal. Length is not a reason to touch a reply at
+  /// all. Null is returned only when there was genuinely nothing to show.
+  String? sanitizePlainAnswer(String raw) {
+    if (!usesPlainAnswer) return null;
+    final buffer = StringBuffer();
+    for (final rune in raw.runes) {
+      if (rune == 0x0A) {
+        buffer.writeCharCode(rune);
+        continue;
+      }
+      if (rune == 0x09) {
+        buffer.write('  ');
+        continue;
+      }
+      // Control characters, bidi overrides and zero-width joiners are
+      // display-layer spoofing tools, never content.
+      if (rune < 0x20 || (rune >= 0x7F && rune <= 0x9F)) continue;
+      if (rune >= 0x200B && rune <= 0x200F) continue;
+      if (rune >= 0x202A && rune <= 0x202E) continue;
+      if (rune >= 0x2066 && rune <= 0x2069) continue;
+      if (rune >= 0xFFF9 && rune <= 0xFFFB) continue;
+      buffer.writeCharCode(rune);
+    }
+    final cleaned = buffer.toString().trim();
+    // No length ceiling: a long answer is a long answer. Cutting one off (or
+    // worse, discarding it) is a product decision nobody asked for.
+    return cleaned.isEmpty ? null : cleaned;
+  }
+
   /// Projects a natural answer when only the answer itself is trustworthy.
   ///
   /// The advice envelope this expert would otherwise have to echo
