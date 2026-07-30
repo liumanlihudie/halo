@@ -103,45 +103,25 @@ void main() {
     expect(BuiltInExperts.byId('missing-expert'), isNull);
   });
 
-  test(
-    'fact checker enforces Claim Evidence Verdict Confidence and abstain',
-    () {
-      final checker = BuiltInExperts.factChecker;
+  test('fact checker is structural advice with a natural answer field', () {
+    final checker = BuiltInExperts.factChecker;
 
-      expect(
-        checker.promptPackage.guards,
-        contains(PromptGuard.abstainWithoutEvidence),
-      );
-      expect(checker.outputSchema.fields.keys, [
-        'Claim',
-        'Evidence',
-        'Verdict',
-        'Confidence',
-      ]);
-      expect(
-        checker.outputSchema.fields['Evidence'],
-        OutputValueType.evidenceList,
-      );
-      expect(
-        checker.outputSchema.unsafeShapeOnly(const {
-          'Claim': 'The metric increased.',
-          'Evidence': <String>[],
-          'Verdict': 'supported',
-          'Confidence': 70,
-        }),
-        isFalse,
-      );
-      expect(
-        checker.outputSchema.unsafeShapeOnly(const {
-          'Claim': 'The metric increased.',
-          'Evidence': <String>[],
-          'Verdict': 'abstain',
-          'Confidence': 0,
-        }),
-        isTrue,
-      );
-    },
-  );
+    // Downgraded from trusted-evidence to structural so it can be launched
+    // in single chat; it now surfaces a natural answer rather than a
+    // receipt-gated Claim/Evidence/Verdict.
+    expect(checker.validationPolicy, ExpertValidationPolicy.structural);
+    expect(checker.outputSchema.fields.keys, [
+      'Answer',
+      'Analysis',
+      'Recommendations',
+      'Risks',
+      'Verification',
+    ]);
+    expect(checker.outputSchema.fields['Answer'], OutputValueType.answerText);
+    final rendered = checker.promptPackage.render();
+    expect(rendered, contains('claimType=advice'));
+    expect(rendered, contains('可信 receipt'));
+  });
 
   test('built-in evaluation cases agree with routing cards', () {
     for (final profile in BuiltInExperts.all) {

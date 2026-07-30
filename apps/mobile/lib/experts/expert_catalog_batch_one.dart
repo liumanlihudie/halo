@@ -103,7 +103,7 @@ abstract final class ExpertCatalogBatchOne {
     forbiddenBehavior: 'Invent data, statistical significance, or causality.',
   );
 
-  static final ExpertProfile industryResearcher = _evidenceProfile(
+  static final ExpertProfile industryResearcher = _standardProfile(
     id: 'industry-researcher',
     displayName: '行业研究专家',
     description: '基于可定位来源分析行业结构、参与者、趋势与不确定性。',
@@ -184,7 +184,7 @@ abstract final class ExpertCatalogBatchOne {
         'Guarantee compliance or replace a licensed professional.',
   );
 
-  static final ExpertProfile legalRiskAdvisor = _evidenceProfile(
+  static final ExpertProfile legalRiskAdvisor = _standardProfile(
     id: 'legal-risk-advisor',
     displayName: '法律风险提示专家',
     description: '识别法律风险与待核实问题，不替代执业律师的专业意见。',

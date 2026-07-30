@@ -55,6 +55,9 @@ void main() {
         'data-analyst',
         'content-strategist',
         'operations-manager',
+        'legal-risk-advisor',
+        'fact-checker',
+        'industry-researcher',
         'fitness-planner',
       ],
     );
@@ -104,8 +107,8 @@ void main() {
       'devops-sre-engineer',
       'automation-engineer',
     };
-    // Trusted-evidence profiles stay fail-closed in ExecutableExpert until a
-    // trusted evidence projection exists, so none may be launched yet.
+    // legal-risk-advisor, fact-checker and industry-researcher were downgraded
+    // to structural, so no trusted-evidence profile is launchable any more.
     const installedTrusted = <String>{};
 
     final singleIds = registry.availableForSingleChat
@@ -144,13 +147,9 @@ void main() {
     'every installed profile resolves to one executable conversation identity',
     () {
       final conversations = SingleChatCatalogRepository();
-      // Contacts whose expert is trusted-evidence are deliberately not
-      // executable yet; see ExecutableExpertRegistry.installedExpertIdentities.
-      const pendingProfileIds = {'contract', 'watcher', 'researcher'};
       final resolved = {
         for (final installed in HaloFixtures.installedExperts)
-          if (!pendingProfileIds.contains(installed.id))
-            installed.id: registry.installedIdentityForProfileId(installed.id),
+          installed.id: registry.installedIdentityForProfileId(installed.id),
       };
 
       expect(resolved.values, everyElement(isNotNull));
@@ -158,13 +157,6 @@ void main() {
         resolved,
         hasLength(ExecutableExpertRegistry.installedExpertIdentities.length),
       );
-      for (final pending in pendingProfileIds) {
-        expect(
-          registry.installedIdentityForProfileId(pending),
-          isNull,
-          reason: 'pending/$pending',
-        );
-      }
       expect(
         resolved.values.map((identity) => identity!.canonicalExpertId).toSet(),
         hasLength(resolved.length),
@@ -214,6 +206,9 @@ void main() {
         'data',
         'writing',
         'calendar',
+        'contract',
+        'watcher',
+        'researcher',
         'fitness',
       ]);
       final fixtureIds = HaloFixtures.installedExperts
@@ -273,11 +268,6 @@ void main() {
       'user-researcher',
       'finance-tax-analyst',
       'security-auditor',
-      // Trusted-evidence profiles: launchable only once a trusted evidence
-      // projection exists, otherwise every reply fails closed.
-      'fact-checker',
-      'industry-researcher',
-      'legal-risk-advisor',
     };
 
     for (final id in blockedCanonicalIds) {
@@ -287,29 +277,6 @@ void main() {
     }
     expect(registry.singleChatById('product-manager'), isNotNull);
     expect(registry.groupChatById('ios-engineer'), isNotNull);
-  });
-
-  test('a trusted-evidence profile can never be bound as executable', () {
-    // The gateway is the construction-time fence: adding one of these IDs to a
-    // chat allowlist must fail the whole registry, not ship a contact whose
-    // every reply is filtered out.
-    for (final id in const [
-      'fact-checker',
-      'industry-researcher',
-      'legal-risk-advisor',
-    ]) {
-      final profile = registry.catalogById(id)!;
-      expect(
-        profile.validationPolicy,
-        ExpertValidationPolicy.trustedEvidence,
-        reason: id,
-      );
-      expect(
-        registry.singleChatById(id) ?? registry.groupChatById(id),
-        isNull,
-        reason: id,
-      );
-    }
   });
 
   test('catalog profile cannot be rebound through the validation gateway', () {
@@ -341,9 +308,10 @@ void main() {
       registry.singleChatByMarketId('market-27')?.profile.id,
       'data-analyst',
     );
-    // market-15 maps to fact-checker, a trusted-evidence profile that is not
-    // single-chat authorized while its projection stays fail-closed.
-    expect(registry.singleChatByMarketId('market-15'), isNull);
+    expect(
+      registry.singleChatByMarketId('market-15')?.profile.id,
+      'fact-checker',
+    );
     expect(registry.singleChatByMarketId('market-28'), isNull);
   });
 

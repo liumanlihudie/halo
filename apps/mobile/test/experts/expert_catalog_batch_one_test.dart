@@ -151,12 +151,7 @@ void main() {
   );
 
   test('catalog executable validation enforces profile policy fail closed', () {
-    const trustedIds = {
-      'user-researcher',
-      'industry-researcher',
-      'finance-tax-analyst',
-      'legal-risk-advisor',
-    };
+    const trustedIds = {'user-researcher', 'finance-tax-analyst'};
     for (final profile in ExpertCatalogBatchOne.all) {
       expect(
         profile.validationPolicy,
@@ -204,17 +199,17 @@ void main() {
     final authorizedRegistry = ExecutableExpertRegistry(
       gateway: const ExpertOutputValidationGateway(),
     );
-    expect(authorizedRegistry.singleChatById('legal-risk-advisor'), isNull);
+    // legal-risk-advisor is now structural and single-chat authorized; it
+    // still must not be launchable in group chat.
+    expect(authorizedRegistry.singleChatById('legal-risk-advisor'), isNotNull);
     expect(authorizedRegistry.groupChatById('legal-risk-advisor'), isNull);
+    expect(authorizedRegistry.singleChatById('user-researcher'), isNull);
   });
 
-  test('research, finance, and legal profiles require trusted evidence', () {
-    const highRiskIds = {
-      'user-researcher',
-      'industry-researcher',
-      'finance-tax-analyst',
-      'legal-risk-advisor',
-    };
+  test('remaining high-risk profiles require trusted evidence', () {
+    // legal-risk-advisor and industry-researcher were downgraded to structural
+    // advice-only; user-researcher and finance-tax-analyst stay evidence-bound.
+    const highRiskIds = {'user-researcher', 'finance-tax-analyst'};
     const claim = '该结论已得到可信资料支持。';
     final fakeEvidence = EvidenceItem(
       sourceId: 'untrusted-source',

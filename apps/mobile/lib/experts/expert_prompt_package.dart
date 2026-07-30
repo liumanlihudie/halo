@@ -1235,6 +1235,9 @@ class ExecutableExpertRegistry {
     'data-analyst',
     'content-strategist',
     'operations-manager',
+    'legal-risk-advisor',
+    'fact-checker',
+    'industry-researcher',
     'fitness-planner',
   ];
 
@@ -1278,15 +1281,7 @@ class ExecutableExpertRegistry {
     'market-36': 'finance-tax-analyst',
   };
 
-  /// Installed contact profiles that already have an executable single-chat
-  /// expert behind them.
-  ///
-  /// `contract`, `watcher` and `researcher` are deliberately absent: their
-  /// intended experts (`legal-risk-advisor`, `fact-checker`,
-  /// `industry-researcher`) use [ExpertValidationPolicy.trustedEvidence], which
-  /// [ExecutableExpert.validateAndProject] keeps fail-closed until a trusted
-  /// evidence projection and its verification registry exist. Listing them here
-  /// would ship three contacts whose every reply fails as filtered content.
+  /// Installed contact profiles that have an executable single-chat expert.
   static const installedExpertIdentities = <InstalledExpertIdentity>[
     InstalledExpertIdentity(
       profileId: 'general',
@@ -1312,6 +1307,21 @@ class ExecutableExpertRegistry {
       profileId: 'calendar',
       conversationId: 'calendar-assistant',
       canonicalExpertId: 'operations-manager',
+    ),
+    InstalledExpertIdentity(
+      profileId: 'contract',
+      conversationId: 'contract-review-chat',
+      canonicalExpertId: 'legal-risk-advisor',
+    ),
+    InstalledExpertIdentity(
+      profileId: 'watcher',
+      conversationId: 'monitoring-chat',
+      canonicalExpertId: 'fact-checker',
+    ),
+    InstalledExpertIdentity(
+      profileId: 'researcher',
+      conversationId: 'deep-research-task',
+      canonicalExpertId: 'industry-researcher',
     ),
     InstalledExpertIdentity(
       profileId: 'fitness',

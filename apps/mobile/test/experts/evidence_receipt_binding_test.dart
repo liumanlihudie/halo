@@ -1,12 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:halo_mobile/experts/built_in_experts.dart';
+import 'package:halo_mobile/experts/expert_catalog_batch_one.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 
 void main() {
   const claim = 'Version 42 shipped.';
-  final profile = BuiltInExperts.factChecker;
+  // fact-checker was downgraded to structural; user-researcher still carries
+  // the trusted-evidence Claim/Evidence/Verdict schema this test exercises.
+  final profile = ExpertCatalogBatchOne.byId('user-researcher')!;
   late _FixedClock clock;
   late EvidenceTrustRegistry registry;
   late ExpertValidationContext context;
