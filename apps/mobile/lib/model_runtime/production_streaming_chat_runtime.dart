@@ -120,8 +120,10 @@ final class ProductionStreamingChatRuntime
       if (request.temperature != null) 'temperature': request.temperature,
       if (request.maxOutputTokens != null)
         'max_tokens': request.maxOutputTokens,
+      // No `stream_options`: usage totals are not consumed on the streaming
+      // path, and several OpenAI-compatible relays reject the unknown field
+      // with 400, which would silently demote every run to the unary path.
       'stream': true,
-      'stream_options': {'include_usage': true},
     };
 
     final transport = _transportFactory(

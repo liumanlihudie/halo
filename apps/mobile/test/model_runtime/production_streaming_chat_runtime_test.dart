@@ -152,7 +152,9 @@ void main() {
     );
     expect(capturedBody?['model'], 'deepseek-chat');
     expect(capturedBody?['stream'], isTrue);
-    expect(capturedBody?['stream_options'], {'include_usage': true});
+    // Deliberately absent: relays that reject the unknown field would demote
+    // every run to the unary path, and streamed usage totals are unused.
+    expect(capturedBody?.containsKey('stream_options'), isFalse);
     expect(capturedBody?['messages'], [
       {'role': 'user', 'content': '你好'},
     ]);

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 
 // ignore_for_file: prefer_initializing_formals
 
@@ -179,6 +180,11 @@ final class ProductionSingleChatPort implements SingleChatPort {
       final raw = StringBuffer();
       var sawFinish = false;
       var fallBackToUnary = false;
+      var previews = 0;
+      // Diagnostic only: error *codes* and counters, never provider text,
+      // headers, or model output. Without it a silent demotion to the unary
+      // path is indistinguishable from streaming that simply looks instant.
+      String? demotionReason;
       try {
         final events = streaming.streamChat(
           ChatRequest(
@@ -198,6 +204,7 @@ final class ProductionSingleChatPort implements SingleChatPort {
               final text = event.text ?? '';
               raw.write(text);
               if (extractor.feed(text).isNotEmpty && !partials.isClosed) {
+                previews += 1;
                 partials.add(extractor.answerSoFar);
               }
             case ChatStreamEventType.usage:
@@ -207,6 +214,7 @@ final class ProductionSingleChatPort implements SingleChatPort {
             case ChatStreamEventType.error:
               if (_isStreamFallbackError(event.retryable, event.errorCode)) {
                 fallBackToUnary = true;
+                demotionReason = 'event:${event.errorCode?.name ?? 'unknown'}';
               } else {
                 return SingleAgentRunOutcome.failed(
                   failure: _mapFailure(
@@ -229,8 +237,10 @@ final class ProductionSingleChatPort implements SingleChatPort {
           return SingleAgentRunOutcome.failed(failure: _mapFailure(error.code));
         }
         fallBackToUnary = true;
+        demotionReason = 'exception:${error.code.name}';
       } catch (_) {
         fallBackToUnary = true;
+        demotionReason = 'exception:unknown';
       }
       if (cancellationToken.isCancelled) {
         return const SingleAgentRunOutcome.failed(
@@ -238,12 +248,21 @@ final class ProductionSingleChatPort implements SingleChatPort {
         );
       }
       if (fallBackToUnary || !sawFinish) {
+        developer.log(
+          'demoted to unary: reason=${demotionReason ?? 'noFinishEvent'} '
+          'previews=$previews',
+          name: 'halo.stream',
+        );
         return _execute(
           request: request,
           expert: expert,
           cancellationToken: cancellationToken,
         );
       }
+      developer.log(
+        'streamed: previews=$previews chars=${raw.length}',
+        name: 'halo.stream',
+      );
       var projected = _decodeAndProject(expert, raw.toString());
       if (projected == null && !cancellationToken.isCancelled) {
         projected = await _repairRetry(
