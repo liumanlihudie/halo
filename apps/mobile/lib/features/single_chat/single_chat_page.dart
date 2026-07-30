@@ -46,6 +46,7 @@ class SingleChatPage extends StatefulWidget {
 class _SingleChatPageState extends State<SingleChatPage> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
+  final _composerFocus = FocusNode();
   final _attachmentService = ChatAttachmentService();
   late SingleChatConversationProjection _conversation;
   SingleChatController? _chatController;
@@ -181,6 +182,8 @@ class _SingleChatPageState extends State<SingleChatPage> {
       });
       unawaited(_loadModelLabel(described.expertId));
       await controller.initialize();
+      // Opening a conversation should land on the newest message.
+      _jumpToBottomSoon();
     } catch (_) {
       if (mounted && generation == _dependencyGeneration) {
         setState(() {
@@ -220,6 +223,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
       ..dispose();
     _textController.dispose();
     _scrollController.dispose();
+    _composerFocus.dispose();
     super.dispose();
   }
 
@@ -233,6 +237,15 @@ class _SingleChatPageState extends State<SingleChatPage> {
   /// Keeps the newest bubble visible after a send, a projected reply, or a run
   /// status change. Scheduled post-frame because the new extent only exists
   /// once the rebuilt list has laid out.
+  /// Jump (no animation) for the initial history load, so opening the page
+  /// starts at the newest message instead of animating past the backlog.
+  void _jumpToBottomSoon() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
+  }
+
   void _scrollToBottomSoon() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
@@ -315,6 +328,10 @@ class _SingleChatPageState extends State<SingleChatPage> {
     if (controller.activeText == text.trim()) {
       _textController.clear();
     }
+    // Submitting from the keyboard unfocuses the field, which dismisses the
+    // keyboard and makes the whole page jump. Sending is not "done typing":
+    // keep the keyboard up and only scroll the transcript.
+    _composerFocus.requestFocus();
     _scrollToBottomSoon();
   }
 
@@ -381,6 +398,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
       ),
       bottom: _Composer(
         controller: _textController,
+        focusNode: _composerFocus,
         onAttach: _showAttachmentSheet,
         onSend: _send,
         enabled:
@@ -821,11 +839,13 @@ class _QuoteMessage extends StatelessWidget {
 class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
+    required this.focusNode,
     required this.onAttach,
     required this.onSend,
     required this.enabled,
   });
 
+  final FocusNode focusNode;
   final TextEditingController controller;
   final VoidCallback onAttach;
   final VoidCallback onSend;
@@ -868,6 +888,7 @@ class _Composer extends StatelessWidget {
                       enabled: enabled,
                       minLines: 1,
                       maxLines: 4,
+                      focusNode: focusNode,
                       textInputAction: TextInputAction.send,
                       onSubmitted: (_) => onSend(),
                       decoration: const InputDecoration(

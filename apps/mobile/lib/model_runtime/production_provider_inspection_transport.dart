@@ -25,17 +25,45 @@ final class ProductionProviderInspectionTransport
     'supports_temperature': true,
   };
 
-  static const _chatEndpointTypes = <String>{
-    'chat',
-    'chat_completions',
-    'chat/completions',
-    'completions',
-    'messages',
-    'generate_content',
-    // ToAPIs 文字模型可只声明 Responses API（见 docs/大模型toapis对接.md）；
-    // 漏掉它会把纯 responses 模型当成非文字丢弃，目录为空时保存整体被拒。
-    'responses',
-    'text',
+  /// A model whose every declared endpoint type is non-text (image, video,
+  /// audio, embeddings…). Persisted for the media features, never offered as a
+  /// chat model.
+  static const _nonTextCapabilityHints = <String, Object?>{
+    'supports_chat': false,
+    'supports_system': false,
+    'supports_temperature': false,
+  };
+
+  /// Endpoint types that are definitely not text chat.
+  ///
+  /// The filter is a blocklist on purpose: aggregators label text endpoints
+  /// inconsistently (chat_completions, responses, messages, vendor-specific
+  /// names…), and an allowlist silently drops every label it has not seen —
+  /// live ToAPIs keys surfaced with only one of their text models. A model is
+  /// excluded only when every declared type is a known non-text kind.
+  static const _nonTextEndpointTypes = <String>{
+    'image',
+    'images',
+    'image_generations',
+    'images/generations',
+    'video',
+    'videos',
+    'video_generations',
+    'videos/generations',
+    'audio',
+    'tts',
+    'stt',
+    'speech',
+    'transcription',
+    'transcriptions',
+    'translation',
+    'translations',
+    'embedding',
+    'embeddings',
+    'moderation',
+    'moderations',
+    'rerank',
+    'reranking',
   };
 
   final SecureJsonHttpClient client;
@@ -83,18 +111,21 @@ final class ProductionProviderInspectionTransport
             !seen.add(modelId)) {
           throw const FormatException();
         }
+        // Nothing is dropped: image/video/audio models stay in the catalog for
+        // the coming media features. Whether a model may be offered as a chat
+        // model is recorded honestly instead — false only when every declared
+        // endpoint type is a known non-text kind.
         final declared = _declaredEndpointTypes(item);
-        if (declared != null && !declared.any(_chatEndpointTypes.contains)) {
-          // Declared, and not a text model. Skipping keeps it out of the text
-          // model picker instead of mislabelling it as chat-capable.
-          continue;
-        }
+        final textCapable =
+            declared == null || !declared.every(_nonTextEndpointTypes.contains);
         models.add(
           UpstreamModelMetadata(
             providerId: request.config.providerId,
             modelId: modelId,
             displayName: modelId,
-            capabilityHints: _assumedCapabilityHints,
+            capabilityHints: textCapable
+                ? _assumedCapabilityHints
+                : _nonTextCapabilityHints,
           ),
         );
       }

@@ -145,6 +145,73 @@ void main() {
     },
   );
 
+  test(
+    'one silent repair retry salvages a non-conforming first reply',
+    () async {
+      runtime.response = ChatResponse(
+        requestId: 'command-repair',
+        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+        outputText: '好的，我来帮你分析一下。',
+        finishReason: ChatFinishReason.completed,
+        usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
+      );
+      runtime.queuedResponses.add(runtime.response!);
+      runtime.response = ChatResponse(
+        requestId: 'command-repair-2',
+        model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+        outputText: jsonEncode(_adviceOutput('修复后的回答')),
+        finishReason: ChatFinishReason.completed,
+        usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
+      );
+
+      final handle = await port.startSingleAgentRun(
+        const StartSingleAgentRunRequest(
+          conversationId: 'conversation-repair',
+          expertId: 'product-manager',
+          text: '分析一下',
+          clientCommandId: 'command-repair',
+        ),
+      );
+
+      final outcome = await handle.outcome;
+      expect(outcome.failure, SingleAgentRunFailure.none);
+      expect(runtime.requests, hasLength(2));
+      // The repair turn carries the failed reply and an explicit correction.
+      final repair = runtime.requests.last;
+      expect(repair.requestId, 'command-repair-repair');
+      expect(repair.messages.last.content, contains('只返回一个符合模板的 JSON'));
+      expect(
+        repair.messages.map((message) => message.role),
+        contains(ChatRole.assistant),
+      );
+    },
+  );
+
+  test('a second non-conforming reply still reports malformedOutput', () async {
+    final garbage = ChatResponse(
+      requestId: 'command-repair-fail',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: '还是不按格式回答。',
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 2, outputTokens: 8),
+    );
+    runtime.queuedResponses.add(garbage);
+    runtime.response = garbage;
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-repair-fail',
+        expertId: 'product-manager',
+        text: '分析一下',
+        clientCommandId: 'command-repair-fail',
+      ),
+    );
+
+    final outcome = await handle.outcome;
+    expect(outcome.failure, SingleAgentRunFailure.malformedOutput);
+    expect(runtime.requests, hasLength(2));
+  });
+
   test('markdown-fenced JSON output still decodes and projects', () async {
     runtime.response = ChatResponse(
       requestId: 'command-fenced',
@@ -397,6 +464,7 @@ final class _FakeRuntime implements ProductionSingleChatRuntime {
   final requests = <ChatRequest>[];
   final resolvedAgentIds = <String>[];
   ChatResponse? response;
+  final queuedResponses = <ChatResponse>[];
   ModelRuntimeException? error;
   Completer<ChatResponse>? block;
 
@@ -423,6 +491,7 @@ final class _FakeRuntime implements ProductionSingleChatRuntime {
         retryable: true,
       );
     }
+    if (queuedResponses.isNotEmpty) return queuedResponses.removeAt(0);
     return response!;
   }
 }

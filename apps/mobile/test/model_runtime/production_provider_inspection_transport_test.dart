@@ -42,15 +42,24 @@ void main() {
         _request(config: ProviderConfig.toApis(), credential: credential),
       );
 
+      // Nothing is dropped — the image model stays for the media features.
       expect(result.models.map((model) => model.modelId), [
         'gpt-5.6-terra',
         'responses-only-model',
+        'gpt-image-2',
       ]);
+      // Text capability is recorded honestly instead of by exclusion.
+      expect(
+        result.models
+            .where((model) => model.capabilityHints['supports_chat'] == true)
+            .map((model) => model.modelId),
+        ['gpt-5.6-terra', 'responses-only-model'],
+      );
       expect(adapter.records.single.path, '/v1/models');
     },
   );
 
-  test('a declared non-text model is excluded from the catalog', () async {
+  test('a declared non-text model is kept but never chat-capable', () async {
     final adapter =
         FakeUnaryHttpAdapter(
           retainSafeHeaderValuesForTesting: true,
@@ -76,12 +85,20 @@ void main() {
       _request(config: ProviderConfig.deepSeek(), credential: credential),
     );
 
-    // An image or embedding model persisted as chat-capable would be offered as
-    // the default text model and fail on first use.
+    // Everything persists (media features need image/embedding models); the
+    // honest chat bit keeps them out of the text model picker.
     expect(result.models.map((model) => model.modelId), [
       'chat-model',
+      'image-model',
+      'embedding-model',
       'unknown-model',
     ]);
+    expect(
+      result.models
+          .where((model) => model.capabilityHints['supports_chat'] == true)
+          .map((model) => model.modelId),
+      ['chat-model', 'unknown-model'],
+    );
   });
 
   test(

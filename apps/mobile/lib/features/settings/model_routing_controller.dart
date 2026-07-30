@@ -58,6 +58,9 @@ final class SqliteModelRoutingPersistence
       );
       if (catalog == null) continue;
       for (final model in catalog.models) {
+        // The catalog keeps every model kind for the media features; only
+        // text-capable ones may be offered as a chat default.
+        if (!model.capabilities.textGeneration) continue;
         if (!seen.add(model.ref)) {
           throw StateError('Duplicate persisted provider model');
         }

@@ -89,7 +89,41 @@ final class ProductionSingleChatPort implements SingleChatPort {
           failure: SingleAgentRunFailure.retryable,
         );
       }
-      final projected = _decodeAndProject(expert, response.outputText);
+      var projected = _decodeAndProject(expert, response.outputText);
+      if (projected == null && !cancellationToken.isCancelled) {
+        // One silent repair attempt: models regularly break the JSON contract
+        // on a first try, and asking again with an explicit correction fixes
+        // most of them without bothering the user. Exactly one retry — a model
+        // that fails twice reports malformedOutput and the user's 重试 button
+        // takes over.
+        final repaired = await _runtime.chat(
+          ChatRequest(
+            requestId: '${request.clientCommandId}-repair',
+            model: model,
+            messages: [
+              ChatMessage(
+                role: ChatRole.system,
+                content: _renderExpertSystemPrompt(expert),
+              ),
+              ChatMessage(role: ChatRole.user, content: request.text),
+              ChatMessage(
+                role: ChatRole.assistant,
+                content: response.outputText,
+              ),
+              ChatMessage(
+                role: ChatRole.user,
+                content:
+                    '你上一条回复没有按要求返回。请重新只返回一个符合模板的 JSON 对象：'
+                    '不要 Markdown、不要代码围栏、不要任何解释文字。',
+              ),
+            ],
+            cancellationToken: cancellationToken,
+          ),
+        );
+        if (!cancellationToken.isCancelled) {
+          projected = _decodeAndProject(expert, repaired.outputText);
+        }
+      }
       if (projected == null) {
         // Schema-nonconforming model output is a formatting miss, not a
         // provider safety rejection; only ModelRuntimeErrorCode.contentRejected
