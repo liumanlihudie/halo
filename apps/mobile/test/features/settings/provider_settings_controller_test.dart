@@ -574,6 +574,97 @@ void main() {
     },
   );
 
+  test(
+    'setEnabled flips only the enabled bit, keeping credential and catalog',
+    () async {
+      final oldRef = refs.next();
+      persistence.current = _snapshot(
+        'deepseek',
+        oldRef,
+        modelIds: ['deepseek-chat'],
+      );
+      await controller.load('deepseek');
+      events.clear();
+
+      await controller.setEnabled('deepseek', false);
+
+      final snapshot = controller.snapshotFor('deepseek')!;
+      expect(snapshot.config.enabled, isFalse);
+      expect(snapshot.config.secretRef, oldRef);
+      expect(snapshot.catalog!.models.map((model) => model.ref.modelId), [
+        'deepseek-chat',
+      ]);
+      expect(credentials.setRefs, isEmpty);
+      expect(credentials.deletedRefs, isEmpty);
+      expect(events, [
+        'persistence:replace',
+        'runtime:reload',
+        'persistence:markReplaceRuntimePublished',
+        'persistence:finalizeReplace',
+      ]);
+      expect(controller.stateFor('deepseek'), ProviderSettingsState.ready);
+
+      await controller.setEnabled('deepseek', true);
+      expect(controller.snapshotFor('deepseek')!.config.enabled, isTrue);
+      expect(controller.snapshotFor('deepseek')!.config.secretRef, oldRef);
+    },
+  );
+
+  test('setEnabled to the current value is a no-op', () async {
+    final oldRef = refs.next();
+    persistence.current = _snapshot('deepseek', oldRef);
+    await controller.load('deepseek');
+    events.clear();
+
+    await controller.setEnabled('deepseek', true);
+
+    expect(events, isEmpty);
+    expect(controller.stateFor('deepseek'), ProviderSettingsState.ready);
+  });
+
+  test('setEnabled rolls back when the runtime reload fails', () async {
+    final oldRef = refs.next();
+    persistence.current = _snapshot('deepseek', oldRef);
+    await controller.load('deepseek');
+    runtime.error = StateError('runtime unavailable');
+    events.clear();
+
+    await expectLater(
+      controller.setEnabled('deepseek', false),
+      throwsA(
+        isA<ProviderSettingsException>().having(
+          (error) => error.safeMessage,
+          'safeMessage',
+          '停用失败，原配置仍然有效',
+        ),
+      ),
+    );
+
+    expect(events, [
+      'persistence:replace',
+      'runtime:reload',
+      'persistence:rollbackReplace',
+    ]);
+    expect(persistence.current!.config.enabled, isTrue);
+    expect(controller.stateFor('deepseek'), ProviderSettingsState.saveFailed);
+  });
+
+  test('setEnabled without a saved configuration fails closed', () async {
+    persistence.current = null;
+
+    await expectLater(
+      controller.setEnabled('deepseek', false),
+      throwsA(
+        isA<ProviderSettingsException>().having(
+          (error) => error.safeMessage,
+          'safeMessage',
+          '请先配置模型服务',
+        ),
+      ),
+    );
+    expect(persistence.calls, isEmpty);
+  });
+
   test('mutations run FIFO while loads remain provider isolated', () async {
     final toApisGate = Completer<void>();
     persistence.loadGates['toapis'] = toApisGate;

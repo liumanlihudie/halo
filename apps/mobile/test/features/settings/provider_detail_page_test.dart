@@ -72,6 +72,44 @@ void main() {
     expect(_refreshButton(tester).onPressed, isNotNull);
   });
 
+  testWidgets('power button toggles the provider without touching the key', (
+    tester,
+  ) async {
+    final persistence = _Persistence()
+      ..current = _snapshot(_ref(3), DateTime.utc(2026, 7, 29, 12));
+    final controller = _controller(persistence: persistence);
+    await _pumpPage(tester, controller: controller);
+
+    expect(find.widgetWithText(OutlinedButton, '停用此服务'), findsOneWidget);
+    expect(find.text('已启用'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '停用此服务'));
+    await tester.pumpAndSettle();
+
+    expect(persistence.current!.config.enabled, isFalse);
+    expect(persistence.current!.config.secretRef, _ref(3));
+    expect(find.widgetWithText(OutlinedButton, '启用此服务'), findsOneWidget);
+    expect(find.text('已停用'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '启用此服务'));
+    await tester.pumpAndSettle();
+
+    expect(persistence.current!.config.enabled, isTrue);
+    expect(find.text('已启用'), findsOneWidget);
+  });
+
+  testWidgets('power button stays disabled before configuration', (
+    tester,
+  ) async {
+    final controller = _controller(persistence: _Persistence());
+    await _pumpPage(tester, controller: controller);
+
+    final button = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, '启用此服务'),
+    );
+    expect(button.onPressed, isNull);
+  });
+
   testWidgets(
     'successful save clears the API Key and never renders its value',
     (tester) async {

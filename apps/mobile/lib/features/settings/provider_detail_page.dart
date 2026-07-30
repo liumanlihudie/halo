@@ -51,7 +51,9 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     final supported = const {'toapis', 'deepseek'}.contains(widget.providerId);
     final configured =
         controller?.hasConfigurationFor(widget.providerId) ?? false;
-    final catalog = controller?.snapshotFor(widget.providerId)?.catalog;
+    final snapshot = controller?.snapshotFor(widget.providerId);
+    final catalog = snapshot?.catalog;
+    final enabled = snapshot?.config.enabled ?? false;
     return HaloPageScaffold(
       title: '模型服务',
       compactTitle: true,
@@ -105,8 +107,10 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
                   ),
                 ),
                 HaloTag(
-                  configured ? '已配置' : '未配置',
-                  tone: configured ? HaloTagTone.green : HaloTagTone.gray,
+                  configured ? (enabled ? '已启用' : '已停用') : '未配置',
+                  tone: configured && enabled
+                      ? HaloTagTone.green
+                      : HaloTagTone.gray,
                 ),
               ],
             ),
@@ -164,9 +168,11 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
             label: const Text('刷新模型目录'),
           ),
           OutlinedButton.icon(
-            onPressed: null,
+            onPressed: controller == null || !configured || _busy
+                ? null
+                : () => _setEnabled(!enabled),
             icon: Icon(HaloIcon.requirePrototypeClass('ph ph-power')),
-            label: const Text('随保存启用'),
+            label: Text(enabled ? '停用此服务' : '启用此服务'),
           ),
           const SizedBox(height: 7),
           FilledButton(
@@ -204,6 +210,17 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
     } on ProviderSettingsException {
       // The controller exposes only fixed safe state; secret/error details are
       // intentionally never reflected into the UI.
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _setEnabled(bool enabled) async {
+    setState(() => _busy = true);
+    try {
+      await widget.controller!.setEnabled(widget.providerId, enabled);
+    } on ProviderSettingsException {
+      // Only fixed safe controller state is reflected into the page.
     } finally {
       if (mounted) setState(() => _busy = false);
     }

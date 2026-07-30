@@ -405,6 +405,74 @@ final class ProviderSettingsController extends ChangeNotifier {
     _setState(providerId, ProviderSettingsState.ready);
   }
 
+  Future<void> setEnabled(String providerId, bool enabled) =>
+      _enqueueMutation(providerId, () => _setEnabled(providerId, enabled));
+
+  Future<void> _setEnabled(String providerId, bool enabled) async {
+    _setState(providerId, ProviderSettingsState.saving);
+    final previous = await _persistence.load(providerId);
+    _setSnapshot(providerId, previous);
+    if (previous == null) {
+      _setConfigured(providerId, false);
+      _setState(providerId, ProviderSettingsState.saveFailed);
+      throw const ProviderSettingsException('请先配置模型服务');
+    }
+    if (previous.config.enabled == enabled) {
+      _setConfigured(providerId, true);
+      _setState(providerId, ProviderSettingsState.ready);
+      return;
+    }
+
+    // Only the enabled bit flips: same credential ref, same catalog.
+    final next = ProviderSettingsSnapshot(
+      config: previous.config.copyWith(enabled: enabled),
+      catalog: previous.catalog,
+    );
+    try {
+      await _persistence.replace(previous, next);
+      try {
+        await _runtime.reload();
+      } catch (_) {
+        try {
+          await _persistence.rollbackReplace(previous, next);
+        } catch (_) {
+          _setConfigured(providerId, true);
+          _setSnapshot(providerId, next);
+          _setState(providerId, ProviderSettingsState.recoveryPending);
+          throw const ProviderSettingsException('配置恢复中，请稍后重试');
+        }
+        rethrow;
+      }
+    } on ProviderSettingsException {
+      rethrow;
+    } catch (_) {
+      _setConfigured(providerId, true);
+      _setSnapshot(providerId, previous);
+      _setState(providerId, ProviderSettingsState.saveFailed);
+      throw ProviderSettingsException(
+        enabled ? '启用失败，原配置仍然有效' : '停用失败，原配置仍然有效',
+      );
+    }
+
+    try {
+      await _persistence.markReplaceRuntimePublished(previous, next);
+    } catch (_) {
+      _setConfigured(providerId, true);
+      _setSnapshot(providerId, next);
+      _setState(providerId, ProviderSettingsState.recoveryPending);
+      throw const ProviderSettingsException('配置恢复中，请稍后重试');
+    }
+    _setConfigured(providerId, true);
+    _setSnapshot(providerId, next);
+    try {
+      await _persistence.finalizeReplace(previous, next);
+    } catch (_) {
+      _setState(providerId, ProviderSettingsState.cleanupPending);
+      return;
+    }
+    _setState(providerId, ProviderSettingsState.ready);
+  }
+
   Future<void> remove(String providerId) =>
       _enqueueMutation(providerId, () => _remove(providerId));
 
