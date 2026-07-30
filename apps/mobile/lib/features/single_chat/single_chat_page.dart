@@ -65,6 +65,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
   late final _messageActions = widget.messageActions ?? MessageActionsService();
   late final _voiceRecorder = widget.voiceRecorder ?? VoiceRecorderService();
   Duration? _recordingElapsed;
+  bool _cancelArmed = false;
   Timer? _recordingTicker;
   late SingleChatConversationProjection _conversation;
   SingleChatController? _chatController;
@@ -428,26 +429,12 @@ class _SingleChatPageState extends State<SingleChatPage> {
     }
   }
 
-  /// Tap to record, tap again to send. Holding while speaking is a nicer
-  /// gesture but a worse first cut: it hides failures behind a gesture state
-  /// machine before the pipeline itself is proven.
-  Future<void> _toggleVoiceRecording() async {
-    if (_voiceRecorder.isRecording) {
-      _recordingTicker?.cancel();
-      _recordingTicker = null;
-      final recording = await _voiceRecorder.stop();
-      if (!mounted) return;
-      setState(() => _recordingElapsed = null);
-      if (recording == null) {
-        _notify('没有录到声音');
-        return;
-      }
-      await _chatController?.submitVoice(
-        path: recording.path,
-        duration: recording.duration,
-      );
-      return;
-    }
+  /// WeChat's gesture: hold to talk, slide up to cancel, release to send.
+  ///
+  /// The finger position decides the outcome, so the user can always back out
+  /// of a recording they did not mean to send.
+  Future<void> _startVoiceRecording() async {
+    if (_voiceRecorder.isRecording) return;
     try {
       await _voiceRecorder.start();
     } on VoiceRecorderException catch (error) {
@@ -455,11 +442,54 @@ class _SingleChatPageState extends State<SingleChatPage> {
       return;
     }
     if (!mounted) return;
-    setState(() => _recordingElapsed = Duration.zero);
-    _recordingTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+    setState(() {
+      _recordingElapsed = Duration.zero;
+      _cancelArmed = false;
+    });
+    _recordingTicker = Timer.periodic(const Duration(milliseconds: 200), (_) {
       if (!mounted || !_voiceRecorder.isRecording) return;
       setState(() => _recordingElapsed = _voiceRecorder.elapsed);
     });
+  }
+
+  void _updateVoiceCancel(bool armed) {
+    if (!_voiceRecorder.isRecording || armed == _cancelArmed) return;
+    setState(() => _cancelArmed = armed);
+  }
+
+  Future<void> _finishVoiceRecording({required bool cancelled}) async {
+    if (!_voiceRecorder.isRecording) return;
+    _recordingTicker?.cancel();
+    _recordingTicker = null;
+    if (cancelled || _cancelArmed) {
+      await _voiceRecorder.cancel();
+      if (mounted) {
+        setState(() {
+          _recordingElapsed = null;
+          _cancelArmed = false;
+        });
+      }
+      return;
+    }
+    final recording = await _voiceRecorder.stop();
+    if (!mounted) return;
+    setState(() {
+      _recordingElapsed = null;
+      _cancelArmed = false;
+    });
+    if (recording == null) {
+      _notify('没有录到声音');
+      return;
+    }
+    // Under a second is a mis-tap, not a message — WeChat says so too.
+    if (recording.duration < const Duration(seconds: 1)) {
+      _notify('说话时间太短');
+      return;
+    }
+    await _chatController?.submitVoice(
+      path: recording.path,
+      duration: recording.duration,
+    );
   }
 
   void _notify(String message) => ScaffoldMessenger.of(
@@ -557,8 +587,11 @@ class _SingleChatPageState extends State<SingleChatPage> {
         focusNode: _composerFocus,
         onAttach: _showAttachmentSheet,
         onSend: _send,
-        onVoice: _toggleVoiceRecording,
+        onVoiceStart: _startVoiceRecording,
+        onVoiceCancelArmed: _updateVoiceCancel,
+        onVoiceFinish: _finishVoiceRecording,
         recording: _recordingElapsed,
+        cancelArmed: _cancelArmed,
         enabled:
             controller != null &&
             !_dependencyLoadFailed &&
@@ -1055,15 +1088,18 @@ class _QuoteMessage extends StatelessWidget {
   }
 }
 
-class _Composer extends StatelessWidget {
+class _Composer extends StatefulWidget {
   const _Composer({
     required this.controller,
     required this.focusNode,
     required this.onAttach,
     required this.onSend,
     required this.enabled,
-    required this.onVoice,
+    required this.onVoiceStart,
+    required this.onVoiceCancelArmed,
+    required this.onVoiceFinish,
     required this.recording,
+    required this.cancelArmed,
   });
 
   final FocusNode focusNode;
@@ -1071,10 +1107,33 @@ class _Composer extends StatelessWidget {
   final VoidCallback onAttach;
   final VoidCallback onSend;
   final bool enabled;
-  final VoidCallback onVoice;
+  final Future<void> Function() onVoiceStart;
+  final void Function(bool armed) onVoiceCancelArmed;
+  final Future<void> Function({required bool cancelled}) onVoiceFinish;
 
   /// Elapsed recording time, or null when not recording.
   final Duration? recording;
+
+  /// True while the finger has slid far enough up to cancel on release.
+  final bool cancelArmed;
+
+  @override
+  State<_Composer> createState() => _ComposerState();
+}
+
+class _ComposerState extends State<_Composer> {
+  /// Voice mode replaces the text field with a hold-to-talk bar, the way every
+  /// messenger does it, instead of hiding recording behind a second tap.
+  bool _voiceMode = false;
+  double _dragStartY = 0;
+
+  /// Sliding this far up cancels on release.
+  static const _cancelDistance = 60.0;
+
+  void _toggleVoiceMode() {
+    setState(() => _voiceMode = !_voiceMode);
+    if (_voiceMode) widget.focusNode.unfocus();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1091,49 +1150,37 @@ class _Composer extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Row(
-                children: [
-                  _QuickAction('导出成果'),
-                  SizedBox(width: 7),
-                  _QuickAction('查看来源'),
-                ],
-              ),
-              const SizedBox(height: 7),
+              if (widget.recording case final elapsed?) ...[
+                _RecordingHint(
+                  elapsed: elapsed,
+                  cancelArmed: widget.cancelArmed,
+                ),
+                const SizedBox(height: 7),
+              ] else ...[
+                const Row(
+                  children: [
+                    _QuickAction('导出成果'),
+                    SizedBox(width: 7),
+                    _QuickAction('查看来源'),
+                  ],
+                ),
+                const SizedBox(height: 7),
+              ],
               Row(
                 children: [
                   HaloIconButton(
-                    prototypeIconClass: recording == null
-                        ? 'ph ph-microphone'
-                        : 'ph ph-stop-circle',
-                    semanticLabel: recording == null ? '录音' : '结束录音并发送',
-                    onPressed: enabled ? onVoice : null,
+                    prototypeIconClass: _voiceMode
+                        ? 'ph ph-chat-circle-text'
+                        : 'ph ph-microphone',
+                    semanticLabel: _voiceMode ? '切换到键盘' : '按住说话',
+                    onPressed: widget.enabled ? _toggleVoiceMode : null,
                   ),
                   const SizedBox(width: 6),
-                  Expanded(
-                    child: TextField(
-                      controller: controller,
-                      enabled: enabled,
-                      minLines: 1,
-                      maxLines: 4,
-                      focusNode: focusNode,
-                      textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => onSend(),
-                      decoration: const InputDecoration(
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(12)),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
-                        ),
-                      ),
-                    ),
-                  ),
+                  Expanded(child: _voiceMode ? _holdToTalk() : _textField()),
                   const SizedBox(width: 5),
-                  _AttachButton(onPressed: enabled ? onAttach : null),
+                  _AttachButton(
+                    onPressed: widget.enabled ? widget.onAttach : null,
+                  ),
                 ],
               ),
             ],
@@ -1142,11 +1189,94 @@ class _Composer extends StatelessWidget {
       ),
     );
   }
+
+  Widget _textField() => TextField(
+    controller: widget.controller,
+    enabled: widget.enabled,
+    minLines: 1,
+    maxLines: 4,
+    focusNode: widget.focusNode,
+    textInputAction: TextInputAction.send,
+    onSubmitted: (_) => widget.onSend(),
+    decoration: const InputDecoration(
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+        borderSide: BorderSide.none,
+      ),
+      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+    ),
+  );
+
+  Widget _holdToTalk() {
+    final recording = widget.recording != null;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPressStart: (details) {
+        _dragStartY = details.globalPosition.dy;
+        unawaited(widget.onVoiceStart());
+      },
+      onLongPressMoveUpdate: (details) {
+        widget.onVoiceCancelArmed(
+          _dragStartY - details.globalPosition.dy > _cancelDistance,
+        );
+      },
+      onLongPressEnd: (_) => unawaited(widget.onVoiceFinish(cancelled: false)),
+      onLongPressCancel: () => unawaited(widget.onVoiceFinish(cancelled: true)),
+      child: Container(
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: recording ? HaloColors.soft : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          recording ? '松开 发送' : '按住 说话',
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+      ),
+    );
+  }
 }
 
-/// The composer's attach entry: a plus icon on a circular accent-tinted disc,
-/// so the remaining action reads as a button rather than a stray glyph now
-/// that Enter on the keyboard is what sends.
+/// The recording state, shown where the quick actions normally sit.
+class _RecordingHint extends StatelessWidget {
+  const _RecordingHint({required this.elapsed, required this.cancelArmed});
+
+  final Duration elapsed;
+  final bool cancelArmed;
+
+  @override
+  Widget build(BuildContext context) {
+    final seconds = elapsed.inSeconds;
+    final remaining = 60 - seconds;
+    return Row(
+      children: [
+        Icon(
+          HaloIcon.requirePrototypeClass(
+            cancelArmed ? 'ph ph-x-circle' : 'ph ph-microphone',
+          ),
+          size: 15,
+          color: cancelArmed ? HaloColors.red : HaloColors.accent,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          cancelArmed
+              ? '松开手指，取消发送'
+              : "${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}"
+                    '${remaining <= 10 ? '  ·  还剩 $remaining 秒' : '  ·  上滑取消'}',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: cancelArmed ? HaloColors.red : HaloColors.accent,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _AttachButton extends StatelessWidget {
   const _AttachButton({this.onPressed});
 

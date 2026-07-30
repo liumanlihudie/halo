@@ -98,7 +98,7 @@ class _VoiceMessageBubbleState extends State<VoiceMessageBubble> {
             children: [
               Icon(
                 HaloIcon.requirePrototypeClass(
-                  _playing ? 'ph ph-pause' : 'ph ph-play',
+                  _playing ? 'ph ph-pause-circle' : 'ph ph-play-circle',
                 ),
                 size: 16,
                 color: foreground,

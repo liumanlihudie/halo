@@ -37,7 +37,7 @@ final class VolcanoSpeechConfig {
     required this.apiKey,
     this.speaker = 'zh_female_vv_uranus_bigtts',
     this.ttsResourceId = 'seed-tts-2.0',
-    this.asrResourceId = 'volc.bigasr.auc',
+    this.asrResourceId = 'volc.bigasr.auc_turbo',
     this.sampleRate = 24000,
   });
 
@@ -50,11 +50,8 @@ final class VolcanoSpeechConfig {
   static final Uri ttsEndpoint = Uri.parse(
     'https://openspeech.bytedance.com/api/v3/tts/unidirectional',
   );
-  static final Uri asrSubmitEndpoint = Uri.parse(
-    'https://openspeech.bytedance.com/api/v3/auc/bigmodel/submit',
-  );
-  static final Uri asrQueryEndpoint = Uri.parse(
-    'https://openspeech.bytedance.com/api/v3/auc/bigmodel/query',
+  static final Uri asrFlashEndpoint = Uri.parse(
+    'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash',
   );
 }
 
@@ -226,34 +223,27 @@ final class VolcanoSpeechSynthesizer implements SpeechSynthesizer {
 
 /// Volcano Engine speech-to-text for recorded voice messages.
 ///
-/// The recording-file API is submit-then-poll: one request hands over the
-/// audio, and the transcript is collected by querying the same request id.
+/// Shape taken from the owner's working project, not from documentation
+/// guesses: the flash endpoint answers in one shot, success is declared by the
+/// `x-api-status-code` response header rather than the HTTP status, and the
+/// audio travels as base64 in the body.
 final class VolcanoSpeechTranscriber implements SpeechTranscriber {
   VolcanoSpeechTranscriber({
     required VolcanoSpeechConfig config,
     required String Function() newRequestId,
     HttpClient? httpClient,
-    Uri? submitEndpointOverride,
-    Uri? queryEndpointOverride,
-    Duration pollInterval = const Duration(milliseconds: 700),
-    int maximumPolls = 40,
+    Uri? endpointOverride,
   }) : _config = config,
        _newRequestId = newRequestId,
        _client = httpClient ?? HttpClient(),
-       _submitEndpoint =
-           submitEndpointOverride ?? VolcanoSpeechConfig.asrSubmitEndpoint,
-       _queryEndpoint =
-           queryEndpointOverride ?? VolcanoSpeechConfig.asrQueryEndpoint,
-       _pollInterval = pollInterval,
-       _maximumPolls = maximumPolls;
+       _endpoint = endpointOverride ?? VolcanoSpeechConfig.asrFlashEndpoint;
 
   final VolcanoSpeechConfig _config;
   final String Function() _newRequestId;
   final HttpClient _client;
-  final Uri _submitEndpoint;
-  final Uri _queryEndpoint;
-  final Duration _pollInterval;
-  final int _maximumPolls;
+  final Uri _endpoint;
+
+  static const _successStatus = '20000000';
 
   @override
   Future<String> transcribe(String sourcePath) async {
@@ -261,72 +251,49 @@ final class VolcanoSpeechTranscriber implements SpeechTranscriber {
     if (!file.existsSync()) {
       throw const SpeechException('录音文件不存在');
     }
-    final requestId = _newRequestId();
     try {
-      await _submit(requestId, await file.readAsBytes());
-      for (var attempt = 0; attempt < _maximumPolls; attempt += 1) {
-        await Future<void>.delayed(_pollInterval);
-        final transcript = await _query(requestId);
-        if (transcript != null) return transcript;
+      final request = await _client.postUrl(_endpoint);
+      request.headers
+        ..set('Content-Type', 'application/json')
+        ..set('X-Api-Key', _config.apiKey)
+        ..set('X-Api-Resource-Id', _config.asrResourceId)
+        ..set('X-Api-Request-Id', _newRequestId())
+        // The flash endpoint requires the terminal sequence marker.
+        ..set('X-Api-Sequence', '-1');
+      request.add(
+        utf8.encode(
+          jsonEncode({
+            'user': {'uid': 'halo'},
+            'audio': {'data': base64Encode(await file.readAsBytes())},
+            'request': {
+              'model_name': 'bigmodel',
+              'enable_punc': true,
+              'enable_itn': true,
+            },
+          }),
+        ),
+      );
+      final response = await request.close();
+      // Success is declared in this header, not the HTTP status: the service
+      // answers 200 for rejected requests too.
+      final status = response.headers.value('x-api-status-code');
+      final body = await utf8.decodeStream(response);
+      if (status != _successStatus) {
+        throw const SpeechException('转写失败，请重试');
       }
-      throw const SpeechException('转写超时，请重试');
+      final decoded = jsonDecode(body);
+      final text = decoded is Map && decoded['result'] is Map
+          ? (decoded['result'] as Map)['text']
+          : null;
+      final transcript = text is String ? text.trim() : '';
+      if (transcript.isEmpty) {
+        throw const SpeechException('没有听清，请再说一次');
+      }
+      return transcript;
     } on SpeechException {
       rethrow;
     } catch (_) {
       throw const SpeechException('转写失败，请重试');
     }
-  }
-
-  Future<void> _submit(String requestId, List<int> audio) async {
-    final request = await _client.postUrl(_submitEndpoint);
-    request.headers
-      ..set('Content-Type', 'application/json')
-      ..set('X-Api-Key', _config.apiKey)
-      ..set('X-Api-Resource-Id', _config.asrResourceId)
-      ..set('X-Api-Request-Id', requestId);
-    request.add(
-      utf8.encode(
-        jsonEncode({
-          'audio': {'format': 'm4a', 'data': base64Encode(audio)},
-          'request': {'model_name': 'bigmodel'},
-        }),
-      ),
-    );
-    final response = await request.close();
-    final ok = response.statusCode == HttpStatus.ok;
-    await response.drain<void>();
-    if (!ok) throw const SpeechException('转写失败，请重试');
-  }
-
-  /// Returns the transcript once the job is done, or null while it is still
-  /// running. A failed job is reported rather than polled forever.
-  Future<String?> _query(String requestId) async {
-    final request = await _client.postUrl(_queryEndpoint);
-    request.headers
-      ..set('Content-Type', 'application/json')
-      ..set('X-Api-Key', _config.apiKey)
-      ..set('X-Api-Resource-Id', _config.asrResourceId)
-      ..set('X-Api-Request-Id', requestId);
-    request.add(utf8.encode('{}'));
-    final response = await request.close();
-    if (response.statusCode != HttpStatus.ok) {
-      await response.drain<void>();
-      throw const SpeechException('转写失败，请重试');
-    }
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(await utf8.decodeStream(response));
-    } catch (_) {
-      throw const SpeechException('转写失败，请重试');
-    }
-    if (decoded is! Map) throw const SpeechException('转写失败，请重试');
-    final result = decoded['result'];
-    if (result is Map) {
-      final text = result['text'];
-      if (text is String && text.trim().isNotEmpty) return text.trim();
-    }
-    final error = decoded['error'];
-    if (error != null) throw const SpeechException('转写失败，请重试');
-    return null;
   }
 }

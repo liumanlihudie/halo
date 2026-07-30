@@ -149,25 +149,27 @@ void main() {
 
   group('transcription', () {
     late HttpServer asrServer;
-    late List<String> paths;
-    late List<Map<String, Object?>> replies;
+    late String statusHeader;
+    late Map<String, Object?> reply;
+    late List<Map<String, Object?>> asrBodies;
+    late List<HttpHeaders> asrHeaders;
 
     setUp(() async {
-      paths = [];
-      replies = [
-        {'result': null},
-        {
-          'result': {'text': '这是我说的话'},
-        },
-      ];
+      statusHeader = '20000000';
+      asrBodies = [];
+      asrHeaders = [];
+      reply = {
+        'result': {'text': '这是我说的话'},
+      };
       asrServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       unawaited(() async {
         await for (final request in asrServer) {
-          paths.add(request.uri.path);
-          await utf8.decodeStream(request);
-          final reply = request.uri.path == '/submit'
-              ? <String, Object?>{'ok': true}
-              : replies.removeAt(0);
+          asrHeaders.add(request.headers);
+          asrBodies.add(
+            jsonDecode(await utf8.decodeStream(request))
+                as Map<String, Object?>,
+          );
+          request.response.headers.set('x-api-status-code', statusHeader);
           request.response.add(utf8.encode(jsonEncode(reply)));
           await request.response.close();
         }
@@ -179,44 +181,32 @@ void main() {
     VolcanoSpeechTranscriber transcriber() => VolcanoSpeechTranscriber(
       config: const VolcanoSpeechConfig(apiKey: 'test-key-never-real'),
       newRequestId: () => 'asr-1',
-      submitEndpointOverride: Uri.parse(
-        'http://127.0.0.1:${asrServer.port}/submit',
+      endpointOverride: Uri.parse(
+        'http://127.0.0.1:${asrServer.port}/recognize/flash',
       ),
-      queryEndpointOverride: Uri.parse(
-        'http://127.0.0.1:${asrServer.port}/query',
-      ),
-      pollInterval: Duration.zero,
     );
 
-    test('submits the recording then polls until the text is ready', () async {
+    test('sends the recording and returns the transcript', () async {
       final recording = File('${directory.path}/note.m4a')
         ..writeAsBytesSync([9, 9, 9]);
 
       final text = await transcriber().transcribe(recording.path);
 
       expect(text, '这是我说的话');
-      expect(paths, ['/submit', '/query', '/query']);
-    });
-
-    test('a missing recording is reported, not silently empty', () async {
-      await expectLater(
-        transcriber().transcribe('${directory.path}/gone.m4a'),
-        throwsA(
-          isA<SpeechException>().having(
-            (error) => error.safeMessage,
-            'safeMessage',
-            '录音文件不存在',
-          ),
-        ),
+      final sent = asrBodies.single;
+      expect((sent['audio']! as Map)['data'], base64Encode([9, 9, 9]));
+      expect((sent['request']! as Map)['model_name'], 'bigmodel');
+      expect((sent['request']! as Map)['enable_punc'], isTrue);
+      expect(
+        asrHeaders.single.value('X-Api-Resource-Id'),
+        'volc.bigasr.auc_turbo',
       );
+      // The flash endpoint refuses a request without the terminal marker.
+      expect(asrHeaders.single.value('X-Api-Sequence'), '-1');
     });
 
-    test('a failed job stops polling and says so', () async {
-      replies = [
-        {
-          'error': {'code': 500},
-        },
-      ];
+    test('a rejected request is a failure even when HTTP says 200', () async {
+      statusHeader = '45000001';
       final recording = File('${directory.path}/bad.m4a')
         ..writeAsBytesSync([1]);
 
@@ -227,6 +217,38 @@ void main() {
             (error) => error.safeMessage,
             'safeMessage',
             '转写失败，请重试',
+          ),
+        ),
+      );
+    });
+
+    test('silence is reported as not heard, not as a failure', () async {
+      reply = {
+        'result': {'text': '   '},
+      };
+      final recording = File('${directory.path}/quiet.m4a')
+        ..writeAsBytesSync([1]);
+
+      await expectLater(
+        transcriber().transcribe(recording.path),
+        throwsA(
+          isA<SpeechException>().having(
+            (error) => error.safeMessage,
+            'safeMessage',
+            '没有听清，请再说一次',
+          ),
+        ),
+      );
+    });
+
+    test('a missing recording is reported, not silently empty', () async {
+      await expectLater(
+        transcriber().transcribe('${directory.path}/gone.m4a'),
+        throwsA(
+          isA<SpeechException>().having(
+            (error) => error.safeMessage,
+            'safeMessage',
+            '录音文件不存在',
           ),
         ),
       );

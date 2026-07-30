@@ -39,16 +39,28 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
   final Directory _audioDirectory;
   final Random _random;
 
-  /// Transcription runs on the device; only synthesis needs the vendor key.
+  /// 豆包 flash recognition, falling back to the device when it cannot run.
   ///
-  /// The vendor's recording-recognition contract was never verified against the
-  /// real service and failed with nothing to debug, so speech-to-text uses
-  /// Apple's on-device recogniser: no key, works offline, and the recording
-  /// never leaves the phone. Synthesis still goes to 豆包, so every expert keeps
-  /// its own voice.
+  /// The vendor path uses the contract proven in the owner's own project. If no
+  /// key is configured — or the service refuses — Apple's on-device recogniser
+  /// answers instead, so a voice message is never lost to a missing key.
   @override
-  Future<String> transcribe(String recordingPath) =>
-      _transcriber.transcribe(recordingPath);
+  Future<String> transcribe(String recordingPath) async {
+    final config = await _config();
+    if (config != null) {
+      try {
+        return await VolcanoSpeechTranscriber(
+          config: config,
+          newRequestId: _newRequestId,
+        ).transcribe(recordingPath);
+      } on SpeechException catch (error) {
+        // "没有听清" is a real answer about the audio, not a service problem:
+        // falling back would only ask a second engine the same question.
+        if (error.safeMessage.contains('没有听清')) rethrow;
+      }
+    }
+    return _transcriber.transcribe(recordingPath);
+  }
 
   @override
   Future<String?> synthesize(String text, {required String messageId}) async {
