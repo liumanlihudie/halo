@@ -159,7 +159,14 @@ GoRouter createAppRouter({
         path: '/call/voice/:expertId',
         builder: (context, state) {
           final expertId = state.pathParameters['expertId']!;
-          final expert = _executableExperts.singleChatById(expertId);
+          // The entry may pass an installed profile id ('general') rather than
+          // the canonical expert id, so resolve it the way chat does.
+          final canonicalId =
+              _executableExperts
+                  .installedIdentityForProfileId(expertId)
+                  ?.canonicalExpertId ??
+              expertId;
+          final expert = _executableExperts.singleChatById(canonicalId);
           Widget buildPage(AppDependencies? current) => VoiceCallPage(
             key: ValueKey(current),
             expertName: expert?.profile.displayName ?? expertId,

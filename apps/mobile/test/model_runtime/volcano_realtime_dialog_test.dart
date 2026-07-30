@@ -142,7 +142,7 @@ void main() {
         isA<RealtimeDialogException>().having(
           (error) => error.safeMessage,
           'safeMessage',
-          '无法接通语音通话，请重试',
+          '网络不可用，无法接通通话',
         ),
       ),
     );

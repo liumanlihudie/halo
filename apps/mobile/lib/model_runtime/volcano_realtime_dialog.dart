@@ -110,6 +110,14 @@ final class VolcanoRealtimeDialog {
           'X-Api-Connect-Id': _newId(),
         },
       );
+    } on WebSocketException catch (_) {
+      await events.close();
+      // The handshake reached the service and was refused: the credential or
+      // the resource is wrong, and retrying changes nothing.
+      throw const RealtimeDialogException('语音通话被拒绝，请检查语音 Key');
+    } on SocketException catch (_) {
+      await events.close();
+      throw const RealtimeDialogException('网络不可用，无法接通通话');
     } catch (_) {
       await events.close();
       throw const RealtimeDialogException('无法接通语音通话，请重试');

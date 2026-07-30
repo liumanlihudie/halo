@@ -334,6 +334,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
           _attach(_attachmentService.pickImage, ChatMessageKind.userImage),
       onPickFile: () =>
           _attach(_attachmentService.pickFile, ChatMessageKind.file),
+      expertId: _conversation.expertId,
     );
   }
 
@@ -1344,6 +1345,7 @@ void _showAttachmentSheetFor(
   required Future<void> Function() onTakePhoto,
   required Future<void> Function() onPickImage,
   required Future<void> Function() onPickFile,
+  required String expertId,
 }) {
   const abilities = <(String, String)>[
     ('ph ph-phone', '端到端语音通话'),
@@ -1355,7 +1357,16 @@ void _showAttachmentSheetFor(
     ('ph ph-link', '网页'),
     ('ph ph-microphone', '录音'),
   ];
-  const wired = {'拍照', '图片', '文件'};
+  // 录音 lives on the composer's own hold-to-talk button now, so listing it
+  // here would be a second door to the same room.
+  const wired = {'拍照', '图片', '文件', '端到端语音通话'};
+  const hints = {
+    '拍照': '本地保存',
+    '图片': '本地保存',
+    '文件': '本地保存',
+    '端到端语音通话': '实时对话',
+    '录音': '用输入框的麦克风',
+  };
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -1435,7 +1446,7 @@ void _showAttachmentSheetFor(
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              wired.contains(ability.$2) ? '本地保存' : '暂不可用',
+                              hints[ability.$2] ?? '暂不可用',
                               style: const TextStyle(
                                 fontSize: 7,
                                 color: HaloColors.muted,

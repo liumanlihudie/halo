@@ -139,7 +139,7 @@ void main() {
     await call.start(systemRole: '你是助理。', botName: '助理');
 
     expect(call.status, VoiceCallStatus.failed);
-    expect(call.failure, '无法接通语音通话，请重试');
+    expect(call.failure, '网络不可用，无法接通通话');
     expect(microphone.started, isFalse);
   });
 
