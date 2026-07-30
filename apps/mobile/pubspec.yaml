@@ -45,6 +45,8 @@ dependencies:
   gpt_markdown: ^1.1.4
   image_picker: ^1.2.1
   file_selector: ^1.0.4
+  share_plus: ^12.0.1
+  gal: ^2.3.2
 
 dev_dependencies:
   flutter_test:

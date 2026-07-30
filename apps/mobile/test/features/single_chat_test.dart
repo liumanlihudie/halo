@@ -5,11 +5,49 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/features/single_chat/chat_details_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
+import 'package:halo_mobile/features/single_chat/message_actions_service.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
 import 'package:halo_mobile/foundation/design_system/halo_theme.dart';
 import 'package:halo_mobile/foundation/design_system/halo_wave_keys_indicator.dart';
 
 void main() {
+  testWidgets('long-pressing an agent reply offers copy and share', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: HaloTheme.light(),
+        home: SingleChatPage(
+          conversationId: 'general-assistant',
+          repository: FixtureChatMessageRepository(
+            commandOutbox: InMemorySingleChatCommandOutbox(),
+            includeRichHistory: true,
+          ),
+          messageActions: MessageActionsService(
+            copyToClipboard: (text) async => copied.add(text),
+            shareText: (_) async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final agentText = find.textContaining('竞品分析').first;
+    await tester.longPress(agentText);
+    await tester.pumpAndSettle();
+
+    expect(find.text('复制'), findsOneWidget);
+    expect(find.text('分享'), findsOneWidget);
+
+    // Copy is the quiet action: it confirms with a snackbar.
+    await tester.tap(find.text('复制'));
+    await tester.pumpAndSettle();
+    expect(copied, hasLength(1));
+    expect(copied.single, contains('竞品分析'));
+    expect(find.text('复制成功'), findsOneWidget);
+  });
+
   testWidgets(
     'single chat projects rich repository history and marks media unavailable',
     (tester) async {

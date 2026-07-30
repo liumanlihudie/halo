@@ -12,6 +12,7 @@ import 'package:halo_mobile/foundation/design_system/halo_wave_keys_indicator.da
 
 import 'attachments/chat_attachment_service.dart';
 import 'chat_message_repository.dart';
+import 'message_actions_service.dart';
 import 'single_chat_controller.dart';
 
 class SingleChatPage extends StatefulWidget {
@@ -22,6 +23,7 @@ class SingleChatPage extends StatefulWidget {
     this.repository,
     this.repositoryLoader,
     this.modelRouting,
+    this.messageActions,
     this.verifier = const RejectingVerifierReceiptRegistry(),
     this.allowEphemeralRepositoryForTesting = false,
     super.key,
@@ -36,6 +38,9 @@ class SingleChatPage extends StatefulWidget {
   /// Supplies the model actually bound to this expert. Absent in prototype
   /// routes, where the seeded label is the only thing available.
   final ModelRoutingController? modelRouting;
+
+  /// Injectable so tests exercise the long-press menu without system channels.
+  final MessageActionsService? messageActions;
   final TrustedVerifierReceiptRegistry verifier;
   final bool allowEphemeralRepositoryForTesting;
 
@@ -48,6 +53,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
   final _scrollController = ScrollController();
   final _composerFocus = FocusNode();
   final _attachmentService = ChatAttachmentService();
+  late final _messageActions = widget.messageActions ?? MessageActionsService();
   late SingleChatConversationProjection _conversation;
   SingleChatController? _chatController;
   bool _dependencyLoadFailed = false;
@@ -315,6 +321,98 @@ class _SingleChatPageState extends State<SingleChatPage> {
     );
   }
 
+  /// Long-press menu, resolved from what the message actually carries.
+  void _showMessageActions(ChatMessageProjection message) {
+    final text = message.text?.trim() ?? '';
+    final imagePath = message.kind == ChatMessageKind.userImage
+        ? message.imageUrl
+        : null;
+    final entries = <(String, String, Future<void> Function())>[
+      if (text.isNotEmpty) ...[
+        ('ph ph-copy', '复制', () => _messageActions.copyText(text)),
+        ('ph ph-share-network', '分享', () => _messageActions.shareText(text)),
+      ],
+      if (imagePath != null) ...[
+        (
+          'ph ph-download-simple',
+          '保存到相册',
+          () => _messageActions.saveImageToGallery(imagePath),
+        ),
+        (
+          'ph ph-share-network',
+          '分享图片',
+          () => _messageActions.shareFile(imagePath),
+        ),
+      ],
+    ];
+    if (entries.isEmpty) return;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => Container(
+        padding: const EdgeInsets.fromLTRB(15, 9, 15, 24),
+        decoration: const BoxDecoration(
+          color: HaloColors.soft,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(23)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 38,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 9),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFC9CCD2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              for (final entry in entries)
+                Material(
+                  color: Colors.transparent,
+                  child: ListTile(
+                    leading: Icon(
+                      HaloIcon.requirePrototypeClass(entry.$1),
+                      size: 21,
+                      color: HaloColors.ink,
+                    ),
+                    title: Text(entry.$2, style: HaloTextStyles.body),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      unawaited(_runMessageAction(entry.$2, entry.$3));
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _runMessageAction(
+    String label,
+    Future<void> Function() action,
+  ) async {
+    try {
+      await action();
+      if (!mounted) return;
+      // The share sheet is its own confirmation; only quiet actions confirm.
+      if (label == '复制' || label == '保存到相册') {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$label成功')));
+      }
+    } on MessageActionException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.safeMessage)));
+    }
+  }
+
   void _send() {
     final text = _textController.text;
     if (text.trim().isEmpty) {
@@ -374,6 +472,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
               message: message,
               conversation: _conversation,
               modelLabel: _modelLabel,
+              onLongPress: _showMessageActions,
             ),
           if (state.status == SingleChatRunStatus.running)
             _AgentBubble(
@@ -415,14 +514,31 @@ class _ProjectedMessage extends StatelessWidget {
     required this.message,
     required this.conversation,
     this.modelLabel,
+    this.onLongPress,
   });
 
   final ChatMessageProjection message;
   final SingleChatConversationProjection conversation;
   final String? modelLabel;
+  final void Function(ChatMessageProjection message)? onLongPress;
 
   @override
   Widget build(BuildContext context) {
+    final bubble = _buildBubble(context);
+    // Progress and system notices have nothing to copy, save or share.
+    final actionable = switch (message.kind) {
+      ChatMessageKind.systemNotice || ChatMessageKind.progress => false,
+      _ => onLongPress != null,
+    };
+    if (!actionable) return bubble;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () => onLongPress!(message),
+      child: bubble,
+    );
+  }
+
+  Widget _buildBubble(BuildContext context) {
     return switch (message.kind) {
       ChatMessageKind.systemNotice => _SystemNotice(message.text ?? ''),
       ChatMessageKind.userText => _MineBubble(message.text ?? ''),
