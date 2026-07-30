@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/settings/app_lock.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
@@ -16,12 +17,16 @@ typedef AppVersionLoader = Future<PackageInfo> Function();
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
     this.modelRouting,
+    this.appLock,
     this.localData,
     this.versionLoader,
     super.key,
   });
 
   final ModelRoutingController? modelRouting;
+
+  /// Absent when the platform biometric prompt is unavailable.
+  final AppLockController? appLock;
 
   /// Absent when storage failed to boot; the counters then show `—`.
   final LocalDataMaintenancePort? localData;
@@ -45,6 +50,7 @@ class _SettingsPageState extends State<SettingsPage> {
       routing.addListener(_refresh);
       routing.load().catchError((Object _) {});
     }
+    widget.appLock?.addListener(_refresh);
     unawaited(_loadSnapshot());
     unawaited(_loadVersion());
   }
@@ -73,12 +79,45 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
+    widget.appLock?.removeListener(_refresh);
     widget.modelRouting?.removeListener(_refresh);
     super.dispose();
   }
 
   void _refresh() {
     if (mounted) setState(() {});
+  }
+
+  /// The copy never implies encryption: the lock gates the UI, not the files.
+  String get _appLockDetail {
+    final lock = widget.appLock;
+    if (lock == null) return '本机不可用';
+    if (lock.authenticating) return '正在验证…';
+    return switch (lock.availability) {
+      AppLockAvailability.unavailable => '请先在系统设置里启用 Face ID 或密码',
+      AppLockAvailability.unknown => '本机无法验证 Face ID',
+      AppLockAvailability.available =>
+        lock.enabled ? '打开 App 时需要验证 · 不加密本机数据' : '关闭 · 打开 App 时不验证',
+    };
+  }
+
+  bool get _appLockSwitchEnabled {
+    final lock = widget.appLock;
+    if (lock == null || lock.authenticating) return false;
+    // A user who already turned it on must always be able to turn it off, even
+    // if the device later reports the sensor as unavailable.
+    return lock.enabled || lock.availability == AppLockAvailability.available;
+  }
+
+  Future<void> _toggleAppLock(bool value) async {
+    final lock = widget.appLock;
+    if (lock == null) return;
+    final changed = await lock.setEnabled(value);
+    if (!changed && mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('验证未通过，设置未更改')));
+    }
   }
 
   String get _defaultModelDetail {
@@ -147,6 +186,20 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          const HaloSectionLabel('隐私保护'),
+          HaloSettingsGroup(
+            children: [
+              HaloSettingsRow(
+                label: 'Face ID 保护',
+                detail: _appLockDetail,
+                prototypeIconClass: 'ph ph-scan',
+                trailing: Switch.adaptive(
+                  value: widget.appLock?.enabled ?? false,
+                  onChanged: _appLockSwitchEnabled ? _toggleAppLock : null,
+                ),
+              ),
+            ],
+          ),
           const HaloSectionLabel('规划中'),
           const HaloSettingsGroup(
             children: [
@@ -159,11 +212,6 @@ class _SettingsPageState extends State<SettingsPage> {
                 label: '记忆与个性化',
                 detail: '规划中',
                 prototypeIconClass: 'ph ph-brain',
-              ),
-              HaloSettingsRow(
-                label: 'Face ID 保护',
-                detail: '规划中',
-                prototypeIconClass: 'ph ph-scan',
               ),
             ],
           ),

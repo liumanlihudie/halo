@@ -21,6 +21,7 @@ import 'package:halo_mobile/features/single_chat/chat_details_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_history_page.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
 import 'package:halo_mobile/features/settings/settings_page.dart';
+import 'package:halo_mobile/features/settings/app_lock.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/local_data_page.dart';
 import 'package:halo_mobile/features/settings/model_providers_page.dart';
@@ -32,6 +33,7 @@ GoRouter createAppRouter({
   AppDependencies? dependencies,
   AppDependencies Function()? dependencyResolver,
   Listenable? dependencyListenable,
+  AppLockController? Function()? appLock,
 }) {
   final fixedDependencies = dependencies;
   AppDependencies? resolveDependencies() =>
@@ -56,6 +58,7 @@ GoRouter createAppRouter({
                   Widget buildPage(AppDependencies? current) => SettingsPage(
                     key: ValueKey(current),
                     modelRouting: current?.modelRouting,
+                    appLock: appLock?.call(),
                     localData: current?.localData,
                   );
                   final listenable = dependencyListenable;

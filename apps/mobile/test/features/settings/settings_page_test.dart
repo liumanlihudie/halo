@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:halo_mobile/features/settings/app_lock.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
@@ -30,6 +31,7 @@ void main() {
     ModelRoutingController? routing,
     LocalDataMaintenancePort? localData,
     AppVersionLoader? versionLoader,
+    AppLockController? appLock,
   }) async {
     tester.view.physicalSize = const Size(430, 1800);
     tester.view.devicePixelRatio = 1;
@@ -40,6 +42,7 @@ void main() {
           modelRouting: routing,
           localData: localData,
           versionLoader: versionLoader,
+          appLock: appLock,
         ),
       ),
     );
@@ -99,6 +102,56 @@ void main() {
     await pumpPage(tester, localData: _StubLocalData());
 
     expect(find.text('12'), findsOneWidget);
+  });
+
+  testWidgets('Face ID is off by default and never claims encryption', (
+    tester,
+  ) async {
+    final lock = AppLockController(
+      authenticator: _Authenticator(),
+      preferences: _LockPreferences(),
+    );
+    await lock.load();
+
+    await pumpPage(tester, appLock: lock);
+
+    expect(find.text('Face ID 保护'), findsOneWidget);
+    expect(find.text('关闭 · 打开 App 时不验证'), findsOneWidget);
+    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+  });
+
+  testWidgets('an unavailable sensor disables the Face ID switch', (
+    tester,
+  ) async {
+    final lock = AppLockController(
+      authenticator: _Authenticator(
+        stubAvailability: AppLockAvailability.unavailable,
+      ),
+      preferences: _LockPreferences(),
+    );
+    await lock.load();
+
+    await pumpPage(tester, appLock: lock);
+
+    expect(find.text('请先在系统设置里启用 Face ID 或密码'), findsOneWidget);
+    expect(tester.widget<Switch>(find.byType(Switch)).onChanged, isNull);
+  });
+
+  testWidgets('a failed prompt leaves the switch off and says so', (
+    tester,
+  ) async {
+    final lock = AppLockController(
+      authenticator: _Authenticator(passes: false),
+      preferences: _LockPreferences(),
+    );
+    await lock.load();
+    await pumpPage(tester, appLock: lock);
+
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    expect(lock.enabled, isFalse);
+    expect(find.text('验证未通过，设置未更改'), findsOneWidget);
   });
 
   testWidgets('unset default model is labeled 未设置', (tester) async {
@@ -177,4 +230,30 @@ class _StubLocalData implements LocalDataMaintenancePort {
   @override
   Future<void> eraseLocalData() =>
       throw UnimplementedError('settings page never erases');
+}
+
+class _Authenticator implements AppLockAuthenticator {
+  _Authenticator({
+    this.passes = true,
+    this.stubAvailability = AppLockAvailability.available,
+  });
+
+  final bool passes;
+  final AppLockAvailability stubAvailability;
+
+  @override
+  Future<AppLockAvailability> availability() async => stubAvailability;
+
+  @override
+  Future<bool> authenticate(String reason) async => passes;
+}
+
+class _LockPreferences implements AppLockPreferences {
+  bool enabled = false;
+
+  @override
+  Future<bool> loadEnabled() async => enabled;
+
+  @override
+  Future<void> saveEnabled(bool value) async => enabled = value;
 }
