@@ -12,6 +12,44 @@ void main() {
     expiresAt: DateTime.utc(2099),
   );
 
+  test(
+    'the documented ToAPIs response shape parses and keeps text models',
+    () async {
+      // Exact shape from docs/大模型toapis对接.md + docs.toapis.com list-models:
+      // extra top-level `success`, and per-model `created` / `owned_by` /
+      // `supported_endpoint_types`. Text models may declare only `responses`.
+      final adapter =
+          FakeUnaryHttpAdapter(
+            retainSafeHeaderValuesForTesting: true,
+            retainRequestContentForTesting: true,
+          )..enqueueRaw(
+            statusCode: 200,
+            bytes: utf8.encode(
+              '{"success":true,"object":"list","data":['
+              '{"id":"gpt-5.6-terra","object":"model","created":1719878400,'
+              '"owned_by":"openai",'
+              '"supported_endpoint_types":["chat_completions","responses"]},'
+              '{"id":"responses-only-model","object":"model","created":1719878400,'
+              '"owned_by":"openai","supported_endpoint_types":["responses"]},'
+              '{"id":"gpt-image-2","object":"model","created":1719878400,'
+              '"owned_by":"openai","supported_endpoint_types":["images"]}'
+              ']}',
+            ),
+          );
+      final transport = _transport(adapter);
+
+      final result = await transport.discoverModels(
+        _request(config: ProviderConfig.toApis(), credential: credential),
+      );
+
+      expect(result.models.map((model) => model.modelId), [
+        'gpt-5.6-terra',
+        'responses-only-model',
+      ]);
+      expect(adapter.records.single.path, '/v1/models');
+    },
+  );
+
   test('a declared non-text model is excluded from the catalog', () async {
     final adapter =
         FakeUnaryHttpAdapter(

@@ -32,6 +32,9 @@ final class ProductionProviderInspectionTransport
     'completions',
     'messages',
     'generate_content',
+    // ToAPIs 文字模型可只声明 Responses API（见 docs/大模型toapis对接.md）；
+    // 漏掉它会把纯 responses 模型当成非文字丢弃，目录为空时保存整体被拒。
+    'responses',
     'text',
   };
 
