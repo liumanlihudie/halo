@@ -9,7 +9,7 @@ void main() {
     '/group/new': '创建 AI 群聊',
     '/circle/post-1': '动态详情',
     '/media/image': '图片预览',
-    '/call/voice/general-assistant': '端到端语音通话',
+    '/call/voice/general-assistant': '尚未配置语音服务',
     '/call/video/general-assistant': 'Vidu 视频通话',
   };
 

@@ -16,6 +16,7 @@ import 'package:halo_mobile/features/group_chat/group_context_page.dart';
 import 'package:halo_mobile/features/group_chat/group_info_page.dart';
 import 'package:halo_mobile/features/group_chat/new_group_page.dart';
 import 'package:halo_mobile/features/media/call_demo_page.dart';
+import 'package:halo_mobile/features/media/voice_call_page.dart';
 import 'package:halo_mobile/features/media/media_preview_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_details_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_history_page.dart';
@@ -156,10 +157,25 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/call/voice/:expertId',
-        builder: (context, state) => CallDemoPage(
-          expertId: state.pathParameters['expertId']!,
-          video: false,
-        ),
+        builder: (context, state) {
+          final expertId = state.pathParameters['expertId']!;
+          final expert = _executableExperts.singleChatById(expertId);
+          Widget buildPage(AppDependencies? current) => VoiceCallPage(
+            key: ValueKey(current),
+            expertName: expert?.profile.displayName ?? expertId,
+            // The expert's own prompt travels with the call, so the caller
+            // reaches that expert instead of the vendor's default assistant.
+            systemRole:
+                expert?.profile.promptPackage.render() ?? '你是一位助理，回答简短、如实。',
+            controller: current?.callFactory?.call(),
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/call/video/:expertId',

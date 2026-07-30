@@ -69,10 +69,8 @@ void main() {
     return VolcanoRealtimeDialog(
       apiKey: 'test-key-never-real',
       newId: () => 'id-${++ids}',
-      connect: (_, {headers}) => WebSocket.connect(
-        'ws://127.0.0.1:${server.port}',
-        headers: headers,
-      ),
+      connect: (_, {headers}) =>
+          WebSocket.connect('ws://127.0.0.1:${server.port}', headers: headers),
     );
   }
 
@@ -80,10 +78,7 @@ void main() {
     final call = dialog();
     addTearDown(call.stop);
 
-    await call.start(
-      systemRole: '你是产品经理，只谈范围、优先级和风险。',
-      botName: '产品经理',
-    );
+    await call.start(systemRole: '你是产品经理，只谈范围、优先级和风险。', botName: '产品经理');
 
     // Frame 2 is StartSession: it must carry this expert's persona, or every
     // expert would answer as the vendor's default assistant.

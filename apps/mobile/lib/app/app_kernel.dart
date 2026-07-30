@@ -9,6 +9,7 @@ import 'package:halo_mobile/features/settings/provider_settings_controller.dart'
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
+import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 
 @immutable
@@ -22,6 +23,7 @@ class AppDependencies {
     this.localData,
     this.serviceCredentials,
     this.speech,
+    this.callFactory,
     this.allowEphemeralChatRepositoryForTesting = false,
   });
 
@@ -41,6 +43,9 @@ class AppDependencies {
   /// Keys for services that have no model catalogue (Doubao speech, Doubao
   /// realtime audio, Vidu). Absent when storage failed to boot.
   final ServiceCredentialsController? serviceCredentials;
+
+  /// Opens one live audio call, or null when speech is not configured.
+  final VoiceCallController? Function()? callFactory;
 
   /// Absent when no speech credential is configured; voice messages then stay
   /// unavailable while text chat is unaffected.

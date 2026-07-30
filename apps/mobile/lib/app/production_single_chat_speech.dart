@@ -7,6 +7,7 @@ import 'package:halo_mobile/app/on_device_speech_transcriber.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
+import 'package:halo_mobile/model_runtime/volcano_realtime_dialog.dart';
 import 'package:halo_mobile/model_runtime/volcano_speech.dart';
 
 /// Turns the stored 豆包语音 credential into the speech capability single chat
@@ -81,6 +82,20 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
       // The words are already on screen; losing the audio is the lesser harm.
       return null;
     }
+  }
+
+  /// Opens a live call with the same stored credential.
+  ///
+  /// Returns null when no key is configured, so the call surface can say so
+  /// instead of dialling into nothing.
+  Future<VolcanoRealtimeDialog?> openCall() async {
+    final config = await _config();
+    if (config == null) return null;
+    return VolcanoRealtimeDialog(
+      apiKey: config.apiKey,
+      newId: _newRequestId,
+      sampleRate: config.sampleRate,
+    );
   }
 
   Future<VolcanoSpeechConfig?> _config() async {

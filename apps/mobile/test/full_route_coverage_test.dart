@@ -20,7 +20,7 @@ void main() {
     '/expert/general/data': '专家数据',
     '/circle': '专家动态',
     '/circle/post-1': '动态详情',
-    '/call/voice/general-assistant': '端到端语音通话',
+    '/call/voice/general-assistant': '尚未配置语音服务',
     '/call/video/general-assistant': 'Vidu 视频通话',
     '/media/image': '图片预览',
     '/settings': 'Halo 本地空间',

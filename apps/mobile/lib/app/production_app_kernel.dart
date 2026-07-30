@@ -11,6 +11,8 @@ import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
 import 'package:halo_mobile/app/production_single_chat_speech.dart';
+import 'package:halo_mobile/features/media/live_call_audio.dart';
+import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
@@ -185,6 +187,15 @@ final class ProductionAppKernelFactory {
         runtime: runtimeReloader,
         mutationCoordinator: mutationCoordinator,
       );
+      final speech = credentialPersistence == null
+          ? null
+          : ProductionSingleChatSpeech(
+              persistence: credentialPersistence,
+              secretResolver: KeychainSecretResolver(store: _credentials),
+              audioDirectory: Directory(
+                '${supportDirectory.path}${Platform.pathSeparator}voice',
+              ),
+            );
       return _ProductionAppKernel(
         dependencies: AppDependencies(
           singleChatPort: singleChatPort,
@@ -193,14 +204,15 @@ final class ProductionAppKernelFactory {
           modelRouting: modelRouting,
           groupChatPort: ProductionGroupChatPort(orchestrationKernel),
           serviceCredentials: serviceCredentials,
-          speech: credentialPersistence == null
+          speech: speech,
+          // Built per call, so a key saved in settings takes effect on the next
+          // call without restarting the app.
+          callFactory: speech == null
               ? null
-              : ProductionSingleChatSpeech(
-                  persistence: credentialPersistence,
-                  secretResolver: KeychainSecretResolver(store: _credentials),
-                  audioDirectory: Directory(
-                    '${supportDirectory.path}${Platform.pathSeparator}voice',
-                  ),
+              : () => VoiceCallController(
+                  openDialog: speech.openCall,
+                  microphone: DeviceCallMicrophone(),
+                  speaker: DeviceCallSpeaker(),
                 ),
           localData: ProductionLocalDataMaintenance(
             history: chatRepository as SingleChatHistoryMaintenance,
