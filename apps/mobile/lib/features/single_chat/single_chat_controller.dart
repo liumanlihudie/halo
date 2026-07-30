@@ -368,89 +368,12 @@ class SingleChatController extends ChangeNotifier {
         ],
         historyLoadFailed: reconciliation.failed,
       );
-      _recoverAbandonedCommands(loadedIds);
       notifyListeners();
     } catch (_) {
       if (!_disposed) {
         _state = _state.copyWith(historyLoadFailed: true);
         notifyListeners();
       }
-    }
-  }
-
-  /// Resurfaces pending commands that died without any terminal state.
-  ///
-  /// A pending command with no persisted answer and no live dispatch lease
-  /// has no process working on it anymore; leaving it pending silently drops
-  /// the user's message. The newest such command is armed as a retryable
-  /// failure (the user decides whether to re-dispatch — never automatic, so an
-  /// outcome-unknown upstream call is not silently re-billed); older ones are
-  /// terminally stopped so they cannot haunt the outbox forever.
-  void _recoverAbandonedCommands(Set<String> loadedMessageIds) {
-    if (_outboxReconciliationBlocked ||
-        _state.status == SingleChatRunStatus.running) {
-      return;
-    }
-    final List<SingleChatCommandRecord> abandoned;
-    try {
-      final nowEpochMs = _nowEpochMs();
-      abandoned = [
-        for (final command in repository.commandOutbox.pendingForConversation(
-          conversationId,
-        ))
-          if (!loadedMessageIds.contains('${command.commandId}:answer') &&
-              (!command.hasDispatchClaim ||
-                  (command.dispatchClaimExpiresAtEpochMs ?? 0) <= nowEpochMs))
-            command,
-      ];
-    } catch (_) {
-      return;
-    }
-    if (abandoned.isEmpty) {
-      return;
-    }
-    final armed = abandoned.removeLast();
-    for (final stale in abandoned) {
-      _stopAbandonedCommand(stale);
-    }
-    _lastText = armed.normalizedIntent;
-    _lastCommandId = armed.commandId;
-    _lastUserMessage = null;
-    _lastUserPersisted = loadedMessageIds.contains('${armed.commandId}:user');
-    _state = _state.copyWith(
-      status: SingleChatRunStatus.failed,
-      canRetry: true,
-    );
-  }
-
-  void _stopAbandonedCommand(SingleChatCommandRecord stale) {
-    try {
-      SingleChatDispatchClaim? claim;
-      if (stale.hasDispatchClaim) {
-        // The stale lease is expired; replacing it takes ownership so the
-        // terminal transition satisfies the outbox's ownership contract.
-        final nowEpochMs = _nowEpochMs();
-        claim = repository.commandOutbox.claimForDispatch(
-          conversationId: conversationId,
-          commandId: stale.commandId,
-          ownerId: _dispatchOwnerId,
-          nowEpochMs: nowEpochMs,
-          leaseExpiresAtEpochMs:
-              nowEpochMs + _dispatchClaimLease.inMilliseconds,
-        );
-        if (claim == null) {
-          return;
-        }
-      }
-      repository.commandOutbox.markTerminal(
-        conversationId,
-        stale.commandId,
-        SingleChatCommandStatus.stopped,
-        dispatchClaim: claim,
-      );
-    } catch (_) {
-      // Leaving it pending is the pre-existing behavior; recovery must never
-      // block conversation startup.
     }
   }
 
