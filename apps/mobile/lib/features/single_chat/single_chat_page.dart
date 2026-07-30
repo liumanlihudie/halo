@@ -27,6 +27,7 @@ class SingleChatPage extends StatefulWidget {
     this.modelRouting,
     this.messageActions,
     this.voiceRecorder,
+    this.speech,
     this.verifier = const RejectingVerifierReceiptRegistry(),
     this.allowEphemeralRepositoryForTesting = false,
     super.key,
@@ -35,6 +36,10 @@ class SingleChatPage extends StatefulWidget {
   final String conversationId;
   final String? expertId;
   final SingleChatPort? service;
+
+  /// Speech synthesis and transcription. Absent when no 豆包语音 key is stored,
+  /// which disables voice rather than failing a text conversation.
+  final SingleChatSpeech? speech;
   final ChatMessageRepository? repository;
   final FutureOr<ChatMessageRepository> Function()? repositoryLoader;
 
@@ -187,6 +192,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
         service: service ?? const _UnavailableSingleChatPort(),
         repository: resolvedRepository,
         commandIdFactory: _newCommandId,
+        speech: widget.speech,
         verifier: verifier,
       )..addListener(_onChatChanged);
       setState(() {

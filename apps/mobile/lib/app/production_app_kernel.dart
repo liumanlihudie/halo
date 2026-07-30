@@ -10,7 +10,9 @@ import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
+import 'package:halo_mobile/app/production_single_chat_speech.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
+import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/drift_chat_message_repository.dart';
 import 'package:halo_mobile/orchestration/sqlite_model_call_journal.dart';
@@ -132,6 +134,24 @@ final class ProductionAppKernelFactory {
           gateway: const ExpertOutputValidationGateway(),
         ),
       );
+      // Voice and video calls are optional, so a store that cannot record
+      // service credentials degrades to "unavailable" rather than failing app
+      // startup: the settings page already disables its fields and says so.
+      final credentialPersistence =
+          settingsStore is ServiceCredentialPersistence
+          ? settingsStore as ServiceCredentialPersistence
+          : null;
+      ServiceCredentialsController? serviceCredentials;
+      if (credentialPersistence != null) {
+        serviceCredentials = ServiceCredentialsController(
+          credentials: _credentials,
+          persistence: credentialPersistence,
+          // Shares the provider mutation FIFO: a credential write and a
+          // provider write must not interleave on the same Keychain service.
+          mutationCoordinator: mutationCoordinator,
+        );
+        await serviceCredentials.load();
+      }
       final experts = ExecutableExpertRegistry(
         gateway: const ExpertOutputValidationGateway(),
       );
@@ -172,6 +192,16 @@ final class ProductionAppKernelFactory {
           providerSettings: settings,
           modelRouting: modelRouting,
           groupChatPort: ProductionGroupChatPort(orchestrationKernel),
+          serviceCredentials: serviceCredentials,
+          speech: credentialPersistence == null
+              ? null
+              : ProductionSingleChatSpeech(
+                  persistence: credentialPersistence,
+                  secretResolver: KeychainSecretResolver(store: _credentials),
+                  audioDirectory: Directory(
+                    '${supportDirectory.path}${Platform.pathSeparator}voice',
+                  ),
+                ),
           localData: ProductionLocalDataMaintenance(
             history: chatRepository as SingleChatHistoryMaintenance,
             storageDirectory: () async => supportDirectory,

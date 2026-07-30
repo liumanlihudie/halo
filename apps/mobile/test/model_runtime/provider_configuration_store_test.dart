@@ -1144,6 +1144,102 @@ void main() {
     reopened.close();
   });
 
+  test(
+    'service credentials record a locator and displace the old one',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final store = SqliteProviderConfigurationStore.open(fixture.path);
+      addTearDown(store.close);
+
+      expect(await store.loadServiceCredentials(), isEmpty);
+
+      final first = SecretRef.parse(
+        'keychain://halo.provider/aaaaaaaa-bbbb-4ccc-8ddd-000000000001',
+      );
+      expect(
+        await store.putServiceCredential(
+          'doubao-speech',
+          first,
+          enabled: true,
+          configuredAt: DateTime.utc(2026, 7, 30, 12),
+        ),
+        // Nothing displaced on a first write.
+        isNull,
+      );
+
+      final stored = (await store.loadServiceCredentials()).single;
+      expect(stored.serviceId, 'doubao-speech');
+      expect(stored.secretRef.locator, first.locator);
+      expect(stored.enabled, isTrue);
+      // Never leaks the locator, which a log line might carry.
+      expect(stored.toString(), isNot(contains('keychain://')));
+
+      final second = SecretRef.parse(
+        'keychain://halo.provider/aaaaaaaa-bbbb-4ccc-8ddd-000000000002',
+      );
+      final displaced = await store.putServiceCredential(
+        'doubao-speech',
+        second,
+        enabled: true,
+        configuredAt: DateTime.utc(2026, 7, 30, 13),
+      );
+      // The caller is told which key it may now delete.
+      expect(displaced?.locator, first.locator);
+      expect(
+        (await store.loadServiceCredentials()).single.secretRef.locator,
+        second.locator,
+      );
+
+      // Re-saving the same locator must not ask the caller to delete it.
+      expect(
+        await store.putServiceCredential(
+          'doubao-speech',
+          second,
+          enabled: true,
+          configuredAt: DateTime.utc(2026, 7, 30, 14),
+        ),
+        isNull,
+      );
+
+      expect(
+        (await store.removeServiceCredential('doubao-speech'))?.locator,
+        second.locator,
+      );
+      expect(await store.loadServiceCredentials(), isEmpty);
+      expect(await store.removeServiceCredential('doubao-speech'), isNull);
+    },
+  );
+
+  test('service credentials survive a reopen and reject bad ids', () async {
+    final fixture = _DatabaseFixture.create();
+    final store = SqliteProviderConfigurationStore.open(fixture.path);
+    final ref = SecretRef.parse(
+      'keychain://halo.provider/aaaaaaaa-bbbb-4ccc-8ddd-000000000009',
+    );
+    await store.putServiceCredential(
+      'vidu',
+      ref,
+      enabled: true,
+      configuredAt: DateTime.utc(2026, 7, 30, 12),
+    );
+    await expectLater(
+      store.putServiceCredential(
+        'Vidu Video',
+        ref,
+        enabled: true,
+        configuredAt: DateTime.utc(2026, 7, 30, 12),
+      ),
+      throwsArgumentError,
+    );
+    await store.close();
+
+    final reopened = SqliteProviderConfigurationStore.open(fixture.path);
+    addTearDown(reopened.close);
+    final records = await reopened.loadServiceCredentials();
+    expect(records.single.serviceId, 'vidu');
+    expect(records.single.configuredAt.isUtc, isTrue);
+  });
+
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();
     final raw = sqlite3.open(fixture.path);

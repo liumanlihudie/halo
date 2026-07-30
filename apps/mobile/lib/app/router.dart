@@ -27,6 +27,7 @@ import 'package:halo_mobile/features/settings/local_data_page.dart';
 import 'package:halo_mobile/features/settings/model_providers_page.dart';
 import 'package:halo_mobile/features/settings/provider_detail_page.dart';
 import 'package:halo_mobile/features/settings/self_hosted_gateway_page.dart';
+import 'package:halo_mobile/features/settings/service_credentials_page.dart';
 
 GoRouter createAppRouter({
   String initialLocation = '/conversations',
@@ -88,6 +89,7 @@ GoRouter createAppRouter({
             service: current?.singleChatPort,
             repository: current?.chatRepository,
             modelRouting: current?.modelRouting,
+            speech: current?.speech,
             allowEphemeralRepositoryForTesting:
                 current?.allowEphemeralChatRepositoryForTesting ?? false,
           );
@@ -237,6 +239,21 @@ GoRouter createAppRouter({
       GoRoute(
         path: '/settings/gateway',
         builder: (context, state) => const SelfHostedGatewayPage(),
+      ),
+      GoRoute(
+        path: '/settings/service-keys',
+        builder: (context, state) {
+          Widget buildPage(AppDependencies? current) => ServiceCredentialsPage(
+            key: ValueKey(current),
+            controller: current?.serviceCredentials,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/settings/local-data',

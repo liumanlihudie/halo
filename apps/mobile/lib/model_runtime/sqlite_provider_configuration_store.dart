@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
@@ -8,7 +9,10 @@ import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 final class SqliteProviderConfigurationStore
-    implements ProviderConfigurationStore, ProviderModelCatalogStore {
+    implements
+        ProviderConfigurationStore,
+        ProviderModelCatalogStore,
+        ServiceCredentialPersistence {
   SqliteProviderConfigurationStore._(this._database) {
     _initialize();
   }
@@ -2251,6 +2255,124 @@ final class SqliteProviderConfigurationStore
 
   @override
   Future<ModelRef?> loadGlobalDefaultModel() => _loadBinding('global', '');
+
+  /// Records that [serviceId] is configured, pointing at [secretRef].
+  ///
+  /// Replaces any previous row and **returns the locator it displaced** so the
+  /// caller can delete that Keychain item. Returning it rather than deleting it
+  /// here keeps the direction of travel single: this store never touches key
+  /// material, it only records where the material lives.
+  @override
+  Future<SecretRef?> putServiceCredential(
+    String serviceId,
+    SecretRef secretRef, {
+    required bool enabled,
+    required DateTime configuredAt,
+  }) => Future.sync(() {
+    _requireOpen();
+    final id = _requiredServiceId(serviceId);
+    _validatePersistableRef(secretRef);
+    final configuredAtMs = configuredAt.toUtc().millisecondsSinceEpoch;
+    if (configuredAtMs <= 0) {
+      throw ArgumentError.value(configuredAt, 'configuredAt');
+    }
+    _database.execute('BEGIN IMMEDIATE');
+    try {
+      final previous = _database.select(
+        'SELECT secret_ref FROM service_credentials WHERE service_id = ?',
+        [id],
+      );
+      final displaced = previous.isEmpty
+          ? null
+          : SecretRef.parse(previous.single['secret_ref']! as String);
+      _database.execute(
+        'INSERT INTO service_credentials ('
+        '  service_id, secret_ref, enabled, configured_at_ms'
+        ') VALUES (?, ?, ?, ?) '
+        'ON CONFLICT(service_id) DO UPDATE SET '
+        '  secret_ref = excluded.secret_ref, '
+        '  enabled = excluded.enabled, '
+        '  configured_at_ms = excluded.configured_at_ms',
+        [id, secretRef.locator.toString(), enabled ? 1 : 0, configuredAtMs],
+      );
+      _database.execute('COMMIT');
+      // Only reported when it actually changed: re-saving under the same
+      // locator must not make the caller delete the key it just wrote.
+      return displaced?.locator == secretRef.locator ? null : displaced;
+    } catch (_) {
+      _database.execute('ROLLBACK');
+      rethrow;
+    }
+  });
+
+  /// Forgets [serviceId] and returns its locator so the caller can delete the
+  /// Keychain item. Null when nothing was configured.
+  @override
+  Future<SecretRef?> removeServiceCredential(String serviceId) =>
+      Future.sync(() {
+        _requireOpen();
+        final id = _requiredServiceId(serviceId);
+        _database.execute('BEGIN IMMEDIATE');
+        try {
+          final rows = _database.select(
+            'SELECT secret_ref FROM service_credentials WHERE service_id = ?',
+            [id],
+          );
+          _database.execute(
+            'DELETE FROM service_credentials WHERE service_id = ?',
+            [id],
+          );
+          _database.execute('COMMIT');
+          return rows.isEmpty
+              ? null
+              : SecretRef.parse(rows.single['secret_ref']! as String);
+        } catch (_) {
+          _database.execute('ROLLBACK');
+          rethrow;
+        }
+      });
+
+  Future<void> setServiceCredentialEnabled(
+    String serviceId, {
+    required bool enabled,
+  }) => Future.sync(() {
+    _requireOpen();
+    _database.execute(
+      'UPDATE service_credentials SET enabled = ? WHERE service_id = ?',
+      [enabled ? 1 : 0, _requiredServiceId(serviceId)],
+    );
+  });
+
+  @override
+  Future<List<PersistedServiceCredential>> loadServiceCredentials() =>
+      Future.sync(() {
+        _requireOpen();
+        final rows = _database.select(
+          'SELECT service_id, secret_ref, enabled, configured_at_ms '
+          'FROM service_credentials ORDER BY service_id',
+        );
+        return List<PersistedServiceCredential>.unmodifiable([
+          for (final row in rows)
+            PersistedServiceCredential(
+              serviceId: _requiredServiceId(row['service_id']! as String),
+              secretRef: SecretRef.parse(row['secret_ref']! as String),
+              enabled: _decodeSqliteBoolean(row['enabled']),
+              configuredAt: DateTime.fromMillisecondsSinceEpoch(
+                row['configured_at_ms']! as int,
+                isUtc: true,
+              ),
+            ),
+        ]);
+      });
+
+  static final RegExp _serviceIdPattern = RegExp(r'^[a-z0-9-]+$');
+
+  static String _requiredServiceId(String value) {
+    if (!_serviceIdPattern.hasMatch(value)) {
+      throw ArgumentError.value(value, 'serviceId');
+    }
+    return value;
+  }
 
   @override
   Future<void> setGlobalDefaultModel(ModelRef? model) =>

@@ -167,6 +167,18 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          const HaloSectionLabel('语音与通话'),
+          HaloSettingsGroup(
+            children: [
+              HaloSettingsRow(
+                label: '语音与通话 Key',
+                detail: '豆包语音 · 端到端音频 · Vidu',
+                prototypeIconClass: 'ph ph-key',
+                onTap: () => context.push('/settings/service-keys'),
+                trailing: const _Chevron(),
+              ),
+            ],
+          ),
           const HaloSectionLabel('自托管与本地数据'),
           HaloSettingsGroup(
             children: [

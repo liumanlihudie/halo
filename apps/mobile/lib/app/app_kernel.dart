@@ -7,6 +7,7 @@ import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
+import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 
@@ -19,6 +20,8 @@ class AppDependencies {
     this.modelRouting,
     this.groupChatPort,
     this.localData,
+    this.serviceCredentials,
+    this.speech,
     this.allowEphemeralChatRepositoryForTesting = false,
   });
 
@@ -34,6 +37,14 @@ class AppDependencies {
   /// Absent until durable storage is available; the local data page then keeps
   /// every action disabled instead of failing mid-write.
   final LocalDataMaintenancePort? localData;
+
+  /// Keys for services that have no model catalogue (Doubao speech, Doubao
+  /// realtime audio, Vidu). Absent when storage failed to boot.
+  final ServiceCredentialsController? serviceCredentials;
+
+  /// Absent when no speech credential is configured; voice messages then stay
+  /// unavailable while text chat is unaffected.
+  final SingleChatSpeech? speech;
   final bool allowEphemeralChatRepositoryForTesting;
 }
 

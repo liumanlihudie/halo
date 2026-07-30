@@ -175,6 +175,34 @@ final class VersionedProviderConfiguration {
   final ProviderConfigurationRevision revision;
 }
 
+/// A service whose whole configuration is one credential.
+///
+/// Doubao speech, Doubao realtime audio and Vidu have no model catalogue to
+/// discover and no chat endpoint, so they are not [ProviderConfig] rows. Only
+/// the Keychain locator is recorded here — never the key itself.
+@immutable
+class PersistedServiceCredential {
+  PersistedServiceCredential({
+    required this.serviceId,
+    required this.secretRef,
+    required this.enabled,
+    required this.configuredAt,
+  }) {
+    if (!configuredAt.isUtc || configuredAt.millisecondsSinceEpoch <= 0) {
+      throw ArgumentError.value(configuredAt, 'configuredAt');
+    }
+  }
+
+  final String serviceId;
+  final SecretRef secretRef;
+  final bool enabled;
+  final DateTime configuredAt;
+
+  /// Never includes the locator: a service id is safe to log, a locator is not.
+  @override
+  String toString() => 'PersistedServiceCredential($serviceId, $enabled)';
+}
+
 @immutable
 class PersistedProviderModelCatalog {
   PersistedProviderModelCatalog({

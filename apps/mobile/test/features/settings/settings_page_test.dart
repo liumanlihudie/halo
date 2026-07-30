@@ -172,9 +172,12 @@ void main() {
 
     // Old fixture rows fabricated state that never existed.
     expect(find.textContaining('共享记忆'), findsNothing);
-    expect(find.textContaining('已配置', findRichText: true), findsNothing);
-    expect(find.textContaining('Vidu'), findsNothing);
     expect(find.textContaining('Apache-2.0'), findsNothing);
+    // Vidu is now a real entry, so naming it is fine — claiming it is set up
+    // is not. The home page must never assert configured state it cannot see;
+    // the per-service page reads that from storage.
+    expect(find.text('语音与通话 Key'), findsOneWidget);
+    expect(find.textContaining('已配置', findRichText: true), findsNothing);
     expect(find.text('规划中'), findsWidgets);
     expect(find.text('开源准备中，尚未发布'), findsOneWidget);
   });
