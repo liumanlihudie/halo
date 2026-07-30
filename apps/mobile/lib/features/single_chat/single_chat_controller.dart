@@ -556,9 +556,24 @@ class SingleChatController extends ChangeNotifier {
     try {
       transcript = await speech.transcribe(path);
     } catch (error) {
-      // Diagnostic only: the failure type and its safe message, never the
-      // upstream body. Transcription is the one leg of the voice pipeline with
-      // no proven contract behind it, so a silent failure here is unfixable.
+      // The specific reason reaches the user: "没有听清" and "需要语音识别权限"
+      // call for completely different actions, and one generic 发送失败 for both
+      // leaves them with nothing to do.
+      // The specific reason reaches the user as a notice: "没有听清" and
+      // "需要语音识别权限" call for completely different actions, and one generic
+      // 发送失败 for both leaves them with nothing to do.
+      _state = _state.copyWith(
+        status: SingleChatRunStatus.idle,
+        messages: [
+          ..._state.messages,
+          ChatMessageProjection(
+            id: 'voice-error-${_nowEpochMs()}',
+            kind: ChatMessageKind.systemNotice,
+            text: error is SpeechException ? error.safeMessage : '语音发送失败，请重试',
+          ),
+        ],
+      );
+      notifyListeners();
       developer.log(
         'voice transcription failed: ${error.runtimeType}'
         '${error is SpeechException ? ' (${error.safeMessage})' : ''}',

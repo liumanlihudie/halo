@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:halo_mobile/app/on_device_speech_transcriber.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
@@ -25,27 +26,29 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
     required SecretResolver secretResolver,
     required Directory audioDirectory,
     Random? random,
-  }) : _persistence = persistence,
+    SpeechTranscriber transcriber = const OnDeviceSpeechTranscriber(),
+  }) : _transcriber = transcriber,
+       _persistence = persistence,
        _secretResolver = secretResolver,
        _audioDirectory = audioDirectory,
        _random = random ?? Random.secure();
 
+  final SpeechTranscriber _transcriber;
   final ServiceCredentialPersistence _persistence;
   final SecretResolver _secretResolver;
   final Directory _audioDirectory;
   final Random _random;
 
+  /// Transcription runs on the device; only synthesis needs the vendor key.
+  ///
+  /// The vendor's recording-recognition contract was never verified against the
+  /// real service and failed with nothing to debug, so speech-to-text uses
+  /// Apple's on-device recogniser: no key, works offline, and the recording
+  /// never leaves the phone. Synthesis still goes to 豆包, so every expert keeps
+  /// its own voice.
   @override
-  Future<String> transcribe(String recordingPath) async {
-    final config = await _config();
-    if (config == null) {
-      throw const SpeechException('未配置豆包语音 Key');
-    }
-    return VolcanoSpeechTranscriber(
-      config: config,
-      newRequestId: _newRequestId,
-    ).transcribe(recordingPath);
-  }
+  Future<String> transcribe(String recordingPath) =>
+      _transcriber.transcribe(recordingPath);
 
   @override
   Future<String?> synthesize(String text, {required String messageId}) async {

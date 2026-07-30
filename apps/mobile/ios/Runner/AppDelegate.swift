@@ -18,5 +18,6 @@ import UIKit
       return
     }
     SecureCredentialStoreBridge.register(with: registrar.messenger())
+    OnDeviceSpeechRecognizer.register(with: registrar)
   }
 }
