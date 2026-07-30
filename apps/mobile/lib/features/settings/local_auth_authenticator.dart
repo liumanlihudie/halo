@@ -14,17 +14,14 @@ final class LocalAuthAppLockAuthenticator implements AppLockAuthenticator {
   @override
   Future<AppLockAvailability> availability() async {
     try {
-      // `isDeviceSupported` covers a device passcode as well, which is the
-      // fallback the prompt uses when Face ID fails.
+      // `isDeviceSupported` is true when either biometry is enrolled or a
+      // device passcode is set, which is exactly the set of devices that can
+      // satisfy the prompt. Checking `canCheckBiometrics` on top of it would
+      // wrongly reject a passcode-only device that can still authenticate.
       final supported = await _auth.isDeviceSupported();
-      if (!supported) return AppLockAvailability.unavailable;
-      final canCheck = await _auth.canCheckBiometrics;
-      final enrolled = await _auth.getAvailableBiometrics();
-      if (!canCheck && enrolled.isEmpty) {
-        // A passcode-only device can still authenticate.
-        return AppLockAvailability.available;
-      }
-      return AppLockAvailability.available;
+      return supported
+          ? AppLockAvailability.available
+          : AppLockAvailability.unavailable;
     } catch (_) {
       return AppLockAvailability.unknown;
     }
