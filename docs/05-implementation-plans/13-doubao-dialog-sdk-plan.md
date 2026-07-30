@@ -14,6 +14,20 @@ SDK 内置 AEC 回声消除，是这个问题的正解。
 - 人设注入方式不变：SDK 的 `DIRECTIVE_START_ENGINE` 参数就是现在发的
   `dialog.bot_name/system_role/speaking_style`，专家人设不会丢。
 
+## T0（先做，且独立于 SDK）：连续 PCM 播放
+
+真机实测：**即使用听筒也断续**，而同一套服务在桌面端稳定。原因不在 AEC，
+而在播放方式——现在每攒 300ms 就写一个 WAV 文件调一次播放器，新一段会打断
+上一段。桌面端是把 PCM 连续喂给音频设备。
+
+做法：`ios/Runner/CallAudioOutput.swift`，`AVAudioEngine` +
+`AVAudioPlayerNode`，每块 PCM 转 `AVAudioPCMBuffer` 后 `scheduleBuffer`
+排队播放（24kHz 单声道 16bit → float32），`stop()` 清空队列实现瞬时打断。
+MethodChannel 复用 `halo.speech/on_device`。做完 `DeviceCallSpeaker`
+的文件缓冲逻辑整段删除。
+
+这一条可能让通话在不接 SDK 的情况下就稳定；SDK 的价值随后只剩 AEC。
+
 ## 任务拆分
 
 ### T1 设置页：端到端 Key 拆成三个字段（另一会话拥有该文件，先协调）
