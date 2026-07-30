@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
+import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
@@ -96,6 +97,16 @@ abstract interface class ProviderSettingsPersistence {
   Future<void> finalizeRemoval(ProviderSettingsSnapshot snapshot);
 }
 
+/// Read/write access to the global default model binding.
+///
+/// [setGlobalDefault] accepts `null` so a failed auto-default publish can be
+/// rolled back to "no default".
+abstract interface class ModelBindingDefaults {
+  Future<ModelRef?> loadGlobalDefault();
+
+  Future<void> setGlobalDefault(ModelRef? model);
+}
+
 abstract interface class ProviderRuntimeReloader {
   Future<void> reload();
 }
@@ -163,13 +174,15 @@ final class ProviderSettingsController extends ChangeNotifier {
     required ProviderRuntimeReloader runtime,
     ProviderSecretRefFactory? secretRefs,
     ProviderMutationCoordinator? mutationCoordinator,
+    ModelBindingDefaults? bindingDefaults,
   }) : _credentials = credentials,
        _catalogFetcher = catalogFetcher,
        _persistence = persistence,
        _runtime = runtime,
        _secretRefs = secretRefs ?? SecureUuidProviderSecretRefFactory(),
        _mutationCoordinator =
-           mutationCoordinator ?? SerializedProviderMutationCoordinator();
+           mutationCoordinator ?? SerializedProviderMutationCoordinator(),
+       _bindingDefaults = bindingDefaults;
 
   final SecureCredentialStore _credentials;
   final ProviderModelCatalogFetcher _catalogFetcher;
@@ -177,6 +190,7 @@ final class ProviderSettingsController extends ChangeNotifier {
   final ProviderRuntimeReloader _runtime;
   final ProviderSecretRefFactory _secretRefs;
   final ProviderMutationCoordinator _mutationCoordinator;
+  final ModelBindingDefaults? _bindingDefaults;
 
   ProviderSettingsState _state = ProviderSettingsState.idle;
   ProviderSettingsState get state => _state;
@@ -290,6 +304,7 @@ final class ProviderSettingsController extends ChangeNotifier {
         _setState(draft.providerId, ProviderSettingsState.cleanupPending);
         return;
       }
+      await _applyAutoDefaultModel(catalog);
       final oldRef = previous?.config.secretRef;
       if (oldRef != null && oldRef != newRef) {
         try {
@@ -503,6 +518,38 @@ final class ProviderSettingsController extends ChangeNotifier {
     ),
     _ => throw StateError('Provider is not supported'),
   };
+
+  /// Auto-selects a global default model after a successful save.
+  ///
+  /// When no global default is bound yet, the first model of the freshly
+  /// persisted [catalog] becomes the default so every expert (which follows
+  /// `override ?? global`) immediately routes to the newly configured
+  /// provider. An existing default is never overwritten, and failures here
+  /// never fail the save itself — the key is already persisted; the worst
+  /// outcome is remaining without a default. Runs inside the same mutation
+  /// critical section as the save, so it cannot interleave with another
+  /// provider mutation.
+  Future<void> _applyAutoDefaultModel(
+    PersistedProviderModelCatalog catalog,
+  ) async {
+    final defaults = _bindingDefaults;
+    if (defaults == null) return;
+    try {
+      final existing = await defaults.loadGlobalDefault();
+      if (existing != null) return;
+      await defaults.setGlobalDefault(catalog.models.first.ref);
+      try {
+        await _runtime.reload();
+      } catch (_) {
+        // Only a live runtime may keep the binding: roll the default back so
+        // persisted state and runtime state never diverge.
+        await defaults.setGlobalDefault(null);
+      }
+    } catch (_) {
+      // Best effort: leaving no default is safe (the UI prompts for model
+      // configuration), whereas failing the save would discard a valid key.
+    }
+  }
 
   PersistedProviderModelCatalog _requireCompleteCatalog(
     ProviderConfig config,

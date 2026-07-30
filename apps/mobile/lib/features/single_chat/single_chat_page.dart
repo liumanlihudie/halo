@@ -301,7 +301,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
             _AgentBubble(
               conversation: _conversation,
               modelLabel: _modelLabel,
-              child: _ProgressMessage(onStop: controller!.stop),
+              child: const _ProgressMessage(),
             ),
           if (_terminalMessage(state.status) case final terminal?)
             _AgentBubble(
@@ -513,14 +513,19 @@ class _AgentBubble extends StatelessWidget {
 }
 
 class _ProgressMessage extends StatelessWidget {
-  const _ProgressMessage({this.message, this.onStop});
+  const _ProgressMessage({this.message});
 
   final ChatMessageProjection? message;
-  final Future<void> Function()? onStop;
 
   @override
   Widget build(BuildContext context) {
-    final progress = message?.progress;
+    final message = this.message;
+    if (message == null) {
+      // An in-flight reply shows only the wave: no title, percent, or
+      // controls until the run projects something concrete.
+      return const SizedBox(width: 235, child: HaloWaveKeysIndicator());
+    }
+    final progress = message.progress;
     return SizedBox(
       width: 235,
       child: Column(
@@ -530,7 +535,7 @@ class _ProgressMessage extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  message?.text ?? '任务进行中',
+                  message.text ?? '任务进行中',
                   style: const TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 13,
@@ -561,26 +566,9 @@ class _ProgressMessage extends StatelessWidget {
                 color: HaloColors.accent,
               ),
             ),
-          if (message?.secondaryText case final secondary?) ...[
+          if (message.secondaryText case final secondary?) ...[
             const SizedBox(height: 7),
             Text(secondary, style: HaloTextStyles.caption),
-          ],
-          if (onStop != null) ...[
-            const SizedBox(height: 8),
-            Semantics(
-              button: true,
-              label: '停止生成',
-              child: ExcludeSemantics(
-                child: OutlinedButton.icon(
-                  onPressed: () => unawaited(onStop!()),
-                  icon: Icon(
-                    HaloIcon.requirePrototypeClass('ph ph-stop-circle'),
-                    size: 15,
-                  ),
-                  label: const Text('停止'),
-                ),
-              ),
-            ),
           ],
         ],
       ),
@@ -811,7 +799,6 @@ class _Composer extends StatelessWidget {
                       maxLines: 4,
                       onSubmitted: (_) => onSend(),
                       decoration: const InputDecoration(
-                        hintText: '输入消息，或继续追问成果',
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(

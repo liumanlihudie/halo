@@ -627,10 +627,131 @@ void main() {
     expect(credentials.setValues, ['first-key', 'second-key']);
   });
 
+  group('auto default model', () {
+    late _FakeBindingDefaults bindingDefaults;
+    late ProviderSettingsController boundController;
+
+    setUp(() {
+      bindingDefaults = _FakeBindingDefaults(events);
+      boundController = ProviderSettingsController(
+        credentials: credentials,
+        catalogFetcher: catalogFetcher,
+        persistence: persistence,
+        runtime: runtime,
+        secretRefs: refs,
+        bindingDefaults: bindingDefaults,
+      );
+    });
+
+    test(
+      'first save without a global default binds the first catalog model',
+      () async {
+        await boundController.save(
+          const ProviderSettingsDraft(
+            providerId: 'toapis',
+            apiKey: 'first-key',
+            enabled: true,
+          ),
+        );
+
+        expect(
+          bindingDefaults.globalDefault,
+          ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+        );
+        expect(runtime.reloadCount, 2);
+        expect(boundController.state, ProviderSettingsState.ready);
+        expect(events, [
+          'credential:set',
+          'catalog:fetch',
+          'persistence:replace',
+          'runtime:reload',
+          'persistence:markReplaceRuntimePublished',
+          'persistence:finalizeReplace',
+          'bindingDefaults:load',
+          'bindingDefaults:set:gpt-5-mini',
+          'runtime:reload',
+        ]);
+      },
+    );
+
+    test('save never overwrites an existing global default', () async {
+      final existing = ModelRef(
+        providerId: 'deepseek',
+        modelId: 'deepseek-chat',
+      );
+      bindingDefaults.globalDefault = existing;
+
+      await boundController.save(
+        const ProviderSettingsDraft(
+          providerId: 'toapis',
+          apiKey: 'second-provider-key',
+          enabled: true,
+        ),
+      );
+
+      expect(bindingDefaults.globalDefault, existing);
+      expect(bindingDefaults.setCalls, isEmpty);
+      expect(runtime.reloadCount, 1);
+      expect(boundController.state, ProviderSettingsState.ready);
+    });
+
+    test(
+      'auto-default reload failure rolls the default back and keeps the save',
+      () async {
+        runtime.onReload = () async {
+          if (runtime.reloadCount == 2) {
+            runtime.error = StateError('binding reload failed');
+          }
+        };
+
+        await boundController.save(
+          const ProviderSettingsDraft(
+            providerId: 'toapis',
+            apiKey: 'first-key',
+            enabled: true,
+          ),
+        );
+
+        expect(bindingDefaults.globalDefault, isNull);
+        expect(bindingDefaults.setCalls, [
+          ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+          null,
+        ]);
+        expect(events, contains('bindingDefaults:set:null'));
+        expect(boundController.state, ProviderSettingsState.ready);
+        expect(persistence.current!.config.providerId, 'toapis');
+      },
+    );
+
+    test('catalog refresh never touches the global default', () async {
+      persistence.current = _snapshot(
+        'deepseek',
+        refs.next(),
+        modelIds: ['deepseek-chat'],
+      );
+      catalogFetcher.catalog = _catalog('deepseek', const [
+        'deepseek-reasoner',
+        'deepseek-chat',
+      ]);
+
+      await boundController.refreshCatalog('deepseek');
+
+      expect(bindingDefaults.globalDefault, isNull);
+      expect(bindingDefaults.setCalls, isEmpty);
+      expect(events, isNot(contains('bindingDefaults:load')));
+      expect(boundController.state, ProviderSettingsState.ready);
+    });
+  });
+
   test(
     'connection test reports reachable, auth, quota and unreachable',
     () async {
-      persistence.current = _snapshot('deepseek', SecretRef.parse('keychain://halo.provider/00000000-0000-4000-8000-000000000abc'));
+      persistence.current = _snapshot(
+        'deepseek',
+        SecretRef.parse(
+          'keychain://halo.provider/00000000-0000-4000-8000-000000000abc',
+        ),
+      );
 
       await controller.testConnection('deepseek');
       expect(
@@ -849,6 +970,30 @@ final class _FakeCredentials implements SecureCredentialStore {
     String? service,
     CancellationToken? cancellationToken,
   }) async => const [];
+}
+
+final class _FakeBindingDefaults implements ModelBindingDefaults {
+  _FakeBindingDefaults(this.events);
+
+  final List<String> events;
+  ModelRef? globalDefault;
+  Object? loadError;
+  final setCalls = <ModelRef?>[];
+
+  @override
+  Future<ModelRef?> loadGlobalDefault() async {
+    events.add('bindingDefaults:load');
+    final error = loadError;
+    if (error != null) throw error;
+    return globalDefault;
+  }
+
+  @override
+  Future<void> setGlobalDefault(ModelRef? model) async {
+    events.add('bindingDefaults:set:${model?.modelId ?? 'null'}');
+    setCalls.add(model);
+    globalDefault = model;
+  }
 }
 
 final class _FakeCatalogFetcher implements ProviderModelCatalogFetcher {

@@ -141,6 +141,7 @@ final class ProductionAppKernelFactory {
       final orchestrationKernel = await orchestrationFactory.create();
       final settings = ProviderSettingsController(
         credentials: _credentials,
+        bindingDefaults: _StoreModelBindingDefaults(settingsStore),
         catalogFetcher: _ProductionProviderModelCatalogFetcher(
           transport: inspectionTransport,
           secretResolver: KeychainSecretResolver(store: _credentials),
@@ -501,4 +502,18 @@ final class _SlotChatModelRuntime implements ChatModelRuntime {
 
   @override
   Future<ChatResponse> chat(ChatRequest request) => slot.chat(request);
+}
+
+/// Routes the auto-default binding through the same store the runtime reads.
+final class _StoreModelBindingDefaults implements ModelBindingDefaults {
+  _StoreModelBindingDefaults(this._store);
+
+  final ProviderConfigurationStore _store;
+
+  @override
+  Future<ModelRef?> loadGlobalDefault() => _store.loadGlobalDefaultModel();
+
+  @override
+  Future<void> setGlobalDefault(ModelRef? model) =>
+      _store.setGlobalDefaultModel(model);
 }

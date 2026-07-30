@@ -7,6 +7,7 @@ import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
 import 'package:halo_mobile/foundation/design_system/halo_theme.dart';
+import 'package:halo_mobile/foundation/design_system/halo_wave_keys_indicator.dart';
 
 void main() {
   testWidgets(
@@ -60,8 +61,9 @@ void main() {
       await tester.pump();
 
       expect(find.text('分析本周漏斗'), findsOneWidget);
-      expect(find.text('任务进行中'), findsOneWidget);
-      expect(find.widgetWithText(OutlinedButton, '停止'), findsOneWidget);
+      expect(find.byType(HaloWaveKeysIndicator), findsOneWidget);
+      expect(find.text('任务进行中'), findsNothing);
+      expect(find.widgetWithText(OutlinedButton, '停止'), findsNothing);
       expect(service.requests.single.expertId, 'data-analyst');
       expect(service.requests.single.memberExpertIds, ['data-analyst']);
 
@@ -76,32 +78,45 @@ void main() {
       expect(find.text('本周移动端转化率提升 3%。'), findsOneWidget);
       expect(find.text('未核验'), findsOneWidget);
       expect(find.text('不确定性：仅覆盖 iOS 渠道样本'), findsOneWidget);
-      expect(find.text('任务进行中'), findsNothing);
+      expect(find.byType(HaloWaveKeysIndicator), findsNothing);
     },
   );
 
-  testWidgets('stop action projects stopped and cancels the active run', (
+  // The running bubble intentionally exposes no stop control, so stop
+  // cancellation is exercised at the controller level.
+  testWidgets('controller stop projects stopped and cancels the active run', (
     tester,
   ) async {
     final service = _FakeSingleChatPort();
-    await tester.pumpWidget(
-      _testApp(
-        service: service,
-        conversationId: 'conversation-research',
-        expertId: 'researcher',
+    final controller = SingleChatController(
+      conversationId: 'conversation-research',
+      expertId: 'researcher',
+      service: service,
+      repository: InMemoryChatMessageRepository(
+        conversations: const {
+          'conversation-research': SingleChatConversationProjection(
+            conversationId: 'conversation-research',
+            expertId: 'researcher',
+            title: '测试专家',
+            agentName: '测试专家',
+            modelLabel: 'Test / model',
+            avatarLetter: '测',
+          ),
+        },
       ),
+      commandIdFactory: () => 'command-stop',
     );
-    await tester.pumpAndSettle();
+    addTearDown(controller.dispose);
+    await controller.initialize();
 
-    await tester.enterText(find.byType(TextField), '停止任务');
-    await tester.tap(find.bySemanticsLabel('发送'));
+    unawaited(controller.submit('停止任务'));
     await tester.pump();
-    final stopButton = find.widgetWithText(OutlinedButton, '停止');
-    await tester.ensureVisible(stopButton);
-    await tester.tap(stopButton);
-    await tester.pumpAndSettle();
+    expect(controller.state.status, SingleChatRunStatus.running);
 
-    expect(find.text('任务已停止'), findsOneWidget);
+    await controller.stop();
+    await tester.pump();
+
+    expect(controller.state.status, SingleChatRunStatus.stopped);
     expect(service.stoppedRunIds, ['run-1']);
   });
 

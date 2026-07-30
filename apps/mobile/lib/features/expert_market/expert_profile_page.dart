@@ -8,6 +8,11 @@ import 'package:halo_mobile/features/settings/model_picker_sheet.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
+/// Read-only catalog lookups only; execution stays with the app kernel.
+final _catalogRegistry = ExecutableExpertRegistry(
+  gateway: const ExpertOutputValidationGateway(),
+);
+
 class ExpertProfilePage extends StatelessWidget {
   const ExpertProfilePage({
     required this.expertId,
@@ -40,8 +45,19 @@ class ExpertProfilePage extends StatelessWidget {
     // string here would contradict it — 通用助理 claimed
     // `ToAPIs / doubao-s2s · 可用` while the row correctly read 尚未配置.
     final profileModel = installed?.status ?? '可用';
+    // Resolve the executable catalog profile so the page can show real
+    // skills and tool permissions instead of prototype placeholders. Pure
+    // fixture market experts stay on their short description.
+    final canonicalId = marketMode
+        ? _catalogRegistry.canonicalIdForMarketId(expertId)
+        : installedIdentity?.canonicalExpertId;
+    final catalog = canonicalId == null
+        ? null
+        : _catalogRegistry.catalogById(canonicalId);
     final description =
-        market?.description ?? '你的个人工作协调者。理解需求，安排最合适的 Agent，并把过程整理成最终结果。';
+        market?.description ??
+        catalog?.description ??
+        '你的个人工作协调者。理解需求，安排最合适的 Agent，并把过程整理成最终结果。';
     final avatarUrl =
         installed?.imageUrl ??
         'https://images.unsplash.com/photo-1568602471122-7832951cc4c5'
@@ -82,8 +98,15 @@ class ExpertProfilePage extends StatelessWidget {
               child: Text(description, style: HaloTextStyles.body),
             ),
           ),
+          if (catalog != null)
+            _CatalogDetailSections(
+              catalog: catalog,
+              // The market lead paragraph comes from the fixture, so the
+              // catalog's own description is still worth showing there.
+              showDescription: catalog.description != description,
+            ),
           if (marketMode) ...[
-            const _AbilityGrid(),
+            if (catalog == null) const _AbilityGrid(),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 15),
               child: HaloSectionLabel('模型与用量'),
@@ -477,6 +500,81 @@ class _PreferenceSettingsState extends State<_PreferenceSettings> {
   }
 }
 
+/// Real catalog facts for an executable expert: description, skill tags and
+/// the tool policy. The model row is intentionally absent — the 模型 settings
+/// row resolves the true binding, and inventing one here would contradict it.
+class _CatalogDetailSections extends StatelessWidget {
+  const _CatalogDetailSections({
+    required this.catalog,
+    required this.showDescription,
+  });
+
+  final ExpertProfile catalog;
+  final bool showDescription;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (showDescription) ...[
+            const HaloSectionLabel('专家简介'),
+            Text(catalog.description, style: HaloTextStyles.body),
+          ],
+          const HaloSectionLabel('技能'),
+          Wrap(
+            spacing: 7,
+            runSpacing: 7,
+            children: [
+              for (final capability in catalog.routingCard.capabilities)
+                _SkillChip(capability),
+            ],
+          ),
+          const HaloSectionLabel('工具权限'),
+          Text(
+            _toolPolicySummary(catalog.toolPolicy),
+            style: HaloTextStyles.body,
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _toolPolicySummary(ToolPolicy policy) {
+    final approvalRequired = policy.approvalRequiredTools.toSet();
+    final allowed = policy.allowedTools
+        .map((tool) => approvalRequired.contains(tool) ? '$tool「需授权」' : tool)
+        .join('、');
+    final deniedNote = policy.deniedTools.isEmpty
+        ? ''
+        : '；另有 ${policy.deniedTools.length} 项敏感工具已禁用';
+    return '可用工具：$allowed$deniedNote。';
+  }
+}
+
+class _SkillChip extends StatelessWidget {
+  const _SkillChip(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: HaloColors.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: HaloTextStyles.caption.copyWith(color: HaloColors.accentDeep),
+      ),
+    );
+  }
+}
+
 class _AbilityGrid extends StatelessWidget {
   const _AbilityGrid();
 
@@ -525,6 +623,17 @@ class _MarketBottomBar extends StatelessWidget {
   const _MarketBottomBar({required this.name});
   final String name;
 
+  /// Tight horizontal padding plus a slightly smaller label keeps all three
+  /// actions on a single line on narrow phones.
+  static final _buttonStyle = ButtonStyle(
+    padding: WidgetStateProperty.all(
+      const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+    ),
+    textStyle: WidgetStateProperty.all(
+      const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
@@ -541,27 +650,45 @@ class _MarketBottomBar extends StatelessWidget {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () {},
-                  child: const Text('先聊聊'),
+                  style: _buttonStyle,
+                  child: const _BarButtonLabel('先聊聊'),
                 ),
               ),
               const SizedBox(width: 7),
               Expanded(
                 child: OutlinedButton(
                   onPressed: () {},
-                  child: const Text('添加到群聊'),
+                  style: _buttonStyle,
+                  child: const _BarButtonLabel('添加到群聊'),
                 ),
               ),
               const SizedBox(width: 7),
               Expanded(
                 child: FilledButton(
                   onPressed: () {},
-                  child: const Text('添加到专家团'),
+                  style: _buttonStyle,
+                  child: const _BarButtonLabel('添加到专家团'),
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A single-line, scale-down label so no bottom-bar action ever wraps.
+class _BarButtonLabel extends StatelessWidget {
+  const _BarButtonLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(label, maxLines: 1, softWrap: false),
     );
   }
 }

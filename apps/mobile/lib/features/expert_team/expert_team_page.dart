@@ -6,18 +6,52 @@ import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
-class ExpertTeamPage extends StatelessWidget {
+class ExpertTeamPage extends StatefulWidget {
   const ExpertTeamPage({super.key});
 
   @override
+  State<ExpertTeamPage> createState() => _ExpertTeamPageState();
+}
+
+class _ExpertTeamPageState extends State<ExpertTeamPage> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _searchVisible = false;
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _toggleSearch() {
+    setState(() {
+      _searchVisible = !_searchVisible;
+      if (!_searchVisible) {
+        _searchController.clear();
+        _query = '';
+      }
+    });
+  }
+
+  bool _matchesQuery(ExpertFixture expert) {
+    final query = _query.trim().toLowerCase();
+    if (query.isEmpty) return true;
+    return expert.name.toLowerCase().contains(query) ||
+        expert.status.toLowerCase().contains(query);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final matches = HaloFixtures.installedExperts.where(_matchesQuery).toList();
+    final searching = _query.trim().isNotEmpty;
     return HaloPageScaffold(
       title: '专家团',
       actions: [
         HaloIconButton(
           prototypeIconClass: 'ph ph-magnifying-glass',
           semanticLabel: '搜索专家',
-          onPressed: () {},
+          onPressed: _toggleSearch,
         ),
         HaloIconButton(
           prototypeIconClass: 'ph ph-user-plus',
@@ -29,26 +63,97 @@ class ExpertTeamPage extends StatelessWidget {
         key: const PageStorageKey('expert-team'),
         padding: const EdgeInsets.fromLTRB(15, 2, 15, 18),
         children: [
-          _MarketBanner(count: HaloFixtures.marketExperts.length),
-          for (final category in const ['工作型', '资讯型', '生活型']) ...[
-            HaloSectionLabel(
-              '$category · ${HaloFixtures.installedExperts.where((expert) => expert.category == category).length}',
-            ),
-            ColoredBox(
-              color: HaloColors.paper,
-              child: Column(
-                children: [
-                  for (final expert in HaloFixtures.installedExperts.where(
-                    (expert) =>
-                        expert.category == category && expert.id != 'contract',
-                  ))
-                    _ExpertRow(expert: expert),
-                ],
+          if (_searchVisible)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 11),
+              child: _InlineSearchBar(
+                controller: _searchController,
+                onChanged: (value) => setState(() => _query = value),
+                onCancel: _toggleSearch,
               ),
             ),
-          ],
+          _MarketBanner(count: HaloFixtures.marketExperts.length),
+          for (final category in const ['工作型', '资讯型', '生活型'])
+            if (!searching ||
+                matches.any((expert) => expert.category == category)) ...[
+              HaloSectionLabel(
+                '$category · ${matches.where((expert) => expert.category == category).length}',
+              ),
+              ColoredBox(
+                color: HaloColors.paper,
+                child: Column(
+                  children: [
+                    for (final expert in matches.where(
+                      (expert) =>
+                          expert.category == category &&
+                          expert.id != 'contract',
+                    ))
+                      _ExpertRow(expert: expert),
+                  ],
+                ),
+              ),
+            ],
         ],
       ),
+    );
+  }
+}
+
+class _InlineSearchBar extends StatefulWidget {
+  const _InlineSearchBar({
+    required this.controller,
+    required this.onChanged,
+    required this.onCancel,
+  });
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onCancel;
+
+  @override
+  State<_InlineSearchBar> createState() => _InlineSearchBarState();
+}
+
+class _InlineSearchBarState extends State<_InlineSearchBar> {
+  final FocusScopeNode _scopeNode = FocusScopeNode();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scopeNode.nextFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scopeNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: FocusScope(
+            node: _scopeNode,
+            child: HaloSearchField(
+              placeholder: '搜索专家或状态',
+              readOnly: false,
+              controller: widget.controller,
+              onChanged: widget.onChanged,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        TextButton(
+          onPressed: widget.onCancel,
+          child: const Text(
+            '取消',
+            style: TextStyle(color: HaloColors.accent, fontSize: 13),
+          ),
+        ),
+      ],
     );
   }
 }

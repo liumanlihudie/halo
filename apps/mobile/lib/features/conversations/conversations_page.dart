@@ -5,19 +5,31 @@ import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
-class ConversationsPage extends StatelessWidget {
+class ConversationsPage extends StatefulWidget {
   const ConversationsPage({super.key});
 
   @override
+  State<ConversationsPage> createState() => _ConversationsPageState();
+}
+
+class _ConversationsPageState extends State<ConversationsPage> {
+  String _query = '';
+
+  @override
   Widget build(BuildContext context) {
+    final query = _query.trim();
+    final conversations = query.isEmpty
+        ? HaloFixtures.conversations
+        : HaloFixtures.conversations
+              .where(
+                (conversation) =>
+                    conversation.title.contains(query) ||
+                    conversation.preview.contains(query),
+              )
+              .toList();
     return HaloPageScaffold(
       title: '对话',
       actions: [
-        HaloIconButton(
-          prototypeIconClass: 'ph ph-magnifying-glass',
-          semanticLabel: '搜索对话',
-          onPressed: () {},
-        ),
         HaloIconButton(
           prototypeIconClass: 'ph ph-plus',
           semanticLabel: '新建对话',
@@ -26,20 +38,23 @@ class ConversationsPage extends StatelessWidget {
       ],
       body: Column(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(15, 2, 15, 6),
-            child: HaloSearchField(placeholder: '搜索联系人、群聊、文件和来源'),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(15, 2, 15, 6),
+            child: HaloSearchField(
+              placeholder: '搜索联系人、群聊、文件和来源',
+              readOnly: false,
+              onChanged: (value) => setState(() => _query = value),
+            ),
           ),
           Expanded(
             child: ListView.separated(
               key: const PageStorageKey('conversations'),
               padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
-              itemCount: HaloFixtures.conversations.length,
+              itemCount: conversations.length,
               separatorBuilder: (_, _) =>
                   const Divider(height: 1, indent: 61, color: HaloColors.line),
-              itemBuilder: (context, index) => _ConversationRow(
-                conversation: HaloFixtures.conversations[index],
-              ),
+              itemBuilder: (context, index) =>
+                  _ConversationRow(conversation: conversations[index]),
             ),
           ),
         ],
