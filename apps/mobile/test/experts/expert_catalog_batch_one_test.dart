@@ -7,6 +7,7 @@ import 'package:halo_mobile/experts/expert_prompt_package.dart';
 
 void main() {
   const expectedIds = [
+    'halo-assistant',
     'content-strategist',
     'growth-marketer',
     'user-researcher',
@@ -22,13 +23,13 @@ void main() {
   ];
 
   test(
-    'batch one exposes twelve unique profiles without benchmark collisions',
+    'batch one exposes thirteen unique profiles without benchmark collisions',
     () {
       final profiles = ExpertCatalogBatchOne.all;
       final ids = profiles.map((profile) => profile.id).toList();
 
       expect(ids, expectedIds);
-      expect(ids.toSet(), hasLength(12));
+      expect(ids.toSet(), hasLength(13));
       expect(
         ids.toSet().intersection(
           BuiltInExperts.all.map((profile) => profile.id).toSet(),

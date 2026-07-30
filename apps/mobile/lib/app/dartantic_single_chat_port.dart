@@ -7,6 +7,7 @@ import 'package:dartantic_interface/dartantic_interface.dart' as llm;
 import 'package:halo_mobile/experts/expert_output_prompt.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
+import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 
 /// Builds a ready-to-use agent for an expert.
 ///
@@ -15,6 +16,15 @@ import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 abstract interface class SingleChatAgentFactory {
   /// Throws [StateError] when no usable model binding exists yet.
   Future<dartantic.Agent> agentFor(String expertId);
+}
+
+/// Builds an agent for an already-resolved model binding.
+///
+/// Group chat resolves the model itself (override ?? global) before dispatch,
+/// so it needs this shape rather than the per-expert one.
+abstract interface class ModelAgentFactory {
+  /// Throws [StateError] when the provider is disabled or has no credential.
+  Future<dartantic.Agent> agentForModel(ModelRef model);
 }
 
 /// Single chat on top of dartantic_ai.

@@ -41,22 +41,22 @@ void main() {
 
     // 'general' binds canonical expert 'project-manager'.
     expect(find.text('专家数据'), findsOneWidget);
-    expect(find.text('项目管理专家'), findsOneWidget);
+    expect(find.text('Halo 助理'), findsOneWidget);
 
     // 提示词: the real system prompt, personality, and constraints.
     expect(find.text('提示词'), findsOneWidget);
-    expect(find.textContaining('你是本次任务中被明确指派的项目管理专家'), findsOneWidget);
-    expect(find.textContaining('透明、重视依赖和风险'), findsOneWidget);
-    expect(find.textContaining('保持project-manager职责边界'), findsOneWidget);
+    expect(find.textContaining('你是本次任务中被明确指派的Halo 助理'), findsOneWidget);
+    expect(find.textContaining('直接、务实、说人话'), findsOneWidget);
+    expect(find.textContaining('保持halo-assistant职责边界'), findsOneWidget);
 
     // 技能与路由: routing card capabilities, intents, negative triggers.
     expect(find.text('技能与路由'), findsOneWidget);
-    expect(find.text('project.planning'), findsOneWidget);
-    expect(find.text('dependency.management'), findsOneWidget);
-    expect(find.text('risk.tracking'), findsOneWidget);
-    expect(find.textContaining('项目里程碑'), findsOneWidget);
+    expect(find.text('general.assistance'), findsOneWidget);
+    expect(find.text('writing.support'), findsOneWidget);
+    expect(find.text('explanation.support'), findsOneWidget);
+    expect(find.textContaining('通用问答'), findsOneWidget);
     expect(find.text('拒绝触发'), findsOneWidget);
-    expect(find.textContaining('伪造进度'), findsOneWidget);
+    expect(find.textContaining('伪造事实'), findsOneWidget);
 
     // 工具权限: the three real decisions from the tool policy.
     expect(find.text('工具权限'), findsOneWidget);
@@ -69,7 +69,7 @@ void main() {
 
     // 输出合同: schema id, fields, and the honest validation caveat.
     expect(find.text('输出合同'), findsOneWidget);
-    expect(find.text('project-plan.v1'), findsOneWidget);
+    expect(find.text('halo-assistant-answer.v1'), findsOneWidget);
     expect(find.textContaining('Recommendations'), findsOneWidget);
     expect(find.text('结构化校验 · 建议式回答（未核验）'), findsOneWidget);
 
@@ -103,9 +103,9 @@ void main() {
 
     // 'general' binds canonical expert 'project-manager'.
     expect(find.text('技能'), findsOneWidget);
-    expect(find.text('project.planning'), findsOneWidget);
-    expect(find.text('dependency.management'), findsOneWidget);
-    expect(find.text('risk.tracking'), findsOneWidget);
+    expect(find.text('general.assistance'), findsOneWidget);
+    expect(find.text('writing.support'), findsOneWidget);
+    expect(find.text('explanation.support'), findsOneWidget);
     expect(find.text('工具权限'), findsOneWidget);
     expect(find.textContaining('web.search'), findsOneWidget);
     expect(find.textContaining('需授权'), findsOneWidget);

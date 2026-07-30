@@ -1852,9 +1852,9 @@ class SingleChatCatalogRepository extends InMemoryChatMessageRepository {
 const _fixtureConversations = <String, SingleChatConversationProjection>{
   'general-assistant': SingleChatConversationProjection(
     conversationId: 'general-assistant',
-    expertId: 'project-manager',
-    title: '通用助理',
-    agentName: '通用助理',
+    expertId: 'halo-assistant',
+    title: 'Halo 助理',
+    agentName: 'Halo 助理',
     modelLabel: 'ToAPIs / gpt-5-mini',
     avatarLetter: '助',
     avatarImageUrl:

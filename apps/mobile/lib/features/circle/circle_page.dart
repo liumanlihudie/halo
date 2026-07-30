@@ -124,7 +124,7 @@ class _PostCard extends StatelessWidget {
               ),
               const SizedBox(height: 7),
               Text(post.body, style: HaloTextStyles.body),
-              if (post.author == '通用助理') ...[
+              if (post.author == 'Halo 助理') ...[
                 const SizedBox(height: 10),
                 const _CircleGallery(),
                 const SizedBox(height: 9),

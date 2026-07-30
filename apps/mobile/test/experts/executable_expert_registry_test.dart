@@ -13,9 +13,9 @@ void main() {
     );
   });
 
-  test('unifies all 28 experts under unique canonical IDs', () {
-    expect(registry.all, hasLength(28));
-    expect(registry.all.map((profile) => profile.id).toSet(), hasLength(28));
+  test('unifies all 29 experts under unique canonical IDs', () {
+    expect(registry.all, hasLength(29));
+    expect(registry.all.map((profile) => profile.id).toSet(), hasLength(29));
     expect(registry.catalogById('product-manager')?.id, 'product-manager');
     expect(registry.catalogById('user-researcher')?.id, 'user-researcher');
     expect(registry.catalogById('ios-engineer')?.id, 'ios-engineer');
@@ -30,7 +30,7 @@ void main() {
   });
 
   test('exposes a routing card for every canonical expert ID', () {
-    expect(registry.routingCards, hasLength(28));
+    expect(registry.routingCards, hasLength(29));
     expect(
       registry.routingCards.keys.toSet(),
       registry.all.map((profile) => profile.id).toSet(),
@@ -45,6 +45,7 @@ void main() {
     expect(
       registry.availableForSingleChat.map((expert) => expert.profile.id),
       const [
+        'halo-assistant',
         'product-manager',
         'technical-architect',
         'ux-designer',

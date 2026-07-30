@@ -23,7 +23,6 @@ import 'package:halo_mobile/model_runtime/production_provider_inspection_transpo
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
-import 'package:halo_mobile/model_runtime/provider_registry.dart';
 import 'package:halo_mobile/model_runtime/secure_credential_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/model_runtime/sqlite_provider_configuration_store.dart';
@@ -120,13 +119,14 @@ final class ProductionAppKernelFactory {
       // Single chat runs on dartantic_ai: system prompt + history + message
       // in, streamed plain markdown out. No envelope, no projection, nothing
       // that can discard a reply the user has already read.
+      final agentFactory = ProductionSingleChatAgentFactory(
+        store: settingsStore,
+        secretResolver: KeychainSecretResolver(store: _credentials),
+        resolveModel: ({required agentId}) =>
+            runtimeSlot!.resolveConfiguredModel(agentId: agentId),
+      );
       singleChatPort = DartanticSingleChatPort(
-        agents: ProductionSingleChatAgentFactory(
-          store: settingsStore,
-          secretResolver: KeychainSecretResolver(store: _credentials),
-          resolveModel: ({required agentId}) =>
-              runtimeSlot!.resolveConfiguredModel(agentId: agentId),
-        ),
+        agents: agentFactory,
         experts: ExecutableExpertRegistry(
           gateway: const ExpertOutputValidationGateway(),
         ),
@@ -141,7 +141,7 @@ final class ProductionAppKernelFactory {
         appSupportDirectory: _FixedAppSupportDirectory(supportDirectory.path),
         selector: RoutingCardAgentSelector(experts),
         runtime: LiveRoutingAgentRuntime(
-          modelRuntime: _SlotChatModelRuntime(runtimeSlot),
+          agents: agentFactory,
           experts: experts,
           journal: modelCallJournal,
           store: settingsStore,
@@ -396,7 +396,9 @@ final class _ProductionProviderModelCatalogFetcher
 /// upgrade path, so without this the fail-closed rebinding guard would keep
 /// every upgraded install from ever building a kernel again.
 const supersededSingleChatExpertBindings = <String, String>{
-  'general-assistant': 'product-manager',
+  // 通用助理 has pointed at two different experts before it got its own
+  // profile; both must keep decoding or an upgraded install cannot boot.
+  'general-assistant': 'product-manager,project-manager',
   'data-analyst-chat': 'technical-architect',
 };
 
@@ -410,9 +412,9 @@ const supersededSingleChatExpertBindings = <String, String>{
 const productionSingleChatConversations = {
   'general-assistant': SingleChatConversationProjection(
     conversationId: 'general-assistant',
-    expertId: 'project-manager',
-    title: '通用助理',
-    agentName: '通用助理',
+    expertId: 'halo-assistant',
+    title: 'Halo 助理',
+    agentName: 'Halo 助理',
     modelLabel: '文字模型',
     avatarLetter: '助',
   ),
@@ -489,15 +491,6 @@ final class _FixedAppSupportDirectory implements AppSupportDirectoryProvider {
 
   @override
   Future<String> getDirectoryPath() async => path;
-}
-
-final class _SlotChatModelRuntime implements ChatModelRuntime {
-  const _SlotChatModelRuntime(this.slot);
-
-  final ProductionModelRuntimeSlot slot;
-
-  @override
-  Future<ChatResponse> chat(ChatRequest request) => slot.chat(request);
 }
 
 /// Routes the auto-default binding through the same store the runtime reads.

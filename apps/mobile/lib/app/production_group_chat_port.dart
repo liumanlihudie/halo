@@ -1,14 +1,14 @@
+import 'package:halo_mobile/app/dartantic_single_chat_port.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/orchestration/dartantic_agent_runtime.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/orchestration/agent_execution_policy.dart';
 import 'package:halo_mobile/orchestration/basic_durable_runner.dart';
 import 'package:halo_mobile/orchestration/orchestration_kernel.dart';
 import 'package:halo_mobile/orchestration/orchestration_models.dart';
-import 'package:halo_mobile/orchestration/provider_backed_agent_runtime.dart';
 import 'package:halo_mobile/orchestration/sqlite_model_call_journal.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
-import 'package:halo_mobile/model_runtime/provider_registry.dart';
 
 /// Adapts the orchestration kernel to the narrower port the group chat UI needs.
 ///
@@ -43,18 +43,18 @@ final class ProductionGroupChatPort implements GroupChatRunPort {
 final class LiveRoutingAgentRuntime
     implements AgentRuntime, IdempotentAgentRuntimeCapability {
   LiveRoutingAgentRuntime({
-    required ChatModelRuntime modelRuntime,
+    required ModelAgentFactory agents,
     required ExecutableExpertRegistry experts,
     required SqliteModelCallJournal journal,
     required ProviderConfigurationStore store,
-  }) : _modelRuntime = modelRuntime,
+  }) : _agents = agents,
        _experts = experts,
        _journal = journal,
        _store = store;
 
   // ignore_for_file: prefer_initializing_formals
 
-  final ChatModelRuntime _modelRuntime;
+  final ModelAgentFactory _agents;
   final ExecutableExpertRegistry _experts;
   final SqliteModelCallJournal _journal;
   final ProviderConfigurationStore _store;
@@ -75,9 +75,7 @@ final class LiveRoutingAgentRuntime
   /// Resolves the model exactly as single chat does — `override ?? global` —
   /// so a group turn works whenever the equivalent single chat would, including
   /// when only a per-expert model is set and no global default exists.
-  Future<ProviderBackedAgentRuntime> _delegate({
-    required String? agentId,
-  }) async {
+  Future<DartanticAgentRuntime> _delegate({required String? agentId}) async {
     final globalDefault = await _store.loadGlobalDefaultModel();
     final overrides = await _store.loadAgentModelOverrides();
     final effective = agentId == null
@@ -92,8 +90,8 @@ final class LiveRoutingAgentRuntime
         retryable: false,
       );
     }
-    return ProviderBackedAgentRuntime(
-      modelRuntime: _modelRuntime,
+    return DartanticAgentRuntime(
+      agents: _agents,
       experts: _experts,
       journal: _journal,
       policy: AgentExecutionPolicy(

@@ -180,7 +180,7 @@ void main() {
     );
   });
 
-  test('runner adapts evaluation cases from all 28 catalog profiles', () {
+  test('runner adapts evaluation cases from all 29 catalog profiles', () {
     final registry = ExecutableExpertRegistry(
       gateway: const ExpertOutputValidationGateway(),
     );
@@ -200,8 +200,8 @@ void main() {
     final report = runner.runCatalogEvaluationCases();
 
     expect(report.passed, isTrue, reason: report.failures.join('\n'));
-    expect(report.scenarioCount, 81);
-    expect(report.evaluatedExpertIds, hasLength(28));
+    expect(report.scenarioCount, 84);
+    expect(report.evaluatedExpertIds, hasLength(29));
     expect(
       report.behaviorAssertionCount,
       registry.all
@@ -215,7 +215,7 @@ void main() {
           ),
     );
     expect(report.behaviorAssertionCount, greaterThanOrEqualTo(156));
-    expect(driver.executedScenarioIds, hasLength(81));
+    expect(driver.executedScenarioIds, hasLength(84));
     expect(driver.acceptedProjectionCount, greaterThan(0));
     expect(driver.oracleAccessWasBlocked, isTrue);
   });

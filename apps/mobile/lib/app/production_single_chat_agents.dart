@@ -11,7 +11,8 @@ import 'package:halo_mobile/model_runtime/secret_ref.dart';
 ///
 /// The API key is read from the Keychain here and handed straight to the
 /// client library; it is never returned to, or stored by, the chat layer.
-final class ProductionSingleChatAgentFactory implements SingleChatAgentFactory {
+final class ProductionSingleChatAgentFactory
+    implements SingleChatAgentFactory, ModelAgentFactory {
   ProductionSingleChatAgentFactory({
     required ProviderConfigurationStore store,
     required SecretResolver secretResolver,
@@ -32,6 +33,11 @@ final class ProductionSingleChatAgentFactory implements SingleChatAgentFactory {
     } catch (_) {
       throw StateError('No model is configured for this expert');
     }
+    return agentForModel(model);
+  }
+
+  @override
+  Future<dartantic.Agent> agentForModel(ModelRef model) async {
     final config = await _enabledConfig(model.providerId);
     if (config == null) {
       throw StateError('The configured provider is not enabled');

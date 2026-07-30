@@ -124,7 +124,7 @@ class _PeerGrid extends StatelessWidget {
             width: 78,
             child: Semantics(
               button: identity != null,
-              label: '${installed?.name ?? '通用助理'} 资料',
+              label: '${installed?.name ?? 'Halo 助理'} 资料',
               child: InkWell(
                 // Only an installed profile has a profile page to open.
                 onTap: identity == null
@@ -142,7 +142,7 @@ class _PeerGrid extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      installed?.name ?? '通用助理',
+                      installed?.name ?? 'Halo 助理',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: HaloTextStyles.caption,

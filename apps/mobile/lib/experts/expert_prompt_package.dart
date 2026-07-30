@@ -1298,6 +1298,7 @@ class ExecutableExpertRegistry {
   });
 
   static const _singleChatIds = <String>[
+    'halo-assistant',
     'product-manager',
     'technical-architect',
     'ux-designer',
@@ -1359,7 +1360,7 @@ class ExecutableExpertRegistry {
     InstalledExpertIdentity(
       profileId: 'general',
       conversationId: 'general-assistant',
-      canonicalExpertId: 'project-manager',
+      canonicalExpertId: 'halo-assistant',
     ),
     InstalledExpertIdentity(
       profileId: 'product',
