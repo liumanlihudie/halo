@@ -13,6 +13,12 @@ enum ChatMessageKind {
   file,
   userImage,
   quote,
+
+  /// A voice message from either side. The audio lives in the sandbox at
+  /// [ChatMessageProjection.imageUrl]; [ChatMessageProjection.text] holds the
+  /// transcript, so 转文字 needs no second round trip and history stays
+  /// searchable. Older histories have none of these and decode unchanged.
+  voice,
 }
 
 enum ChatMessageSourceType { modelOutput, verifiedEvidence, userVisibleSummary }

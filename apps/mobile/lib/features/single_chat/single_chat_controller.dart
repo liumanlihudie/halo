@@ -10,6 +10,24 @@ import 'chat_message_repository.dart';
 
 enum SingleAgentRunMode { mentioned }
 
+/// Speech services a voice conversation needs, kept narrow so the chat layer
+/// never depends on which vendor answers.
+abstract interface class SingleChatSpeech {
+  Future<String> transcribe(String recordingPath);
+
+  /// Renders [text] to audio and returns the file path, or null when speech
+  /// synthesis is unavailable — a reply must never be lost to it.
+  Future<String?> synthesize(String text, {required String messageId});
+}
+
+/// The recording waiting to be attached to the user's own bubble.
+class _PendingVoice {
+  const _PendingVoice({required this.path, required this.duration});
+
+  final String path;
+  final Duration duration;
+}
+
 /// One earlier turn of the conversation, as the model should see it.
 class SingleChatHistoryTurn {
   const SingleChatHistoryTurn({required this.fromUser, required this.text});
@@ -325,6 +343,7 @@ class SingleChatController extends ChangeNotifier {
     required this.repository,
     required this.commandIdFactory,
     this.verifier = const RejectingVerifierReceiptRegistry(),
+    this.speech,
     SingleChatEpochClock? nowEpochMs,
   }) : _nowEpochMs = nowEpochMs ?? _controllerEpochMilliseconds,
        assert(expertId != '');
@@ -333,6 +352,11 @@ class SingleChatController extends ChangeNotifier {
   final String expertId;
   final SingleChatPort service;
   final ChatMessageRepository repository;
+
+  /// Speech services for voice messages. Absent until the owner configures
+  /// 豆包语音, in which case the voice button reports that honestly instead of
+  /// pretending to record into nothing.
+  final SingleChatSpeech? speech;
   final String Function() commandIdFactory;
   final TrustedVerifierReceiptRegistry verifier;
   final SingleChatEpochClock _nowEpochMs;
@@ -347,6 +371,7 @@ class SingleChatController extends ChangeNotifier {
   ChatMessageProjection? _lastUserMessage;
   bool _lastUserPersisted = false;
   int _attempt = 0;
+  _PendingVoice? _pendingVoice;
   bool _disposed = false;
   bool _outboxReconciliationBlocked = false;
   final Map<String, Future<bool>> _stopOperations = {};
@@ -508,6 +533,49 @@ class SingleChatController extends ChangeNotifier {
     );
   }
 
+  /// Sends a recorded voice message.
+  ///
+  /// The recording is transcribed, and the transcript travels through the same
+  /// text pipeline as a typed message — routing, history and disclosure are
+  /// unchanged, only the medium differs. The user's own bubble keeps the audio
+  /// so it can be replayed, with the transcript behind 转文字.
+  Future<void> submitVoice({
+    required String path,
+    required Duration duration,
+  }) async {
+    final speech = this.speech;
+    if (speech == null) {
+      _state = _state.copyWith(status: SingleChatRunStatus.notConfigured);
+      notifyListeners();
+      return;
+    }
+    final String transcript;
+    try {
+      transcript = await speech.transcribe(path);
+    } catch (_) {
+      // The recording is kept: a failed transcription must not delete what the
+      // user just said.
+      _state = _state.copyWith(
+        status: SingleChatRunStatus.failed,
+        canRetry: false,
+      );
+      notifyListeners();
+      return;
+    }
+    if (_disposed || transcript.trim().isEmpty) return;
+    _pendingVoice = _PendingVoice(path: path, duration: duration);
+    try {
+      await submit(transcript);
+    } finally {
+      _pendingVoice = null;
+    }
+  }
+
+  static String formatVoiceDuration(Duration duration) {
+    final seconds = duration.inSeconds;
+    return "${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}";
+  }
+
   Future<void> submit(String text) {
     final normalized = text.trim();
     if (normalized.isEmpty || _disposed || _outboxReconciliationBlocked) {
@@ -638,11 +706,20 @@ class SingleChatController extends ChangeNotifier {
         final existingUserMessage = _lastUserMessage;
         final userMessage =
             existingUserMessage ??
-            ChatMessageProjection(
-              id: '$commandId:user',
-              kind: ChatMessageKind.userText,
-              text: text,
-            );
+            (_pendingVoice == null
+                ? ChatMessageProjection(
+                    id: '$commandId:user',
+                    kind: ChatMessageKind.userText,
+                    text: text,
+                  )
+                // Voice keeps the audio and shows the transcript behind 转文字.
+                : ChatMessageProjection(
+                    id: '$commandId:user',
+                    kind: ChatMessageKind.voice,
+                    text: text,
+                    secondaryText: formatVoiceDuration(_pendingVoice!.duration),
+                    imageUrl: _pendingVoice!.path,
+                  ));
         _lastUserMessage = userMessage;
         _state = _state.copyWith(
           messages: existingUserMessage == null

@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/features/single_chat/attachments/voice_recorder_service.dart';
+import 'package:halo_mobile/features/single_chat/voice_message_bubble.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_markdown_body.dart';
@@ -24,6 +26,7 @@ class SingleChatPage extends StatefulWidget {
     this.repositoryLoader,
     this.modelRouting,
     this.messageActions,
+    this.voiceRecorder,
     this.verifier = const RejectingVerifierReceiptRegistry(),
     this.allowEphemeralRepositoryForTesting = false,
     super.key,
@@ -41,6 +44,7 @@ class SingleChatPage extends StatefulWidget {
 
   /// Injectable so tests exercise the long-press menu without system channels.
   final MessageActionsService? messageActions;
+  final VoiceRecorderService? voiceRecorder;
   final TrustedVerifierReceiptRegistry verifier;
   final bool allowEphemeralRepositoryForTesting;
 
@@ -54,6 +58,9 @@ class _SingleChatPageState extends State<SingleChatPage> {
   final _composerFocus = FocusNode();
   final _attachmentService = ChatAttachmentService();
   late final _messageActions = widget.messageActions ?? MessageActionsService();
+  late final _voiceRecorder = widget.voiceRecorder ?? VoiceRecorderService();
+  Duration? _recordingElapsed;
+  Timer? _recordingTicker;
   late SingleChatConversationProjection _conversation;
   SingleChatController? _chatController;
   bool _dependencyLoadFailed = false;
@@ -229,6 +236,8 @@ class _SingleChatPageState extends State<SingleChatPage> {
       ..dispose();
     _textController.dispose();
     _scrollController.dispose();
+    _recordingTicker?.cancel();
+    unawaited(_voiceRecorder.dispose());
     _composerFocus.dispose();
     super.dispose();
   }
@@ -413,6 +422,44 @@ class _SingleChatPageState extends State<SingleChatPage> {
     }
   }
 
+  /// Tap to record, tap again to send. Holding while speaking is a nicer
+  /// gesture but a worse first cut: it hides failures behind a gesture state
+  /// machine before the pipeline itself is proven.
+  Future<void> _toggleVoiceRecording() async {
+    if (_voiceRecorder.isRecording) {
+      _recordingTicker?.cancel();
+      _recordingTicker = null;
+      final recording = await _voiceRecorder.stop();
+      if (!mounted) return;
+      setState(() => _recordingElapsed = null);
+      if (recording == null) {
+        _notify('没有录到声音');
+        return;
+      }
+      await _chatController?.submitVoice(
+        path: recording.path,
+        duration: recording.duration,
+      );
+      return;
+    }
+    try {
+      await _voiceRecorder.start();
+    } on VoiceRecorderException catch (error) {
+      if (mounted) _notify(error.safeMessage);
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _recordingElapsed = Duration.zero);
+    _recordingTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || !_voiceRecorder.isRecording) return;
+      setState(() => _recordingElapsed = _voiceRecorder.elapsed);
+    });
+  }
+
+  void _notify(String message) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(message)));
+
   void _send() {
     final text = _textController.text;
     if (text.trim().isEmpty) {
@@ -504,6 +551,8 @@ class _SingleChatPageState extends State<SingleChatPage> {
         focusNode: _composerFocus,
         onAttach: _showAttachmentSheet,
         onSend: _send,
+        onVoice: _toggleVoiceRecording,
+        recording: _recordingElapsed,
         enabled:
             controller != null &&
             !_dependencyLoadFailed &&
@@ -542,6 +591,11 @@ class _ProjectedMessage extends StatelessWidget {
     );
   }
 
+  /// A voice message can come from either side; ids carry the sender, the
+  /// same convention the text pipeline already uses.
+  static bool _isMine(ChatMessageProjection message) =>
+      message.id.endsWith(':user');
+
   Widget _buildBubble(BuildContext context) {
     return switch (message.kind) {
       ChatMessageKind.systemNotice => _SystemNotice(message.text ?? ''),
@@ -565,6 +619,16 @@ class _ProjectedMessage extends StatelessWidget {
         conversation: conversation,
         child: _QuoteMessage(message),
       ),
+      ChatMessageKind.voice =>
+        _isMine(message)
+            ? _MineBubbleShell(
+                child: VoiceMessageBubble(message: message, mine: true),
+              )
+            : _AgentBubble(
+                conversation: conversation,
+                modelLabel: modelLabel,
+                child: VoiceMessageBubble(message: message, mine: false),
+              ),
     };
   }
 }
@@ -619,6 +683,35 @@ class _SystemNotice extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Text(text, style: HaloTextStyles.caption),
+      ),
+    );
+  }
+}
+
+/// The outgoing bubble chrome, for content that is not plain text.
+class _MineBubbleShell extends StatelessWidget {
+  const _MineBubbleShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 286),
+        margin: const EdgeInsets.only(left: 55, bottom: 13),
+        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 10),
+        decoration: const BoxDecoration(
+          color: HaloColors.accent,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(13),
+            topRight: Radius.circular(4),
+            bottomLeft: Radius.circular(13),
+            bottomRight: Radius.circular(13),
+          ),
+        ),
+        child: child,
       ),
     );
   }
@@ -963,6 +1056,8 @@ class _Composer extends StatelessWidget {
     required this.onAttach,
     required this.onSend,
     required this.enabled,
+    required this.onVoice,
+    required this.recording,
   });
 
   final FocusNode focusNode;
@@ -970,6 +1065,10 @@ class _Composer extends StatelessWidget {
   final VoidCallback onAttach;
   final VoidCallback onSend;
   final bool enabled;
+  final VoidCallback onVoice;
+
+  /// Elapsed recording time, or null when not recording.
+  final Duration? recording;
 
   @override
   Widget build(BuildContext context) {
@@ -997,9 +1096,11 @@ class _Composer extends StatelessWidget {
               Row(
                 children: [
                   HaloIconButton(
-                    prototypeIconClass: 'ph ph-microphone',
-                    semanticLabel: '语音输入（暂不可用）',
-                    onPressed: () => _showUnavailable(context),
+                    prototypeIconClass: recording == null
+                        ? 'ph ph-microphone'
+                        : 'ph ph-stop-circle',
+                    semanticLabel: recording == null ? '录音' : '结束录音并发送',
+                    onPressed: enabled ? onVoice : null,
                   ),
                   const SizedBox(width: 6),
                   Expanded(
