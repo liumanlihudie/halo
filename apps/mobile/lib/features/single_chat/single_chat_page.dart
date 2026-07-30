@@ -1,13 +1,16 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
+import 'package:halo_mobile/foundation/design_system/halo_markdown_body.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/foundation/design_system/halo_wave_keys_indicator.dart';
 
+import 'attachments/chat_attachment_service.dart';
 import 'chat_message_repository.dart';
 import 'single_chat_controller.dart';
 
@@ -43,6 +46,7 @@ class SingleChatPage extends StatefulWidget {
 class _SingleChatPageState extends State<SingleChatPage> {
   final _textController = TextEditingController();
   final _scrollController = ScrollController();
+  final _attachmentService = ChatAttachmentService();
   late SingleChatConversationProjection _conversation;
   SingleChatController? _chatController;
   bool _dependencyLoadFailed = false;
@@ -242,6 +246,62 @@ class _SingleChatPageState extends State<SingleChatPage> {
     });
   }
 
+  /// Picks an attachment and appends it to the durable conversation.
+  ///
+  /// Stored locally only: the text-only P0 runtime does not receive it, and
+  /// nothing here pretends otherwise.
+  Future<void> _attach(
+    Future<ChatAttachment?> Function() pick,
+    ChatMessageKind kind,
+  ) async {
+    final controller = _chatController;
+    if (controller == null) return;
+    try {
+      final attachment = await pick();
+      if (attachment == null || !mounted) return;
+      await controller.repository.append(
+        widget.conversationId,
+        kind == ChatMessageKind.userImage
+            ? ChatMessageProjection(
+                id: attachment.id,
+                kind: ChatMessageKind.userImage,
+                imageUrl: attachment.storedPath,
+                text: attachment.fileName,
+              )
+            : ChatMessageProjection(
+                id: attachment.id,
+                kind: ChatMessageKind.file,
+                text: attachment.fileName,
+                secondaryText: _formatAttachmentBytes(attachment.byteSize),
+              ),
+      );
+      await controller.initialize();
+      _scrollToBottomSoon();
+    } on ChatAttachmentException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.safeMessage)));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('附件保存失败，请重试')));
+    }
+  }
+
+  void _showAttachmentSheet() {
+    _showAttachmentSheetFor(
+      context,
+      onTakePhoto: () =>
+          _attach(_attachmentService.takePhoto, ChatMessageKind.userImage),
+      onPickImage: () =>
+          _attach(_attachmentService.pickImage, ChatMessageKind.userImage),
+      onPickFile: () =>
+          _attach(_attachmentService.pickFile, ChatMessageKind.file),
+    );
+  }
+
   void _send() {
     final text = _textController.text;
     if (text.trim().isEmpty) {
@@ -284,6 +344,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
       backgroundColor: HaloColors.soft,
       body: ListView(
         controller: _scrollController,
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
         children: [
           if (_conversationNotInstalled)
@@ -320,7 +381,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
       ),
       bottom: _Composer(
         controller: _textController,
-        onAttach: () => _showAttachmentSheet(context),
+        onAttach: _showAttachmentSheet,
         onSend: _send,
         enabled:
             controller != null &&
@@ -380,7 +441,7 @@ class _AgentTextMessage extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(message.text ?? '', style: HaloTextStyles.body),
+        HaloMarkdownBody(message.text ?? ''),
         if (message.sourceType case final source?) ...[
           const SizedBox(height: 7),
           Text(
@@ -702,13 +763,23 @@ class _MineImageMessage extends StatelessWidget {
       alignment: Alignment.centerRight,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(13),
-        child: Image.network(
-          imageUrl!,
-          width: 210,
-          height: 128,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-        ),
+        // Picked attachments live in the app sandbox; only remote fixtures
+        // come as http URLs.
+        child: imageUrl!.startsWith('http')
+            ? Image.network(
+                imageUrl!,
+                width: 210,
+                height: 128,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              )
+            : Image.file(
+                File(imageUrl!),
+                width: 210,
+                height: 128,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const SizedBox.shrink(),
+              ),
       ),
     );
   }
@@ -797,6 +868,7 @@ class _Composer extends StatelessWidget {
                       enabled: enabled,
                       minLines: 1,
                       maxLines: 4,
+                      textInputAction: TextInputAction.send,
                       onSubmitted: (_) => onSend(),
                       decoration: const InputDecoration(
                         filled: true,
@@ -813,20 +885,43 @@ class _Composer extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 5),
-                  HaloIconButton(
-                    prototypeIconClass: 'ph ph-plus',
-                    semanticLabel: '添加附件',
-                    onPressed: enabled ? onAttach : null,
-                  ),
-                  HaloIconButton(
-                    prototypeIconClass: 'ph ph-arrow-up',
-                    semanticLabel: '发送',
-                    primary: true,
-                    onPressed: enabled ? onSend : null,
-                  ),
+                  _AttachButton(onPressed: enabled ? onAttach : null),
                 ],
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The composer's attach entry: a plus icon on a circular accent-tinted disc,
+/// so the remaining action reads as a button rather than a stray glyph now
+/// that Enter on the keyboard is what sends.
+class _AttachButton extends StatelessWidget {
+  const _AttachButton({this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '添加附件',
+      child: SizedBox.square(
+        dimension: HaloMetrics.iconButtonSize,
+        child: Material(
+          color: HaloColors.accentSoft,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: onPressed,
+            child: Icon(
+              HaloIcon.requirePrototypeClass('ph ph-plus'),
+              size: 18,
+              color: onPressed == null ? HaloColors.muted : HaloColors.accent,
+            ),
           ),
         ),
       ),
@@ -852,7 +947,26 @@ class _QuickAction extends StatelessWidget {
   }
 }
 
-void _showAttachmentSheet(BuildContext context) {
+String _formatAttachmentBytes(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  var value = bytes.toDouble();
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  final rendered = unit == 0 || value >= 100
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return '$rendered ${units[unit]}';
+}
+
+void _showAttachmentSheetFor(
+  BuildContext context, {
+  required Future<void> Function() onTakePhoto,
+  required Future<void> Function() onPickImage,
+  required Future<void> Function() onPickFile,
+}) {
   const abilities = <(String, String)>[
     ('ph ph-phone', '端到端语音通话'),
     ('ph ph-video-camera', 'Vidu 视频通话'),
@@ -863,6 +977,7 @@ void _showAttachmentSheet(BuildContext context) {
     ('ph ph-link', '网页'),
     ('ph ph-microphone', '录音'),
   ];
+  const wired = {'拍照', '图片', '文件'};
   showModalBottomSheet<void>(
     context: context,
     backgroundColor: Colors.transparent,
@@ -905,7 +1020,21 @@ void _showAttachmentSheet(BuildContext context) {
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(13),
                     child: InkWell(
-                      onTap: () => _showUnavailable(sheetContext),
+                      onTap: () {
+                        if (!wired.contains(ability.$2)) {
+                          _showUnavailable(sheetContext);
+                          return;
+                        }
+                        Navigator.of(sheetContext).pop();
+                        switch (ability.$2) {
+                          case '拍照':
+                            unawaited(onTakePhoto());
+                          case '图片':
+                            unawaited(onPickImage());
+                          case '文件':
+                            unawaited(onPickFile());
+                        }
+                      },
                       borderRadius: BorderRadius.circular(13),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -927,9 +1056,9 @@ void _showAttachmentSheet(BuildContext context) {
                               ),
                             ),
                             const SizedBox(height: 2),
-                            const Text(
-                              '暂不可用',
-                              style: TextStyle(
+                            Text(
+                              wired.contains(ability.$2) ? '本地保存' : '暂不可用',
+                              style: const TextStyle(
                                 fontSize: 7,
                                 color: HaloColors.muted,
                               ),
@@ -966,6 +1095,7 @@ String? _terminalMessage(SingleChatRunStatus status) {
     SingleChatRunStatus.authentication => '模型认证失败，请检查 Provider 配置',
     SingleChatRunStatus.filtered => '内容未通过安全检查',
     SingleChatRunStatus.notConfigured => '尚未配置可用的文字模型，请先在设置里保存模型服务并选择默认模型。',
+    SingleChatRunStatus.malformedOutput => '模型这次没有按约定格式回复，请重试',
     SingleChatRunStatus.idle ||
     SingleChatRunStatus.running ||
     SingleChatRunStatus.completed => null,

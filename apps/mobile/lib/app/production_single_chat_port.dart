@@ -91,8 +91,11 @@ final class ProductionSingleChatPort implements SingleChatPort {
       }
       final projected = _decodeAndProject(expert, response.outputText);
       if (projected == null) {
+        // Schema-nonconforming model output is a formatting miss, not a
+        // provider safety rejection; only ModelRuntimeErrorCode.contentRejected
+        // may surface as contentFiltered.
         return const SingleAgentRunOutcome.failed(
-          failure: SingleAgentRunFailure.contentFiltered,
+          failure: SingleAgentRunFailure.malformedOutput,
         );
       }
       return SingleAgentRunOutcome.completed(answer: projected);
@@ -138,9 +141,33 @@ String _renderExpertSystemPrompt(ExecutableExpert expert) => [
   renderExpertOutputPrompt(expert),
 ].join('\n');
 
+/// Deterministically unwraps common non-semantic packaging around a JSON
+/// object payload: surrounding whitespace, one markdown code fence
+/// (``` or ```json), and, failing that, one substring extraction from the
+/// first `{` to the last `}`. This only removes packaging; every schema
+/// check after decoding stays exactly as strict as before.
+String _unwrapModelJsonObjectText(String raw) {
+  var text = raw.trim();
+  if (text.startsWith('```')) {
+    final firstLineBreak = text.indexOf('\n');
+    final closingFence = text.lastIndexOf('```');
+    if (firstLineBreak >= 0 && closingFence > firstLineBreak) {
+      text = text.substring(firstLineBreak + 1, closingFence).trim();
+    }
+  }
+  if (!(text.startsWith('{') && text.endsWith('}'))) {
+    final start = text.indexOf('{');
+    final end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      text = text.substring(start, end + 1);
+    }
+  }
+  return text;
+}
+
 String? _decodeAndProject(ExecutableExpert expert, String rawModelOutput) {
   try {
-    final decoded = jsonDecode(rawModelOutput);
+    final decoded = jsonDecode(_unwrapModelJsonObjectText(rawModelOutput));
     if (decoded is! Map) return null;
     final output = <String, Object?>{};
     for (final entry in decoded.entries) {

@@ -332,7 +332,9 @@ final class ProviderBackedAgentRuntime
     }
     if (response.finishReason != ChatFinishReason.completed) return null;
     try {
-      final decoded = jsonDecode(response.outputText);
+      final decoded = jsonDecode(
+        _unwrapModelJsonObjectText(response.outputText),
+      );
       if (decoded is! Map || decoded.keys.any((key) => key is! String)) {
         return null;
       }
@@ -355,7 +357,7 @@ final class ProviderBackedAgentRuntime
   TruthfulOutputEnvelope? _decodeEnvelope(String raw) {
     try {
       return TruthfulOutputEnvelope.decode(
-        jsonDecode(raw),
+        jsonDecode(_unwrapModelJsonObjectText(raw)),
         maxAnswerCharacters: _policy.maxPublicAnswerCharacters,
       );
     } on FormatException {
@@ -383,6 +385,30 @@ final class ProviderBackedAgentRuntime
 
 final class _RuntimeTimedOut implements Exception {
   const _RuntimeTimedOut();
+}
+
+/// Deterministically unwraps common non-semantic packaging around a JSON
+/// object payload: surrounding whitespace, one markdown code fence
+/// (``` or ```json), and, failing that, one substring extraction from the
+/// first `{` to the last `}`. This only removes packaging; every schema
+/// check after decoding stays exactly as strict as before.
+String _unwrapModelJsonObjectText(String raw) {
+  var text = raw.trim();
+  if (text.startsWith('```')) {
+    final firstLineBreak = text.indexOf('\n');
+    final closingFence = text.lastIndexOf('```');
+    if (firstLineBreak >= 0 && closingFence > firstLineBreak) {
+      text = text.substring(firstLineBreak + 1, closingFence).trim();
+    }
+  }
+  if (!(text.startsWith('{') && text.endsWith('}'))) {
+    final start = text.indexOf('{');
+    final end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      text = text.substring(start, end + 1);
+    }
+  }
+  return text;
 }
 
 String _redactPublicText(String value) => value

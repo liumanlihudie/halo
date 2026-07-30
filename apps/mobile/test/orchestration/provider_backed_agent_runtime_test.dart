@@ -167,6 +167,31 @@ void main() {
     );
   });
 
+  test('markdown-fenced expert output still parses and completes', () async {
+    provider.response = _response('```json\n${_adviceOutput()}\n```');
+
+    final result = await runtime.respond(_turn(idempotencyKey: 'fenced-1'));
+
+    expect(result, contains('建议先把架构分层'));
+    expect(result, contains('"uncertainty":"unverified"'));
+  });
+
+  test('prose-wrapped summary envelope still parses and completes', () async {
+    provider.response = _response('以下是总结：\n${_summaryEnvelope('讨论结论')}\n谢谢。');
+
+    final result = await runtime.summarize(
+      const DiscussionSummaryRequest(
+        runId: 'run-summary-wrapped',
+        conversationId: 'group-1',
+        input: '原始问题',
+        outcomes: [],
+        idempotencyKey: 'summary-wrapped-1',
+      ),
+    );
+
+    expect(result, contains('讨论结论'));
+  });
+
   test(
     'maps cancellation and retryable provider errors to fixed safe codes',
     () async {

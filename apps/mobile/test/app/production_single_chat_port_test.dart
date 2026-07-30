@@ -139,12 +139,57 @@ void main() {
         ),
       );
 
-      expect(
-        (await handle.outcome).failure,
-        SingleAgentRunFailure.contentFiltered,
-      );
+      final outcome = await handle.outcome;
+      expect(outcome.failure, SingleAgentRunFailure.malformedOutput);
+      expect(outcome.failure, isNot(SingleAgentRunFailure.contentFiltered));
     },
   );
+
+  test('markdown-fenced JSON output still decodes and projects', () async {
+    runtime.response = ChatResponse(
+      requestId: 'command-fenced',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: '```json\n${jsonEncode(_adviceOutput('生产建议'))}\n```',
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-fenced',
+        expertId: 'product-manager',
+        text: '请分析需求',
+        clientCommandId: 'command-fenced',
+      ),
+    );
+
+    final outcome = await handle.outcome;
+    expect(outcome.isCompleted, isTrue);
+    expect(outcome.answer, '先把需求澄清清楚，再决定优先级。');
+  });
+
+  test('prose-wrapped JSON output still decodes and projects', () async {
+    runtime.response = ChatResponse(
+      requestId: 'command-prose',
+      model: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+      outputText: '好的，以下是分析结果：\n${jsonEncode(_adviceOutput('生产建议'))}\n希望对你有帮助。',
+      finishReason: ChatFinishReason.completed,
+      usage: const ChatUsage(inputTokens: 10, outputTokens: 2),
+    );
+
+    final handle = await port.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-prose',
+        expertId: 'product-manager',
+        text: '请分析需求',
+        clientCommandId: 'command-prose',
+      ),
+    );
+
+    final outcome = await handle.outcome;
+    expect(outcome.isCompleted, isTrue);
+    expect(outcome.answer, '先把需求澄清清楚，再决定优先级。');
+  });
 
   test('execution claim without a trusted receipt is not projected', () async {
     runtime.response = ChatResponse(
@@ -166,7 +211,7 @@ void main() {
 
     expect(
       (await handle.outcome).failure,
-      SingleAgentRunFailure.contentFiltered,
+      SingleAgentRunFailure.malformedOutput,
     );
   });
 
@@ -199,7 +244,7 @@ void main() {
       final outcome = await handle.outcome;
       expect(outcome.isCompleted, isFalse);
       expect(outcome.answer, isEmpty);
-      expect(outcome.failure, SingleAgentRunFailure.contentFiltered);
+      expect(outcome.failure, SingleAgentRunFailure.malformedOutput);
     },
   );
 

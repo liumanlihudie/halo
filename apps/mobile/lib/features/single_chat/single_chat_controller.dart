@@ -43,6 +43,12 @@ enum SingleAgentRunFailure {
   /// No usable model binding exists yet. Retrying can never succeed, so this
   /// must never be reported as a transient send failure.
   notConfigured,
+
+  /// The model replied, but not in the agreed JSON contract (for example the
+  /// payload was wrapped in prose or was not valid JSON at all). This is an
+  /// ordinary formatting miss, never a safety rejection, and a retry can
+  /// genuinely succeed.
+  malformedOutput,
 }
 
 @immutable
@@ -244,6 +250,7 @@ enum SingleChatRunStatus {
   authentication,
   filtered,
   notConfigured,
+  malformedOutput,
 }
 
 class SingleChatState {
@@ -787,7 +794,9 @@ class SingleChatController extends ChangeNotifier {
         _releaseDispatchClaim(dispatchClaim);
         _state = _state.copyWith(
           status: _statusFor(outcome.failure),
-          canRetry: outcome.failure == SingleAgentRunFailure.retryable,
+          canRetry:
+              outcome.failure == SingleAgentRunFailure.retryable ||
+              outcome.failure == SingleAgentRunFailure.malformedOutput,
         );
       }
       notifyListeners();
@@ -1314,5 +1323,7 @@ SingleChatRunStatus _statusFor(SingleAgentRunFailure failure) {
     SingleAgentRunFailure.authentication => SingleChatRunStatus.authentication,
     SingleAgentRunFailure.contentFiltered => SingleChatRunStatus.filtered,
     SingleAgentRunFailure.notConfigured => SingleChatRunStatus.notConfigured,
+    SingleAgentRunFailure.malformedOutput =>
+      SingleChatRunStatus.malformedOutput,
   };
 }

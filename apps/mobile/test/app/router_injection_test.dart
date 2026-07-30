@@ -40,7 +40,7 @@ void main() {
     await tester.pumpWidget(MaterialApp.router(routerConfig: router));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, 'hello');
-    await tester.tap(find.bySemanticsLabel('发送'));
+    await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pumpAndSettle();
 
     expect(find.text('Injected conversation'), findsOneWidget);
@@ -129,7 +129,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     await tester.enterText(find.byType(TextField).last, 'identity check');
-    await tester.tap(find.bySemanticsLabel('发送'));
+    await tester.testTextInput.receiveAction(TextInputAction.send);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 

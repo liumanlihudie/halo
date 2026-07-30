@@ -57,7 +57,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), '分析本周漏斗');
-      await tester.tap(find.bySemanticsLabel('发送'));
+      await tester.testTextInput.receiveAction(TextInputAction.send);
       await tester.pump();
 
       expect(find.text('分析本周漏斗'), findsOneWidget);
@@ -138,7 +138,7 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), '审阅条款');
-      await tester.tap(find.bySemanticsLabel('发送'));
+      await tester.testTextInput.receiveAction(TextInputAction.send);
       await tester.pump();
       service.completeNext(SingleAgentRunOutcome.failed(failure: scenario.$1));
       await tester.pumpAndSettle();
@@ -193,7 +193,10 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('聊天存储暂不可用，请稍后重试'), findsOneWidget);
-      expect(find.bySemanticsLabel('发送'), findsOneWidget);
+      // The composer still renders; sending happens via the keyboard action,
+      // so the attach affordance is what proves the composer is present.
+      expect(find.bySemanticsLabel('发送'), findsNothing);
+      expect(find.bySemanticsLabel('添加附件'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     }
@@ -579,7 +582,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '保留这段输入');
-      await tester.tap(find.bySemanticsLabel('发送'));
+      await tester.testTextInput.receiveAction(TextInputAction.send);
       await tester.pumpAndSettle();
 
       expect(service.requests, isEmpty);

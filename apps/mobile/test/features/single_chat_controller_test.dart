@@ -169,6 +169,34 @@ void main() {
   }
 
   test(
+    'malformedOutput maps to its own retryable state, not filtered',
+    () async {
+      final service = _FakeConversationApplicationService();
+      final controller = SingleChatController(
+        conversationId: 'conversation-malformed',
+        expertId: 'legal-risk-advisor',
+        service: service,
+        repository: InMemoryChatMessageRepository(),
+        commandIdFactory: () => 'command-malformed',
+      );
+      await controller.initialize();
+
+      final submission = controller.submit('审阅条款');
+      await Future<void>.delayed(Duration.zero);
+      service.completeNext(
+        const SingleAgentRunOutcome.failed(
+          failure: SingleAgentRunFailure.malformedOutput,
+        ),
+      );
+      await submission;
+
+      expect(controller.state.status, SingleChatRunStatus.malformedOutput);
+      expect(controller.state.status, isNot(SingleChatRunStatus.filtered));
+      expect(controller.state.canRetry, isTrue);
+    },
+  );
+
+  test(
     'dispose stops the active run and suppresses late notifications',
     () async {
       final service = _FakeConversationApplicationService();
