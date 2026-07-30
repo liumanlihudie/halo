@@ -89,7 +89,9 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
   /// Returns null when no key is configured, so the call surface can say so
   /// instead of dialling into nothing.
   Future<VolcanoRealtimeDialog?> openCall() async {
-    final config = await _config();
+    // Calls use their own credential: the duplex dialogue is a separate
+    // service from message synthesis, and settings keeps a key per service.
+    final config = await _config(KeyOnlyService.doubaoRealtimeAudio);
     if (config == null) return null;
     return VolcanoRealtimeDialog(
       apiKey: config.apiKey,
@@ -98,11 +100,27 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
     );
   }
 
-  Future<VolcanoSpeechConfig?> _config() async {
+  /// Reads the credential for [service], falling back to the other 豆包 entry.
+  ///
+  /// Both entries hold the same Volcano key in practice, so a key saved under
+  /// either one should power both voice messages and calls rather than leaving
+  /// one of them claiming nothing is configured.
+  Future<VolcanoSpeechConfig?> _config([
+    KeyOnlyService service = KeyOnlyService.doubaoSpeech,
+  ]) async {
+    return await _configFor(service) ??
+        await _configFor(
+          service == KeyOnlyService.doubaoSpeech
+              ? KeyOnlyService.doubaoRealtimeAudio
+              : KeyOnlyService.doubaoSpeech,
+        );
+  }
+
+  Future<VolcanoSpeechConfig?> _configFor(KeyOnlyService service) async {
     try {
       final records = await _persistence.loadServiceCredentials();
       for (final record in records) {
-        if (record.serviceId != KeyOnlyService.doubaoSpeech.id) continue;
+        if (record.serviceId != service.id) continue;
         if (!record.enabled) return null;
         final credential = await _secretResolver.resolve(record.secretRef);
         final key = credential?.value;
