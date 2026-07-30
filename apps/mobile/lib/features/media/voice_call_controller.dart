@@ -60,6 +60,14 @@ final class VoiceCallController extends ChangeNotifier {
   String? _failure;
   String? get failure => _failure;
 
+  DateTime? _connectedAt;
+
+  /// How long the call lasted, or null when it never connected.
+  Duration? get duration {
+    final started = _connectedAt;
+    return started == null ? null : DateTime.now().difference(started);
+  }
+
   bool _speakerOn = true;
   bool get speakerOn => _speakerOn;
 
@@ -110,6 +118,7 @@ final class VoiceCallController extends ChangeNotifier {
       _set(VoiceCallStatus.failed, failure: '需要麦克风权限才能通话');
       return;
     }
+    _connectedAt = DateTime.now();
     _set(VoiceCallStatus.listening);
   }
 

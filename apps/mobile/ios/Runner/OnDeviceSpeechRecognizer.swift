@@ -1,5 +1,6 @@
 import AVFoundation
 import Flutter
+import UIKit
 import Speech
 
 /// Transcribes a recorded voice message with Apple's on-device recogniser.
@@ -22,6 +23,17 @@ final class OnDeviceSpeechRecognizer: NSObject {
     }
   }
 
+  @objc private func proximityChanged() {
+    let nearEar = UIDevice.current.proximityState
+    let session = AVAudioSession.sharedInstance()
+    try? session.setCategory(
+      .playAndRecord,
+      mode: .voiceChat,
+      options: nearEar ? [.allowBluetooth] : [.defaultToSpeaker, .allowBluetooth]
+    )
+    try? session.overrideOutputAudioPort(nearEar ? .none : .speaker)
+  }
+
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "setAudioRoute":
@@ -41,6 +53,26 @@ final class OnDeviceSpeechRecognizer: NSObject {
       } catch {
         result(FlutterError(code: "audio_route_failed", message: nil, details: nil))
       }
+    case "setProximityRouting":
+      // Holding the phone to your ear should switch to the earpiece the way a
+      // phone call does, and taking it away should go back to the loudspeaker.
+      let on = (call.arguments as? [String: Any])?["enabled"] as? Bool ?? false
+      let device = UIDevice.current
+      NotificationCenter.default.removeObserver(
+        self,
+        name: UIDevice.proximityStateDidChangeNotification,
+        object: nil
+      )
+      device.isProximityMonitoringEnabled = on
+      if on {
+        NotificationCenter.default.addObserver(
+          self,
+          selector: #selector(proximityChanged),
+          name: UIDevice.proximityStateDidChangeNotification,
+          object: nil
+        )
+      }
+      result(true)
     case "transcribe":
       guard let arguments = call.arguments as? [String: Any],
             let path = arguments["path"] as? String

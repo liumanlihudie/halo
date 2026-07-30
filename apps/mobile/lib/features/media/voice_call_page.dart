@@ -15,6 +15,7 @@ class VoiceCallPage extends StatefulWidget {
     required this.expertName,
     required this.systemRole,
     this.controller,
+    this.onCallEnded,
     super.key,
   });
 
@@ -26,6 +27,10 @@ class VoiceCallPage extends StatefulWidget {
 
   /// Absent when speech is not configured; the page then says so plainly.
   final VoiceCallController? controller;
+
+  /// Records the finished call in the conversation, the way a phone call
+  /// leaves a row in a messenger thread.
+  final Future<void> Function(String summary)? onCallEnded;
 
   @override
   State<VoiceCallPage> createState() => _VoiceCallPageState();
@@ -61,7 +66,8 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
     final controller = widget.controller;
     if (controller == null) return '尚未配置语音服务';
     return switch (controller.status) {
-      VoiceCallStatus.idle || VoiceCallStatus.connecting => '正在接通…',
+      VoiceCallStatus.idle => '正在拨号…',
+      VoiceCallStatus.connecting => '正在接通…',
       VoiceCallStatus.listening => '在听你说',
       VoiceCallStatus.speaking => '正在回答',
       VoiceCallStatus.ended => '通话已结束',
@@ -70,7 +76,13 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
   }
 
   Future<void> _hangUp() async {
+    final duration = widget.controller?.duration;
     await widget.controller?.hangUp();
+    final summary = duration == null
+        ? '语音通话已取消'
+        : '语音通话  ${duration.inMinutes}:'
+              '${(duration.inSeconds % 60).toString().padLeft(2, '0')}';
+    await widget.onCallEnded?.call(summary);
     if (mounted) context.pop();
   }
 

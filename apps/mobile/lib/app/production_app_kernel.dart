@@ -209,11 +209,18 @@ final class ProductionAppKernelFactory {
           // call without restarting the app.
           callFactory: speech == null
               ? null
-              : () => VoiceCallController(
-                  openDialog: speech.openCall,
-                  microphone: DeviceCallMicrophone(),
-                  speaker: DeviceCallSpeaker(),
-                )..routeAudio = DeviceCallSpeaker.useSpeaker,
+              : () =>
+                    VoiceCallController(
+                        openDialog: speech.openCall,
+                        microphone: DeviceCallMicrophone(),
+                        speaker: DeviceCallSpeaker(),
+                      )
+                      ..routeAudio = ((speaker) async {
+                        await DeviceCallSpeaker.useSpeaker(speaker);
+                        // Proximity only takes over while the loudspeaker is on;
+                        // choosing the earpiece explicitly stays chosen.
+                        await DeviceCallSpeaker.followProximity(speaker);
+                      }),
           localData: ProductionLocalDataMaintenance(
             history: chatRepository as SingleChatHistoryMaintenance,
             storageDirectory: () async => supportDirectory,

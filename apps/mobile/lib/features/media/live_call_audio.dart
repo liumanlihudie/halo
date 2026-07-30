@@ -59,6 +59,18 @@ final class DeviceCallSpeaker implements CallSpeaker {
   ///
   /// The recording session defaults to the receiver, so without this a call
   /// is barely audible and sounds like nothing is happening.
+  /// Follows the proximity sensor: at the ear the earpiece, away from it the
+  /// loudspeaker — the behaviour every phone call has.
+  static Future<void> followProximity(bool enabled) async {
+    try {
+      await _audio.invokeMethod<bool>('setProximityRouting', {
+        'enabled': enabled,
+      });
+    } catch (_) {
+      // Routing stays wherever it is; a call still works.
+    }
+  }
+
   static Future<void> useSpeaker(bool speaker) async {
     try {
       await _audio.invokeMethod<bool>('setAudioRoute', {'speaker': speaker});

@@ -19,6 +19,7 @@ import 'package:halo_mobile/features/media/call_demo_page.dart';
 import 'package:halo_mobile/features/media/voice_call_page.dart';
 import 'package:halo_mobile/features/media/media_preview_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_details_page.dart';
+import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/chat_history_page.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
 import 'package:halo_mobile/features/settings/settings_page.dart';
@@ -175,6 +176,21 @@ GoRouter createAppRouter({
             systemRole:
                 expert?.profile.promptPackage.render() ?? '你是一位助理，回答简短、如实。',
             controller: current?.callFactory?.call(),
+            onCallEnded: (summary) async {
+              final repository = current?.chatRepository;
+              if (repository == null) return;
+              final identity = _executableExperts.installedIdentityForProfileId(
+                expertId,
+              );
+              await repository.append(
+                identity?.conversationId ?? expertId,
+                ChatMessageProjection(
+                  id: 'call-${DateTime.now().microsecondsSinceEpoch}',
+                  kind: ChatMessageKind.systemNotice,
+                  text: summary,
+                ),
+              );
+            },
           );
           final listenable = dependencyListenable;
           if (listenable == null) return buildPage(fixedDependencies);
