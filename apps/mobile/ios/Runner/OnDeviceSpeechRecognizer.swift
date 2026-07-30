@@ -1,3 +1,4 @@
+import AVFoundation
 import Flutter
 import Speech
 
@@ -23,6 +24,23 @@ final class OnDeviceSpeechRecognizer: NSObject {
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
+    case "setAudioRoute":
+      // A call must come out of the loudspeaker unless the user asks for the
+      // earpiece; playAndRecord defaults to the receiver, which sounds broken.
+      let speaker = (call.arguments as? [String: Any])?["speaker"] as? Bool ?? true
+      do {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(
+          .playAndRecord,
+          mode: .voiceChat,
+          options: speaker ? [.defaultToSpeaker, .allowBluetooth] : [.allowBluetooth]
+        )
+        try session.setActive(true)
+        try session.overrideOutputAudioPort(speaker ? .speaker : .none)
+        result(true)
+      } catch {
+        result(FlutterError(code: "audio_route_failed", message: nil, details: nil))
+      }
     case "transcribe":
       guard let arguments = call.arguments as? [String: Any],
             let path = arguments["path"] as? String

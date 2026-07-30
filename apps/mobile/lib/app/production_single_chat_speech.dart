@@ -99,7 +99,12 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
     final config = await _config(KeyOnlyService.doubaoRealtimeAudio);
     if (config == null) return null;
     final separator = config.apiKey.indexOf(':');
-    if (separator <= 0 || separator == config.apiKey.length - 1) return null;
+    if (separator <= 0 || separator == config.apiKey.length - 1) {
+      // A key is stored, it just is not the pair this API needs. Saying
+      // "not configured" would send the user looking for a missing key that
+      // is in fact already there.
+      throw const RealtimeDialogException('通话 Key 需填成「App ID:Access Token」');
+    }
     return VolcanoRealtimeDialog(
       appId: config.apiKey.substring(0, separator),
       accessToken: config.apiKey.substring(separator + 1),

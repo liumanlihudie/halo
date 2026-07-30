@@ -77,6 +77,7 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
+    final speakerOn = controller?.speakerOn ?? true;
     return Scaffold(
       backgroundColor: const Color(0xFF111522),
       body: SafeArea(
@@ -84,6 +85,24 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
           child: Column(
             children: [
+              Container(
+                width: 92,
+                height: 92,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF3B4BDB),
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: Text(
+                  widget.expertName.characters.first,
+                  style: const TextStyle(
+                    fontSize: 38,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
               Text(
                 widget.expertName,
                 style: const TextStyle(
@@ -128,28 +147,84 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
                 ),
               ),
               const SizedBox(height: 20),
-              Semantics(
-                button: true,
-                label: '挂断',
-                child: GestureDetector(
-                  onTap: _hangUp,
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE5484D),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      HaloIcon.requirePrototypeClass('ph ph-phone-disconnect'),
-                      color: Colors.white,
-                      size: 26,
-                    ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _CallAction(
+                    icon: speakerOn
+                        ? 'ph ph-speaker-high'
+                        : 'ph ph-phone',
+                    label: speakerOn ? '扬声器' : '听筒',
+                    active: speakerOn,
+                    onTap: controller == null
+                        ? null
+                        : () => unawaited(controller.setSpeaker(!speakerOn)),
                   ),
-                ),
+                  _CallAction(
+                    icon: 'ph ph-phone-disconnect',
+                    label: '挂断',
+                    danger: true,
+                    onTap: _hangUp,
+                  ),
+                ],
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One round control, the way a phone call presents its options.
+class _CallAction extends StatelessWidget {
+  const _CallAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.active = false,
+    this.danger = false,
+  });
+
+  final String icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool active;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: danger
+                    ? const Color(0xFFE5484D)
+                    : (active ? Colors.white : Colors.white24),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                HaloIcon.requirePrototypeClass(icon),
+                color: danger
+                    ? Colors.white
+                    : (active ? const Color(0xFF111522) : Colors.white),
+                size: 26,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+          ],
         ),
       ),
     );

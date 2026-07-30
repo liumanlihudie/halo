@@ -213,7 +213,7 @@ final class ProductionAppKernelFactory {
                   openDialog: speech.openCall,
                   microphone: DeviceCallMicrophone(),
                   speaker: DeviceCallSpeaker(),
-                ),
+                )..routeAudio = DeviceCallSpeaker.useSpeaker,
           localData: ProductionLocalDataMaintenance(
             history: chatRepository as SingleChatHistoryMaintenance,
             storageDirectory: () async => supportDirectory,

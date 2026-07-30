@@ -60,6 +60,20 @@ final class VoiceCallController extends ChangeNotifier {
   String? _failure;
   String? get failure => _failure;
 
+  bool _speakerOn = true;
+  bool get speakerOn => _speakerOn;
+
+  /// Switches between the loudspeaker and the earpiece mid-call.
+  Future<void> setSpeaker(bool on) async {
+    _speakerOn = on;
+    notifyListeners();
+    await _routeAudio?.call(on);
+  }
+
+  /// Injected so the route can be exercised without a device.
+  Future<void> Function(bool speaker)? routeAudio;
+  Future<void> Function(bool speaker)? get _routeAudio => routeAudio;
+
   Future<void> start({
     required String systemRole,
     required String botName,
@@ -87,6 +101,7 @@ final class VoiceCallController extends ChangeNotifier {
       return;
     }
     _events = events.listen(_onEvent);
+    await _routeAudio?.call(_speakerOn);
     try {
       final microphone = await _microphone.start();
       _audio = microphone.listen(dialog.sendAudio);

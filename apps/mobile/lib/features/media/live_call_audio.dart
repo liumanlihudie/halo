@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/services.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:record/record.dart';
 
@@ -48,6 +49,19 @@ final class DeviceCallSpeaker implements CallSpeaker {
   final AudioPlayer _player;
   final _queue = <Uint8List>[];
   bool _draining = false;
+  static const _audio = MethodChannel('halo.speech/on_device');
+
+  /// Routes call audio to the loudspeaker or the earpiece.
+  ///
+  /// The recording session defaults to the receiver, so without this a call
+  /// is barely audible and sounds like nothing is happening.
+  static Future<void> useSpeaker(bool speaker) async {
+    try {
+      await _audio.invokeMethod<bool>('setAudioRoute', {'speaker': speaker});
+    } catch (_) {
+      // Routing is a comfort setting; a call still works on the default route.
+    }
+  }
 
   /// Reply audio arrives as raw 16-bit PCM, which no player accepts on its
   /// own, so each chunk is given a WAV header before playback.

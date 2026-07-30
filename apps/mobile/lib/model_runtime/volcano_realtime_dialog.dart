@@ -252,7 +252,12 @@ final class VolcanoRealtimeDialog {
             payload: {
               'dialog': {
                 'bot_name': botName,
-                'system_role': systemRole,
+                // The service caps the persona fields; an over-long prompt is
+                // dropped whole, and the expert then answers as the vendor's
+                // own assistant — the one outcome this feature must not have.
+                'system_role': systemRole.length > 3500
+                    ? systemRole.substring(0, 3500)
+                    : systemRole,
                 'speaking_style': speakingStyle,
                 // Required, and it decides which persona fields exist at all.
                 'extra': {'model': _model},
