@@ -67,7 +67,8 @@ void main() {
   VolcanoRealtimeDialog dialog() {
     var ids = 0;
     return VolcanoRealtimeDialog(
-      apiKey: 'test-key-never-real',
+      appId: '9999999999',
+      accessToken: 'test-token-never-real',
       newId: () => 'id-${++ids}',
       connect: (_, {headers}) =>
           WebSocket.connect('ws://127.0.0.1:${server.port}', headers: headers),
@@ -86,7 +87,16 @@ void main() {
     final config = start['dialog']! as Map;
     expect(config['system_role'], '你是产品经理，只谈范围、优先级和风险。');
     expect(config['bot_name'], '产品经理');
-    expect(((start['tts']! as Map)['audio_config']! as Map)['format'], 'mp3');
+    // Documented requirements: the model version decides whether the persona
+    // fields exist at all, an absent asr/tts `extra` is rejected outright, and
+    // the service returns OGG Opus unless PCM is asked for.
+    expect(((start['dialog']! as Map)['extra']! as Map)['model'], '1.2.1.1');
+    expect((start['asr']! as Map)['extra'], isNotNull);
+    expect((start['tts']! as Map)['extra'], isNotNull);
+    expect(
+      ((start['tts']! as Map)['audio_config']! as Map)['format'],
+      'pcm_s16le',
+    );
   });
 
   test('speech, reply text and reply audio all reach the caller', () async {
@@ -131,7 +141,8 @@ void main() {
 
   test('a refused connection reports a safe message', () async {
     final call = VolcanoRealtimeDialog(
-      apiKey: 'test-key-never-real',
+      appId: '9999999999',
+      accessToken: 'test-token-never-real',
       newId: () => 'id',
       connect: (_, {headers}) async => throw const SocketException('refused'),
     );

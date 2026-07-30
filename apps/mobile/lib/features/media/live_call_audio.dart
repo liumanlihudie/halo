@@ -49,9 +49,34 @@ final class DeviceCallSpeaker implements CallSpeaker {
   final _queue = <Uint8List>[];
   bool _draining = false;
 
+  /// Reply audio arrives as raw 16-bit PCM, which no player accepts on its
+  /// own, so each chunk is given a WAV header before playback.
+  static Uint8List _wav(Uint8List pcm, {int sampleRate = 24000}) {
+    final header = ByteData(44);
+    void ascii(int offset, String value) {
+      for (var i = 0; i < value.length; i += 1) {
+        header.setUint8(offset + i, value.codeUnitAt(i));
+      }
+    }
+
+    ascii(0, 'RIFF');
+    header.setUint32(4, 36 + pcm.length, Endian.little);
+    ascii(8, 'WAVEfmt ');
+    header.setUint32(16, 16, Endian.little);
+    header.setUint16(20, 1, Endian.little);
+    header.setUint16(22, 1, Endian.little);
+    header.setUint32(24, sampleRate, Endian.little);
+    header.setUint32(28, sampleRate * 2, Endian.little);
+    header.setUint16(32, 2, Endian.little);
+    header.setUint16(34, 16, Endian.little);
+    ascii(36, 'data');
+    header.setUint32(40, pcm.length, Endian.little);
+    return Uint8List.fromList([...header.buffer.asUint8List(), ...pcm]);
+  }
+
   @override
   Future<void> play(Uint8List audio) async {
-    _queue.add(audio);
+    _queue.add(_wav(audio));
     if (_draining) return;
     _draining = true;
     try {

@@ -88,23 +88,26 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
   ///
   /// Returns null when no key is configured, so the call surface can say so
   /// instead of dialling into nothing.
+  /// Opens a live call.
+  ///
+  /// The dialogue handshake needs both the console App ID and the Access
+  /// Token, while settings stores one secret per service, so the credential is
+  /// written as `appId:accessToken`. Returns null when it is absent or not in
+  /// that form, and the call surface then says so rather than dialling into
+  /// nothing.
   Future<VolcanoRealtimeDialog?> openCall() async {
-    // Calls use their own credential: the duplex dialogue is a separate
-    // service from message synthesis, and settings keeps a key per service.
     final config = await _config(KeyOnlyService.doubaoRealtimeAudio);
     if (config == null) return null;
+    final separator = config.apiKey.indexOf(':');
+    if (separator <= 0 || separator == config.apiKey.length - 1) return null;
     return VolcanoRealtimeDialog(
-      apiKey: config.apiKey,
+      appId: config.apiKey.substring(0, separator),
+      accessToken: config.apiKey.substring(separator + 1),
       newId: _newRequestId,
       sampleRate: config.sampleRate,
     );
   }
 
-  /// Reads the credential for [service], falling back to the other 豆包 entry.
-  ///
-  /// Both entries hold the same Volcano key in practice, so a key saved under
-  /// either one should power both voice messages and calls rather than leaving
-  /// one of them claiming nothing is configured.
   Future<VolcanoSpeechConfig?> _config([
     KeyOnlyService service = KeyOnlyService.doubaoSpeech,
   ]) async {

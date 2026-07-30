@@ -65,7 +65,8 @@ void main() {
     var ids = 0;
     return VoiceCallController(
       openDialog: () async => VolcanoRealtimeDialog(
-        apiKey: 'test-key-never-real',
+        appId: '9999999999',
+        accessToken: 'test-token-never-real',
         newId: () => 'id-${++ids}',
         connect: (_, {headers}) => WebSocket.connect(
           'ws://127.0.0.1:${server.port}',
@@ -127,7 +128,8 @@ void main() {
   test('a refused call reports why and leaves nothing running', () async {
     final call = VoiceCallController(
       openDialog: () async => VolcanoRealtimeDialog(
-        apiKey: 'test-key-never-real',
+        appId: '9999999999',
+        accessToken: 'test-token-never-real',
         newId: () => 'id',
         connect: (_, {headers}) async => throw const SocketException('refused'),
       ),

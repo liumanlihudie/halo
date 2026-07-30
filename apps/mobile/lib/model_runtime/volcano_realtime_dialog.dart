@@ -62,16 +62,31 @@ final class RealtimeDialogFailed extends RealtimeDialogEvent {
 /// not from documentation guesses.
 final class VolcanoRealtimeDialog {
   VolcanoRealtimeDialog({
-    required String apiKey,
+    required String appId,
+    required String accessToken,
     required String Function() newId,
     Future<WebSocket> Function(Uri, {Map<String, dynamic>? headers})? connect,
     int sampleRate = 24000,
-  }) : _apiKey = apiKey,
+    String speaker = 'zh_female_vv_jupiter_bigtts',
+    String model = '1.2.1.1',
+  }) : _appId = appId,
+       _accessToken = accessToken,
+       _speaker = speaker,
+       _model = model,
        _newId = newId,
        _connect = connect ?? _defaultConnect,
        _sampleRate = sampleRate;
 
-  final String _apiKey;
+  /// Console App ID and Access Token: the dialogue handshake requires both.
+  final String _appId;
+  final String _accessToken;
+  final String _speaker;
+
+  /// Model version, a required StartSession field. 1.2.1.1 is O2.0, the line
+  /// that supports bot_name/system_role/speaking_style — the persona fields
+  /// this app depends on.
+  final String _model;
+
   final String Function() _newId;
   final Future<WebSocket> Function(Uri, {Map<String, dynamic>? headers})
   _connect;
@@ -103,8 +118,10 @@ final class VolcanoRealtimeDialog {
     try {
       socket = await _connect(
         endpoint,
+        // Every one of these is required by the dialogue handshake.
         headers: {
-          'X-Api-Key': _apiKey,
+          'X-Api-App-ID': _appId,
+          'X-Api-Access-Key': _accessToken,
           'X-Api-Resource-Id': 'volc.speech.dialog',
           'X-Api-App-Key': appKey,
           'X-Api-Connect-Id': _newId(),
@@ -204,12 +221,19 @@ final class VolcanoRealtimeDialog {
                 'bot_name': botName,
                 'system_role': systemRole,
                 'speaking_style': speakingStyle,
+                // Required, and it decides which persona fields exist at all.
+                'extra': {'model': _model},
               },
-              'asr': <String, Object?>{},
+              // These must be present: an absent `extra` is rejected outright.
+              'asr': {'extra': <String, Object?>{}},
               'tts': {
+                'speaker': _speaker,
+                'extra': <String, Object?>{},
+                // The dialogue service returns OGG Opus unless PCM is asked
+                // for; 16-bit PCM is what a player can be handed directly.
                 'audio_config': {
                   'channel': 1,
-                  'format': 'mp3',
+                  'format': 'pcm_s16le',
                   'sample_rate': _sampleRate,
                 },
               },
