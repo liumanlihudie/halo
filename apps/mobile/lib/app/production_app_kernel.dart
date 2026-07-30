@@ -4,7 +4,8 @@ import 'dart:io';
 
 import 'package:halo_mobile/app/app_kernel.dart';
 import 'package:halo_mobile/app/production_group_chat_port.dart';
-import 'package:halo_mobile/app/production_single_chat_port.dart';
+import 'package:halo_mobile/app/dartantic_single_chat_port.dart';
+import 'package:halo_mobile/app/production_single_chat_agents.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
@@ -19,8 +20,6 @@ import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/production_model_runtime_factory.dart';
 import 'package:halo_mobile/model_runtime/production_provider_inspection_transport.dart';
-import 'package:halo_mobile/model_runtime/production_sse_transport.dart';
-import 'package:halo_mobile/model_runtime/production_streaming_chat_runtime.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
@@ -77,7 +76,7 @@ final class ProductionAppKernelFactory {
   Future<ApplicationKernel> create() async {
     ProviderConfigurationStore? settingsStore;
     ProductionModelRuntimeSlot? runtimeSlot;
-    ProductionSingleChatPort? singleChatPort;
+    DartanticSingleChatPort? singleChatPort;
     DurableChatMessageRepository? chatRepository;
     SqliteModelCallJournal? modelCallJournal;
     OrchestrationKernelFactory? orchestrationFactory;
@@ -118,31 +117,19 @@ final class ProductionAppKernelFactory {
       final runtimeReloader = SerializedProviderRuntimeReloader(
         _SlotRuntimeReloader(runtimeSlot, runtimeFactory),
       );
-      final streamingRuntime = ProductionStreamingChatRuntime(
-        store: settingsStore,
-        secretResolver: KeychainSecretResolver(store: _credentials),
-        transportFactory:
-            ({
-              required endpoint,
-              required jsonBody,
-              required headers,
-              required sensitiveHeaderNames,
-              cancellationToken,
-            }) => ProductionSseFrameTransport(
-              endpoint: endpoint,
-              jsonBody: jsonBody,
-              headers: headers,
-              sensitiveHeaderNames: sensitiveHeaderNames,
-              endpointPolicy: _endpointPolicy,
-              cancellationToken: cancellationToken,
-            ),
-      );
-      singleChatPort = ProductionSingleChatPort(
-        runtime: _SlotSingleChatRuntime(runtimeSlot),
+      // Single chat runs on dartantic_ai: system prompt + history + message
+      // in, streamed plain markdown out. No envelope, no projection, nothing
+      // that can discard a reply the user has already read.
+      singleChatPort = DartanticSingleChatPort(
+        agents: ProductionSingleChatAgentFactory(
+          store: settingsStore,
+          secretResolver: KeychainSecretResolver(store: _credentials),
+          resolveModel: ({required agentId}) =>
+              runtimeSlot!.resolveConfiguredModel(agentId: agentId),
+        ),
         experts: ExecutableExpertRegistry(
           gateway: const ExpertOutputValidationGateway(),
         ),
-        streaming: streamingRuntime,
       );
       final experts = ExecutableExpertRegistry(
         gateway: const ExpertOutputValidationGateway(),
@@ -302,23 +289,10 @@ final class _SlotRuntimeReloader implements ProviderRuntimeReloader {
   Future<void> reload() => slot.replaceWith(factory);
 }
 
-final class _SlotSingleChatRuntime implements ProductionSingleChatRuntime {
-  const _SlotSingleChatRuntime(this.slot);
-
-  final ProductionModelRuntimeSlot slot;
-
-  @override
-  Future<ChatResponse> chat(ChatRequest request) => slot.chat(request);
-
-  @override
-  Future<ModelRef> resolveConfiguredModel({required String agentId}) =>
-      slot.resolveConfiguredModel(agentId: agentId);
-}
-
 final class _ProductionAppKernel implements ApplicationKernel {
   _ProductionAppKernel({
     required this.dependencies,
-    required ProductionSingleChatPort port,
+    required DartanticSingleChatPort port,
     required DurableChatMessageRepository chatRepository,
     required ProviderSettingsController settings,
     required ModelRoutingController modelRouting,
@@ -340,7 +314,7 @@ final class _ProductionAppKernel implements ApplicationKernel {
 
   @override
   final AppDependencies dependencies;
-  final ProductionSingleChatPort _port;
+  final DartanticSingleChatPort _port;
   final DurableChatMessageRepository _chatRepository;
   final ProviderSettingsController _settings;
   final ModelRoutingController _modelRouting;

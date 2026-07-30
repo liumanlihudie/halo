@@ -226,7 +226,7 @@ packages:
     source: hosted
     version: "3.4.2"
   dartantic_interface:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: dartantic_interface
       sha256: dceb490d410d2880906bf298ba649075a9d1d97e3ef832d932adeb6bd09538a6
