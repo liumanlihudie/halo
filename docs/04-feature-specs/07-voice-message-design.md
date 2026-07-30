@@ -36,18 +36,36 @@
 
 ## 3. Provider 现状（实证，2026-07-30）
 
-产品决策是**优先走 ToAPIs 聚合**（Key 已配置，不新增凭证）。实测：
+### 3.1 ToAPIs：无音频端点
 
 - `https://docs.toapis.com/llms.txt` 全量索引：账户 / Chat（Chat Completions、
   Responses、Anthropic Messages）/ 图片生成 / 视频生成 / 上传 / 异步任务 /
   Webhook。**没有任何音频推理端点**（无 TTS、无 ASR、无 realtime）。
-- `list-models` 文档保留 `type=audio` 筛选值，说明目录侧已为音频模型预留；
-  但没有可调用的推理接口。
+- `list-models` 保留 `type=audio` 筛选值（目录侧预留），但没有可调用的推理接口。
 - `openapi.json` 为模板占位符，不构成额外证据。
 
-结论：**「ToAPIs 聚合的豆包双工 TTS」这条路今天还不存在**。设计必须
-把语音供给做成可插拔座位，ToAPIs 音频端点上线即可接入，同时提供
-不阻塞整条功能的过渡层。
+据此产品决策（2026-07-30）：**语音直接接火山引擎（豆包语音）**，
+ToAPIs 音频端点上线后再评估是否迁移。
+
+### 3.2 火山引擎豆包语音：接口形态（检索核实，实现前需以官方文档逐项复核）
+
+- 域名：`openspeech.bytedance.com`
+- **TTS**：HTTP `POST /api/v1/tts` 单次合成（返回 base64 音频），另有
+  WSS 流式变体（语音消息不需要）。
+- **ASR**：大模型录音文件识别为异步 HTTP —
+  `POST /api/v3/auc/bigmodel/submit` 提交 + 查询接口轮询，
+  认证头 `X-Api-App-Key` / `X-Api-Access-Token`；另有 WSS 流式（不需要）。
+- **凭证是三元组**：App ID + Access Token + Cluster ID。仅 Access Token
+  是密钥（进 iOS Keychain）；App ID 与 Cluster 为非敏感标识符（可存 SQLite 配置）。
+
+**架构上重要的结论：语音消息全程只需 HTTP 单次/轮询调用，
+不需要 WebSocket** ——完整落在现有 unary 安全传输（DNS/TLS/重定向/响应
+大小边界、错误脱敏、计费围栏）之内。流式与双工留给「语音通话」。
+
+两个实现前必须用真实凭证实测的点（T0 探针任务）：
+1. 录音文件识别对 m4a 的支持（不支持则录音侧改 wav/mp3）；
+2. TTS 单次响应体积：Answer 上限 1200 字的合成音频 base64 可能超过现有
+   2MB 响应上限，语音传输可能需要独立的更高上限（安全评审项）。
 
 ## 4. 语音供给分层（Speech Provider Seam）
 
@@ -69,15 +87,13 @@ abstract interface class SpeechSynthesizer {
 
 | 层 | 实现 | 状态 | 说明 |
 |---|---|---|---|
-| A | **ToAPIs 音频端点** | 待其上线 | 首选。目录里 `type=audio` 模型 + 端点白名单新增 `/audio/...` 路径后接入；沿用现有 Key、计费围栏、错误脱敏 |
-| B | 豆包火山引擎直连 | 可选 | 需新增 Provider（独立 Key + 端点白名单 + 适配器），产品已表态暂不走，保留座位 |
-| C | **Apple 端上**（`SFSpeechRecognizer` + `AVSpeechSynthesizer`） | 立即可用 | 零 Key、离线可用、无网络计费；音质与豆包双工 TTS 有差距，作为默认过渡层与永久兜底 |
-
-**推荐落地顺序**：先以 C 层打通整条管线并发布（用户立刻可用语音消息），
-A 层接口就位等 ToAPIs；届时设置页一键切换，管线其余部分零改动。
+| A | **火山引擎豆包语音直连** | 本期实现（主路） | 新 Provider「volcano-speech」：三元组凭证、`openspeech.bytedance.com` 端点白名单、unary 传输、计费围栏、错误脱敏 |
+| B | ToAPIs 音频端点 | 待其上线 | 上线后评估迁移（可共用现有 ToAPIs Key）；接口座位保留 |
+| C | Apple 端上（`SFSpeechRecognizer` + `AVSpeechSynthesizer`） | 可选兜底 | 零 Key、离线可用；音质有差距。本期不实现，座位保留给离线场景 |
 
 诚实性约束：设置页必须如实标注当前语音层
-（「端上语音（Apple）」/「ToAPIs · <model>」），不得把端上合成冒充豆包音色。
+（「火山引擎 · 豆包语音」/「ToAPIs · <model>」/「端上语音（Apple）」），
+任一层不可用时如实置灰并说明原因，不得静默降级冒充音色。
 
 ## 5. 数据模型
 
@@ -106,6 +122,9 @@ A 层接口就位等 ToAPIs；届时设置页一键切换，管线其余部分�
 ## 7. 安全与计费边界
 
 - `NSMicrophoneUsageDescription`（中文、如实：录制语音消息用于对话）；
+- 火山凭证：Access Token 仅存 iOS Keychain（SecretRef 机制复用），
+  App ID / Cluster 存 SQLite Provider 配置（非敏感标识符）；三者均不进日志；
+  设置页 Token 输入沿用「显式粘贴」交互；
 - 端上层（C）不产生网络调用与计费；A/B 层每次 ASR/TTS 都过
   `SqliteModelCallJournal` 计费围栏（reserve→dispatched→completed），
   与聊天推理同等对待；
@@ -117,7 +136,7 @@ A 层接口就位等 ToAPIs；届时设置页一键切换，管线其余部分�
 1. 按住说话 → 松手 → 专家语音回复，全程无键盘参与；
 2. 双方语音气泡可播放、可看文字稿；杀 app 重启后历史完整、可再播放；
 3. 专家语音气泡保留「未核验」披露；
-4. 飞行模式下（C 层）功能完整可用；
+4. 未配置火山凭证时，语音入口如实置灰并引导去设置页（不静默失败）；
 5. 设置页如实显示当前语音供给层；
 6. ASR/TTS 单点失败不丢用户输入、不整条失败（见 §6 退化路径）；
 7. 全量 `flutter test` 绿、`flutter analyze` 干净、真机（iPhone 13 Pro）验收。
