@@ -151,9 +151,7 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   _CallAction(
-                    icon: speakerOn
-                        ? 'ph ph-speaker-high'
-                        : 'ph ph-phone',
+                    icon: speakerOn ? 'ph ph-speaker-high' : 'ph ph-phone',
                     label: speakerOn ? '扬声器' : '听筒',
                     active: speakerOn,
                     onTap: controller == null

@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:record/record.dart';
 
@@ -48,6 +50,8 @@ final class DeviceCallSpeaker implements CallSpeaker {
 
   final AudioPlayer _player;
   final _queue = <Uint8List>[];
+  final _played = <File>[];
+  Timer? _flush;
   bool _draining = false;
   static const _audio = MethodChannel('halo.speech/on_device');
 
@@ -88,26 +92,54 @@ final class DeviceCallSpeaker implements CallSpeaker {
     return Uint8List.fromList([...header.buffer.asUint8List(), ...pcm]);
   }
 
+  /// Buffers a reply, then plays it as one file.
+  ///
+  /// Chunks arrive every few tens of milliseconds. Starting and finishing a
+  /// player that often left gaps and, on device, silence. Audio is collected
+  /// and flushed shortly after it stops arriving instead.
   @override
   Future<void> play(Uint8List audio) async {
-    _queue.add(_wav(audio));
-    if (_draining) return;
+    _queue.add(audio);
+    _flush?.cancel();
+    _flush = Timer(
+      const Duration(milliseconds: 300),
+      () => unawaited(_drain()),
+    );
+  }
+
+  Future<void> _drain() async {
+    if (_queue.isEmpty || _draining) return;
     _draining = true;
+    final pcm = BytesBuilder(copy: false);
+    for (final chunk in _queue) {
+      pcm.add(chunk);
+    }
+    _queue.clear();
     try {
-      while (_queue.isNotEmpty) {
-        final next = _queue.removeAt(0);
-        await _player.play(BytesSource(next));
-        await _player.onPlayerComplete.first;
+      final directory = await getTemporaryDirectory();
+      final file = File(
+        '${directory.path}/halo-call-'
+        '${DateTime.now().microsecondsSinceEpoch}.wav',
+      );
+      await file.writeAsBytes(_wav(pcm.takeBytes()), flush: true);
+      await _player.play(DeviceFileSource(file.path));
+      _played.add(file);
+      // A long call must not fill the sandbox with spent audio.
+      while (_played.length > 8) {
+        final stale = _played.removeAt(0);
+        if (stale.existsSync()) await stale.delete();
       }
     } catch (_) {
-      // A chunk that will not play is dropped rather than ending the call.
+      // Audio that will not play is dropped rather than ending the call.
     } finally {
       _draining = false;
+      if (_queue.isNotEmpty) unawaited(_drain());
     }
   }
 
   @override
   Future<void> stop() async {
+    _flush?.cancel();
     _queue.clear();
     try {
       await _player.stop();

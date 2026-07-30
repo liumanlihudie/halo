@@ -1416,6 +1416,8 @@ void _showAttachmentSheetFor(
                         }
                         Navigator.of(sheetContext).pop();
                         switch (ability.$2) {
+                          case '端到端语音通话':
+                            unawaited(context.push('/call/voice/$expertId'));
                           case '拍照':
                             unawaited(onTakePhoto());
                           case '图片':
