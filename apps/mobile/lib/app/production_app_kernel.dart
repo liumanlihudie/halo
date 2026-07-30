@@ -19,6 +19,8 @@ import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/production_model_runtime_factory.dart';
 import 'package:halo_mobile/model_runtime/production_provider_inspection_transport.dart';
+import 'package:halo_mobile/model_runtime/production_sse_transport.dart';
+import 'package:halo_mobile/model_runtime/production_streaming_chat_runtime.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/provider_inspection_transport.dart';
@@ -116,11 +118,31 @@ final class ProductionAppKernelFactory {
       final runtimeReloader = SerializedProviderRuntimeReloader(
         _SlotRuntimeReloader(runtimeSlot, runtimeFactory),
       );
+      final streamingRuntime = ProductionStreamingChatRuntime(
+        store: settingsStore,
+        secretResolver: KeychainSecretResolver(store: _credentials),
+        transportFactory:
+            ({
+              required endpoint,
+              required jsonBody,
+              required headers,
+              required sensitiveHeaderNames,
+              cancellationToken,
+            }) => ProductionSseFrameTransport(
+              endpoint: endpoint,
+              jsonBody: jsonBody,
+              headers: headers,
+              sensitiveHeaderNames: sensitiveHeaderNames,
+              endpointPolicy: _endpointPolicy,
+              cancellationToken: cancellationToken,
+            ),
+      );
       singleChatPort = ProductionSingleChatPort(
         runtime: _SlotSingleChatRuntime(runtimeSlot),
         experts: ExecutableExpertRegistry(
           gateway: const ExpertOutputValidationGateway(),
         ),
+        streaming: streamingRuntime,
       );
       final experts = ExecutableExpertRegistry(
         gateway: const ExpertOutputValidationGateway(),

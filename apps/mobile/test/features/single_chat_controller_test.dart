@@ -3358,6 +3358,146 @@ void main() {
       expect(service.requests, hasLength(1));
     },
   );
+
+  test(
+    'streaming partials update state.streamingAnswer and clear on completion',
+    () async {
+      final service = _StreamingSingleChatPort();
+      // Real clock on purpose: the repository's dispatch-claim lease also uses
+      // wall time, and a fake near-zero clock makes every commit look expired.
+      // The asserts read state directly, so notify throttling is irrelevant.
+      final controller = SingleChatController(
+        conversationId: 'conversation-stream',
+        expertId: 'data-analyst',
+        service: service,
+        repository: InMemoryChatMessageRepository(),
+        commandIdFactory: () => 'command-stream',
+      );
+      await controller.initialize();
+
+      final submission = controller.submit('流式预览');
+      await pumpEventQueue();
+      expect(controller.state.status, SingleChatRunStatus.running);
+      expect(controller.state.streamingAnswer, isEmpty);
+
+      service.partials.add('先把');
+      await pumpEventQueue();
+      expect(controller.state.streamingAnswer, '先把');
+
+      service.partials.add('先把需求澄清');
+      await pumpEventQueue();
+      expect(controller.state.streamingAnswer, '先把需求澄清');
+
+      service.complete(
+        const SingleAgentRunOutcome.completed(
+          answer: '先把需求澄清清楚。',
+          sourceType: ChatMessageSourceType.modelOutput,
+        ),
+      );
+      await submission;
+
+      expect(controller.state.status, SingleChatRunStatus.completed);
+      expect(controller.state.streamingAnswer, isEmpty);
+      expect(controller.state.messages.last.text, '先把需求澄清清楚。');
+      controller.dispose();
+    },
+  );
+
+  test(
+    'streaming notifications are throttled by the 100ms timestamp check',
+    () async {
+      final service = _StreamingSingleChatPort();
+      final controller = SingleChatController(
+        conversationId: 'conversation-stream-throttle',
+        expertId: 'data-analyst',
+        service: service,
+        repository: InMemoryChatMessageRepository(),
+        commandIdFactory: () => 'command-stream-throttle',
+        // A frozen clock: the first partial notifies (1000 - 0 >= 100), every
+        // later one within the same instant does not.
+        nowEpochMs: () => 1000,
+      );
+      await controller.initialize();
+
+      unawaited(controller.submit('限流预览'));
+      await pumpEventQueue();
+      var notifications = 0;
+      controller.addListener(() => notifications += 1);
+
+      service.partials
+        ..add('部')
+        ..add('部分')
+        ..add('部分回答');
+      await pumpEventQueue();
+
+      expect(notifications, 1);
+      // The state still tracks the latest snapshot even when unnotified.
+      expect(controller.state.streamingAnswer, '部分回答');
+      await controller.stop();
+      expect(controller.state.streamingAnswer, isEmpty);
+      controller.dispose();
+    },
+  );
+
+  test('stop clears the streaming preview and unsubscribes', () async {
+    final service = _StreamingSingleChatPort();
+    var epochMs = 0;
+    final controller = SingleChatController(
+      conversationId: 'conversation-stream-stop',
+      expertId: 'data-analyst',
+      service: service,
+      repository: InMemoryChatMessageRepository(),
+      commandIdFactory: () => 'command-stream-stop',
+      nowEpochMs: () => epochMs += 1000,
+    );
+    await controller.initialize();
+
+    final submission = controller.submit('停止流');
+    await pumpEventQueue();
+    service.partials.add('中途');
+    await pumpEventQueue();
+    expect(controller.state.streamingAnswer, '中途');
+
+    await controller.stop();
+    expect(controller.state.status, SingleChatRunStatus.stopped);
+    expect(controller.state.streamingAnswer, isEmpty);
+
+    // Late partials after stop can no longer touch state.
+    service.partials.add('迟到的片段');
+    await pumpEventQueue();
+    expect(controller.state.streamingAnswer, isEmpty);
+
+    service.complete(
+      const SingleAgentRunOutcome.completed(answer: '不应展示的迟到回复'),
+    );
+    await submission;
+    expect(controller.state.streamingAnswer, isEmpty);
+    controller.dispose();
+  });
+}
+
+class _StreamingSingleChatPort implements SingleChatPort {
+  final partials = StreamController<String>.broadcast();
+  final _outcome = Completer<SingleAgentRunOutcome>();
+  final stoppedRunIds = <String>[];
+
+  @override
+  Future<SingleAgentRunHandle> startSingleAgentRun(
+    StartSingleAgentRunRequest request,
+  ) async {
+    return SingleAgentRunHandle(
+      runId: 'run-streaming',
+      outcome: _outcome.future,
+      partialAnswers: partials.stream,
+    );
+  }
+
+  void complete(SingleAgentRunOutcome outcome) => _outcome.complete(outcome);
+
+  @override
+  Future<void> stopSingleAgentRun(String runId) async {
+    stoppedRunIds.add(runId);
+  }
 }
 
 class _FakeConversationApplicationService

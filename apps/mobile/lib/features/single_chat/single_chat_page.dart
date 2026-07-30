@@ -478,7 +478,11 @@ class _SingleChatPageState extends State<SingleChatPage> {
             _AgentBubble(
               conversation: _conversation,
               modelLabel: _modelLabel,
-              child: const _ProgressMessage(),
+              // While the run streams a live Answer preview, the same bubble
+              // shows the growing markdown instead of the wave indicator.
+              child: state.streamingAnswer.isEmpty
+                  ? const _ProgressMessage()
+                  : HaloMarkdownBody(state.streamingAnswer),
             ),
           if (_terminalMessage(state.status) case final terminal?)
             _AgentBubble(

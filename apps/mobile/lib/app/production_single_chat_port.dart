@@ -3,12 +3,15 @@ import 'dart:convert';
 
 // ignore_for_file: prefer_initializing_formals
 
+import 'package:halo_mobile/app/streaming_answer_extractor.dart';
 import 'package:halo_mobile/experts/expert_output_prompt.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
+import 'package:halo_mobile/model_runtime/chat_stream_models.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_errors.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
+import 'package:halo_mobile/model_runtime/streaming_chat_runtime.dart';
 
 abstract interface class ProductionSingleChatRuntime {
   Future<ModelRef> resolveConfiguredModel({required String agentId});
@@ -20,11 +23,18 @@ final class ProductionSingleChatPort implements SingleChatPort {
   ProductionSingleChatPort({
     required ProductionSingleChatRuntime runtime,
     required ExecutableExpertRegistry experts,
+    StreamingChatModelRuntime? streaming,
   }) : _runtime = runtime,
-       _experts = experts;
+       _experts = experts,
+       _streaming = streaming;
 
   final ProductionSingleChatRuntime _runtime;
   final ExecutableExpertRegistry _experts;
+
+  /// Optional streaming transport. When present, runs stream a live Answer
+  /// preview; every failure mode falls back to the unary path so streaming
+  /// can never reduce reliability.
+  final StreamingChatModelRuntime? _streaming;
   final Map<String, _ActiveSingleChatRun> _active = {};
   bool _closed = false;
   Future<void>? _closeFuture;
@@ -45,15 +55,40 @@ final class ProductionSingleChatPort implements SingleChatPort {
       throw StateError('A run with this command identity is already active');
     }
     final cancellationToken = CancellationToken();
-    final outcome = _execute(
-      request: request,
-      expert: expert,
-      cancellationToken: cancellationToken,
-    );
+    StreamController<String>? partials;
+    final Future<SingleAgentRunOutcome> outcome;
+    if (_streaming case final streaming?) {
+      // Broadcast + snapshot semantics: each emission is the full Answer so
+      // far, so a listener that attaches after early deltas misses nothing.
+      final controller = StreamController<String>.broadcast();
+      partials = controller;
+      outcome = _executeStreaming(
+        streaming: streaming,
+        request: request,
+        expert: expert,
+        cancellationToken: cancellationToken,
+        partials: controller,
+      );
+    } else {
+      outcome = _execute(
+        request: request,
+        expert: expert,
+        cancellationToken: cancellationToken,
+      );
+    }
     final active = _ActiveSingleChatRun(cancellationToken, outcome);
     _active[runId] = active;
-    unawaited(outcome.whenComplete(() => _active.remove(runId)));
-    return SingleAgentRunHandle(runId: runId, outcome: outcome);
+    unawaited(
+      outcome.whenComplete(() {
+        _active.remove(runId);
+        unawaited(partials?.close());
+      }),
+    );
+    return SingleAgentRunHandle(
+      runId: runId,
+      outcome: outcome,
+      partialAnswers: partials?.stream,
+    );
   }
 
   Future<SingleAgentRunOutcome> _execute({
@@ -74,13 +109,7 @@ final class ProductionSingleChatPort implements SingleChatPort {
         ChatRequest(
           requestId: request.clientCommandId,
           model: model,
-          messages: [
-            ChatMessage(
-              role: ChatRole.system,
-              content: _renderExpertSystemPrompt(expert),
-            ),
-            ChatMessage(role: ChatRole.user, content: request.text),
-          ],
+          messages: _conversationMessages(expert, request),
           cancellationToken: cancellationToken,
         ),
       );
@@ -91,38 +120,13 @@ final class ProductionSingleChatPort implements SingleChatPort {
       }
       var projected = _decodeAndProject(expert, response.outputText);
       if (projected == null && !cancellationToken.isCancelled) {
-        // One silent repair attempt: models regularly break the JSON contract
-        // on a first try, and asking again with an explicit correction fixes
-        // most of them without bothering the user. Exactly one retry — a model
-        // that fails twice reports malformedOutput and the user's 重试 button
-        // takes over.
-        final repaired = await _runtime.chat(
-          ChatRequest(
-            requestId: '${request.clientCommandId}-repair',
-            model: model,
-            messages: [
-              ChatMessage(
-                role: ChatRole.system,
-                content: _renderExpertSystemPrompt(expert),
-              ),
-              ChatMessage(role: ChatRole.user, content: request.text),
-              ChatMessage(
-                role: ChatRole.assistant,
-                content: response.outputText,
-              ),
-              ChatMessage(
-                role: ChatRole.user,
-                content:
-                    '你上一条回复没有按要求返回。请重新只返回一个符合模板的 JSON 对象：'
-                    '不要 Markdown、不要代码围栏、不要任何解释文字。',
-              ),
-            ],
-            cancellationToken: cancellationToken,
-          ),
+        projected = await _repairRetry(
+          request: request,
+          expert: expert,
+          model: model,
+          previousOutput: response.outputText,
+          cancellationToken: cancellationToken,
         );
-        if (!cancellationToken.isCancelled) {
-          projected = _decodeAndProject(expert, repaired.outputText);
-        }
       }
       if (projected == null) {
         // Schema-nonconforming model output is a formatting miss, not a
@@ -145,6 +149,182 @@ final class ProductionSingleChatPort implements SingleChatPort {
       );
     }
   }
+
+  /// Streaming variant of [_execute].
+  ///
+  /// Raw streamed text is only ever surfaced two ways: the Answer-value-only
+  /// preview produced by [StreamingAnswerExtractor], and the final projection
+  /// after the exact same [_decodeAndProject] validation the unary path uses.
+  /// Any recoverable stream failure (retryable error, unsupported endpoint,
+  /// invalid configuration, or a stream that ends without a finish event)
+  /// silently re-runs the full unary path, which also owns error reporting
+  /// such as notConfigured.
+  Future<SingleAgentRunOutcome> _executeStreaming({
+    required StreamingChatModelRuntime streaming,
+    required StartSingleAgentRunRequest request,
+    required ExecutableExpert expert,
+    required CancellationToken cancellationToken,
+    required StreamController<String> partials,
+  }) async {
+    try {
+      final model = await _runtime.resolveConfiguredModel(
+        agentId: request.expertId,
+      );
+      if (cancellationToken.isCancelled) {
+        return const SingleAgentRunOutcome.failed(
+          failure: SingleAgentRunFailure.retryable,
+        );
+      }
+      final extractor = StreamingAnswerExtractor();
+      final raw = StringBuffer();
+      var sawFinish = false;
+      var fallBackToUnary = false;
+      try {
+        final events = streaming.streamChat(
+          ChatRequest(
+            requestId: request.clientCommandId,
+            model: model,
+            messages: _conversationMessages(expert, request),
+            cancellationToken: cancellationToken,
+          ),
+          cancellationToken: cancellationToken,
+        );
+        await for (final event in events) {
+          if (cancellationToken.isCancelled) {
+            break;
+          }
+          switch (event.type) {
+            case ChatStreamEventType.delta:
+              final text = event.text ?? '';
+              raw.write(text);
+              if (extractor.feed(text).isNotEmpty && !partials.isClosed) {
+                partials.add(extractor.answerSoFar);
+              }
+            case ChatStreamEventType.usage:
+              break;
+            case ChatStreamEventType.finish:
+              sawFinish = true;
+            case ChatStreamEventType.error:
+              if (_isStreamFallbackError(event.retryable, event.errorCode)) {
+                fallBackToUnary = true;
+              } else {
+                return SingleAgentRunOutcome.failed(
+                  failure: _mapFailure(
+                    event.errorCode ?? ModelRuntimeErrorCode.transportFailure,
+                  ),
+                );
+              }
+          }
+          if (sawFinish || fallBackToUnary) {
+            break;
+          }
+        }
+      } on ModelRuntimeException catch (error) {
+        if (cancellationToken.isCancelled) {
+          return const SingleAgentRunOutcome.failed(
+            failure: SingleAgentRunFailure.retryable,
+          );
+        }
+        if (!_isStreamFallbackError(error.retryable, error.code)) {
+          return SingleAgentRunOutcome.failed(failure: _mapFailure(error.code));
+        }
+        fallBackToUnary = true;
+      } catch (_) {
+        fallBackToUnary = true;
+      }
+      if (cancellationToken.isCancelled) {
+        return const SingleAgentRunOutcome.failed(
+          failure: SingleAgentRunFailure.retryable,
+        );
+      }
+      if (fallBackToUnary || !sawFinish) {
+        return _execute(
+          request: request,
+          expert: expert,
+          cancellationToken: cancellationToken,
+        );
+      }
+      var projected = _decodeAndProject(expert, raw.toString());
+      if (projected == null && !cancellationToken.isCancelled) {
+        projected = await _repairRetry(
+          request: request,
+          expert: expert,
+          model: model,
+          previousOutput: raw.toString(),
+          cancellationToken: cancellationToken,
+        );
+      }
+      if (projected == null) {
+        return const SingleAgentRunOutcome.failed(
+          failure: SingleAgentRunFailure.malformedOutput,
+        );
+      }
+      return SingleAgentRunOutcome.completed(answer: projected);
+    } on ModelRuntimeException catch (error) {
+      return SingleAgentRunOutcome.failed(failure: _mapFailure(error.code));
+    } on StateError {
+      return const SingleAgentRunOutcome.failed(
+        failure: SingleAgentRunFailure.retryable,
+      );
+    } catch (_) {
+      return const SingleAgentRunOutcome.failed(
+        failure: SingleAgentRunFailure.retryable,
+      );
+    }
+  }
+
+  /// One silent repair attempt: models regularly break the JSON contract on a
+  /// first try, and asking again with an explicit correction fixes most of
+  /// them without bothering the user. Exactly one retry — a model that fails
+  /// twice reports malformedOutput and the user's 重试 button takes over.
+  Future<String?> _repairRetry({
+    required StartSingleAgentRunRequest request,
+    required ExecutableExpert expert,
+    required ModelRef model,
+    required String previousOutput,
+    required CancellationToken cancellationToken,
+  }) async {
+    final repaired = await _runtime.chat(
+      ChatRequest(
+        requestId: '${request.clientCommandId}-repair',
+        model: model,
+        messages: [
+          ..._conversationMessages(expert, request),
+          ChatMessage(role: ChatRole.assistant, content: previousOutput),
+          ChatMessage(
+            role: ChatRole.user,
+            content:
+                '你上一条回复没有按要求返回。请重新只返回一个符合模板的 JSON 对象：'
+                '不要 Markdown、不要代码围栏、不要任何解释文字。',
+          ),
+        ],
+        cancellationToken: cancellationToken,
+      ),
+    );
+    if (cancellationToken.isCancelled) {
+      return null;
+    }
+    return _decodeAndProject(expert, repaired.outputText);
+  }
+
+  static List<ChatMessage> _conversationMessages(
+    ExecutableExpert expert,
+    StartSingleAgentRunRequest request,
+  ) => [
+    ChatMessage(
+      role: ChatRole.system,
+      content: _renderExpertSystemPrompt(expert),
+    ),
+    ChatMessage(role: ChatRole.user, content: request.text),
+  ];
+
+  static bool _isStreamFallbackError(
+    bool? retryable,
+    ModelRuntimeErrorCode? code,
+  ) =>
+      retryable == true ||
+      code == ModelRuntimeErrorCode.unsupportedEndpoint ||
+      code == ModelRuntimeErrorCode.invalidConfiguration;
 
   @override
   Future<void> stopSingleAgentRun(String runId) async {

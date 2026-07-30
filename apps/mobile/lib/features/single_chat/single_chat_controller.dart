@@ -27,10 +27,19 @@ class StartSingleAgentRunRequest {
 }
 
 class SingleAgentRunHandle {
-  const SingleAgentRunHandle({required this.runId, required this.outcome});
+  const SingleAgentRunHandle({
+    required this.runId,
+    required this.outcome,
+    this.partialAnswers,
+  });
 
   final String runId;
   final Future<SingleAgentRunOutcome> outcome;
+
+  /// Growing snapshots of the user-visible Answer while the run streams.
+  /// Null when the backing port has no streaming transport; existing ports
+  /// and fakes are unaffected.
+  final Stream<String>? partialAnswers;
 }
 
 enum SingleAgentRunFailure {
@@ -259,6 +268,7 @@ class SingleChatState {
     this.status = SingleChatRunStatus.idle,
     this.canRetry = false,
     this.historyLoadFailed = false,
+    this.streamingAnswer = '',
   }) : messages = List<ChatMessageProjection>.unmodifiable(messages);
 
   final List<ChatMessageProjection> messages;
@@ -266,17 +276,22 @@ class SingleChatState {
   final bool canRetry;
   final bool historyLoadFailed;
 
+  /// Live Answer preview while a run streams; empty outside a streaming run.
+  final String streamingAnswer;
+
   SingleChatState copyWith({
     List<ChatMessageProjection>? messages,
     SingleChatRunStatus? status,
     bool? canRetry,
     bool? historyLoadFailed,
+    String? streamingAnswer,
   }) {
     return SingleChatState(
       messages: messages ?? this.messages,
       status: status ?? this.status,
       canRetry: canRetry ?? this.canRetry,
       historyLoadFailed: historyLoadFailed ?? this.historyLoadFailed,
+      streamingAnswer: streamingAnswer ?? this.streamingAnswer,
     );
   }
 }
@@ -288,6 +303,7 @@ class SingleChatController extends ChangeNotifier {
   static const _dispatchClaimLease = Duration(minutes: 5);
   static const _dispatchClaimRenewalInterval = Duration(minutes: 1);
   static const _quarantinedClaimExpiryEpochMs = 253402300799000;
+  static const _streamingNotifyIntervalMs = 100;
 
   SingleChatController({
     required this.conversationId,
@@ -321,6 +337,7 @@ class SingleChatController extends ChangeNotifier {
   bool _disposed = false;
   bool _outboxReconciliationBlocked = false;
   final Map<String, Future<bool>> _stopOperations = {};
+  StreamSubscription<String>? _partialAnswersSub;
   final String _dispatchOwnerId = _newDispatchOwnerId();
   SingleChatDispatchClaim? _activeDispatchClaim;
   Timer? _dispatchLeaseTimer;
@@ -683,7 +700,12 @@ class SingleChatController extends ChangeNotifier {
         return;
       }
 
+      final partialSubscription = _subscribeToPartialAnswers(handle, attempt);
+
       final outcome = await handle.outcome;
+      _cancelPartialAnswers(partialSubscription);
+      // The run is terminal from here on: the live preview never outlives it.
+      _state = _state.copyWith(streamingAnswer: '');
       if (_disposed ||
           attempt != _attempt ||
           _state.status == SingleChatRunStatus.stopped) {
@@ -803,6 +825,9 @@ class SingleChatController extends ChangeNotifier {
     } catch (_) {
       _activeCommitToken?.invalidate();
       _activeCommitToken = null;
+      if (attempt == _attempt) {
+        _cancelPartialAnswers(_partialAnswersSub);
+      }
       if (!_disposed && !_mustRetainStoppedClaim(dispatchClaim)) {
         _releaseDispatchClaim(dispatchClaim);
       }
@@ -812,9 +837,56 @@ class SingleChatController extends ChangeNotifier {
         _state = _state.copyWith(
           status: SingleChatRunStatus.failed,
           canRetry: _lastText != null && _lastCommandId != null,
+          streamingAnswer: '',
         );
         notifyListeners();
       }
+    }
+  }
+
+  /// Mirrors streamed Answer snapshots into [SingleChatState.streamingAnswer].
+  ///
+  /// Notifications are throttled to one per [_streamingNotifyIntervalMs] via a
+  /// plain timestamp check (no timers), so a fast token stream cannot flood
+  /// the widget tree; the state itself always holds the latest snapshot.
+  StreamSubscription<String>? _subscribeToPartialAnswers(
+    SingleAgentRunHandle handle,
+    int attempt,
+  ) {
+    final partials = handle.partialAnswers;
+    if (partials == null) {
+      return null;
+    }
+    var lastNotifyEpochMs = 0;
+    final subscription = partials.listen(
+      (answer) {
+        if (_disposed ||
+            attempt != _attempt ||
+            _state.status != SingleChatRunStatus.running) {
+          return;
+        }
+        _state = _state.copyWith(streamingAnswer: answer);
+        final nowEpochMs = _nowEpochMs();
+        if (nowEpochMs - lastNotifyEpochMs >= _streamingNotifyIntervalMs) {
+          lastNotifyEpochMs = nowEpochMs;
+          notifyListeners();
+        }
+      },
+      onError: (Object _) {
+        // Preview delivery is best-effort; the run outcome carries the result.
+      },
+    );
+    _partialAnswersSub = subscription;
+    return subscription;
+  }
+
+  void _cancelPartialAnswers(StreamSubscription<String>? subscription) {
+    if (subscription == null) {
+      return;
+    }
+    unawaited(subscription.cancel());
+    if (identical(_partialAnswersSub, subscription)) {
+      _partialAnswersSub = null;
     }
   }
 
@@ -884,7 +956,9 @@ class SingleChatController extends ChangeNotifier {
     _state = _state.copyWith(
       status: SingleChatRunStatus.stopped,
       canRetry: false,
+      streamingAnswer: '',
     );
+    _cancelPartialAnswers(_partialAnswersSub);
     final handleFuture = _activeHandle;
     final dispatchClaim = _activeDispatchClaim;
     _dispatchLeaseTimer?.cancel();
@@ -1050,6 +1124,7 @@ class SingleChatController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _cancelPartialAnswers(_partialAnswersSub);
     _activeCommitToken?.invalidate();
     _activeCommitToken = null;
     final dispatchClaim = _activeDispatchClaim;

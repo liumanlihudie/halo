@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -350,7 +351,10 @@ void main() {
         .streamChat(request(), cancellationToken: token)
         .toList();
     token.cancel();
-    await transport.close();
+    // The runtime never subscribes once the token is cancelled, so awaiting
+    // close() on the sync controller would wait for a done delivery that can
+    // never happen.
+    unawaited(transport.close());
 
     expect(await eventsFuture, isEmpty);
   });

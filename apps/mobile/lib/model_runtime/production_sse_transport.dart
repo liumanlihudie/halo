@@ -15,20 +15,18 @@ import 'package:halo_mobile/model_runtime/unary_http_transport.dart';
 /// emitted frames or error text.
 final class ProductionSseFrameTransport implements StructuredSseFrameTransport {
   ProductionSseFrameTransport({
-    required Uri endpoint,
+    required this._endpoint,
     required Map<String, Object?> jsonBody,
     required Map<String, String> headers,
     required Set<String> sensitiveHeaderNames,
-    required TrustedProviderEndpointPolicy endpointPolicy,
+    required this._endpointPolicy,
     CancellationToken? cancellationToken,
     HttpClient Function()? httpClientFactory,
-  }) : _endpoint = endpoint,
-       _jsonBody = Map.unmodifiable(jsonBody),
+  }) : _jsonBody = Map.unmodifiable(jsonBody),
        _headers = Map.unmodifiable(headers),
        _sensitiveHeaderNames = Set.unmodifiable(
          sensitiveHeaderNames.map((name) => name.toLowerCase()),
        ),
-       _endpointPolicy = endpointPolicy,
        _cancellationToken = cancellationToken ?? CancellationToken(),
        _httpClientFactory = httpClientFactory ?? HttpClient.new;
 
@@ -216,7 +214,8 @@ final class _SseStreamSession {
     if (_finished) return;
     _resetIdleTimer();
     _totalResponseBytes += chunk.length;
-    if (_totalResponseBytes > ProductionSseFrameTransport.maximumResponseBytes) {
+    if (_totalResponseBytes >
+        ProductionSseFrameTransport.maximumResponseBytes) {
       _failClosed();
       return;
     }

@@ -7,6 +7,7 @@ import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/features/single_chat/message_actions_service.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
+import 'package:halo_mobile/foundation/design_system/halo_markdown_body.dart';
 import 'package:halo_mobile/foundation/design_system/halo_theme.dart';
 import 'package:halo_mobile/foundation/design_system/halo_wave_keys_indicator.dart';
 
@@ -117,6 +118,53 @@ void main() {
       expect(find.text('未核验'), findsOneWidget);
       expect(find.text('不确定性：仅覆盖 iOS 渠道样本'), findsOneWidget);
       expect(find.byType(HaloWaveKeysIndicator), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'running bubble swaps the wave for a markdown preview while streaming',
+    (tester) async {
+      final service = _StreamingFakeSingleChatPort();
+      await tester.pumpWidget(
+        _testApp(
+          service: service,
+          conversationId: 'data-analyst-chat',
+          expertId: 'data-analyst',
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextField), '分析本周漏斗');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pump();
+
+      // No partials yet: the running bubble shows only the wave.
+      expect(find.byType(HaloWaveKeysIndicator), findsOneWidget);
+      expect(find.byType(HaloMarkdownBody), findsNothing);
+
+      service.partials.add('本周移动端转化率');
+      await tester.pump();
+      await tester.pump();
+
+      // Same bubble, wave replaced by the growing Answer preview.
+      expect(find.byType(HaloWaveKeysIndicator), findsNothing);
+      expect(find.byType(HaloMarkdownBody), findsOneWidget);
+      expect(find.textContaining('本周移动端转化率', findRichText: true), findsWidgets);
+
+      service.complete(
+        const SingleAgentRunOutcome.completed(answer: '本周移动端转化率提升 3%。'),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(HaloWaveKeysIndicator), findsNothing);
+      expect(
+        find.textContaining('本周移动端转化率提升 3%。', findRichText: true),
+        findsWidgets,
+      );
+      await service.partials.close();
+      await tester.pump();
     },
   );
 
@@ -653,7 +701,7 @@ void main() {
 }
 
 Widget _testApp({
-  required _FakeSingleChatPort service,
+  required SingleChatPort service,
   required String conversationId,
   required String expertId,
 }) {
@@ -706,6 +754,27 @@ class _FakeSingleChatPort implements SingleChatPort {
   Future<void> stopSingleAgentRun(String runId) async {
     stoppedRunIds.add(runId);
   }
+}
+
+class _StreamingFakeSingleChatPort implements SingleChatPort {
+  final partials = StreamController<String>.broadcast();
+  final _outcome = Completer<SingleAgentRunOutcome>();
+
+  @override
+  Future<SingleAgentRunHandle> startSingleAgentRun(
+    StartSingleAgentRunRequest request,
+  ) async {
+    return SingleAgentRunHandle(
+      runId: 'run-streaming',
+      outcome: _outcome.future,
+      partialAnswers: partials.stream,
+    );
+  }
+
+  void complete(SingleAgentRunOutcome outcome) => _outcome.complete(outcome);
+
+  @override
+  Future<void> stopSingleAgentRun(String runId) async {}
 }
 
 class _WidgetThrowingReserveOutbox extends InMemorySingleChatCommandOutbox {
