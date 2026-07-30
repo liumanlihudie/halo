@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:halo_mobile/app/app_kernel.dart';
 import 'package:halo_mobile/app/app_shell.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
@@ -20,6 +21,7 @@ import 'package:halo_mobile/features/single_chat/chat_details_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_history_page.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_page.dart';
 import 'package:halo_mobile/features/settings/settings_page.dart';
+import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/local_data_page.dart';
 import 'package:halo_mobile/features/settings/model_providers_page.dart';
 import 'package:halo_mobile/features/settings/provider_detail_page.dart';
@@ -54,6 +56,7 @@ GoRouter createAppRouter({
                   Widget buildPage(AppDependencies? current) => SettingsPage(
                     key: ValueKey(current),
                     modelRouting: current?.modelRouting,
+                    localData: current?.localData,
                   );
                   final listenable = dependencyListenable;
                   if (listenable == null) {
@@ -234,7 +237,19 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/settings/local-data',
-        builder: (context, state) => const LocalDataPage(),
+        builder: (context, state) {
+          Widget buildPage(AppDependencies? current) => LocalDataPage(
+            key: ValueKey(current),
+            maintenance: current?.localData,
+            shareExport: current?.localData == null ? null : shareExportBundle,
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
     ],
   );
@@ -243,6 +258,11 @@ GoRouter createAppRouter({
 final _executableExperts = ExecutableExpertRegistry(
   gateway: const ExpertOutputValidationGateway(),
 );
+
+/// Hands the written bundle to the iOS share sheet, which is also how it
+/// reaches 存储到文件. Only the file the caller just produced is shared.
+Future<void> shareExportBundle(LocalDataExportBundle bundle) =>
+    SharePlus.instance.share(ShareParams(files: [XFile(bundle.file.path)]));
 
 StatefulShellBranch _branch(String path, Widget child) {
   return StatefulShellBranch(

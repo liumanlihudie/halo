@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
+import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 
@@ -17,6 +18,7 @@ class AppDependencies {
     this.providerSettings,
     this.modelRouting,
     this.groupChatPort,
+    this.localData,
     this.allowEphemeralChatRepositoryForTesting = false,
   });
 
@@ -28,6 +30,10 @@ class AppDependencies {
   /// Absent until the orchestration kernel is available; the group composer
   /// stays disabled rather than inventing replies.
   final GroupChatRunPort? groupChatPort;
+
+  /// Absent until durable storage is available; the local data page then keeps
+  /// every action disabled instead of failing mid-write.
+  final LocalDataMaintenancePort? localData;
   final bool allowEphemeralChatRepositoryForTesting;
 }
 

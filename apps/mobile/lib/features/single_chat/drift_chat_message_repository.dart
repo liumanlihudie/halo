@@ -6,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 
+import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
+
 import 'chat_message_repository.dart';
 
 part 'drift_chat_message_repository.g.dart';
@@ -50,7 +52,8 @@ class _SingleChatDatabase extends _$_SingleChatDatabase {
 }
 
 /// Drift-backed durable storage for a single chat's message projections.
-final class DriftChatMessageRepository implements DurableChatMessageRepository {
+final class DriftChatMessageRepository
+    implements DurableChatMessageRepository, SingleChatHistoryMaintenance {
   DriftChatMessageRepository._({
     required this._database,
     required this._commandOutbox,
@@ -303,6 +306,65 @@ final class DriftChatMessageRepository implements DurableChatMessageRepository {
     }
     _closed = true;
     return _closing = _database.close();
+  }
+
+  @override
+  Future<({int conversations, int messages})> countStoredHistory() async {
+    _ensureOpen();
+    final conversations = await _database
+        .customSelect('SELECT COUNT(*) AS c FROM single_chat_conversations')
+        .getSingle();
+    final messages = await _database
+        .customSelect('SELECT COUNT(*) AS c FROM single_chat_messages')
+        .getSingle();
+    return (
+      conversations: conversations.read<int>('c'),
+      messages: messages.read<int>('c'),
+    );
+  }
+
+  @override
+  Future<List<Map<String, Object?>>> exportStoredHistory() async {
+    _ensureOpen();
+    final conversations = await (_database.select(
+      _database.singleChatConversations,
+    )..orderBy([(row) => OrderingTerm.asc(row.conversationId)])).get();
+    final bundles = <Map<String, Object?>>[];
+    for (final conversation in conversations) {
+      final rows =
+          await (_database.select(_database.singleChatMessages)
+                ..where(
+                  (row) =>
+                      row.conversationId.equals(conversation.conversationId),
+                )
+                ..orderBy([(row) => OrderingTerm.asc(row.storageRevision)]))
+              .get();
+      bundles.add({
+        'conversationId': conversation.conversationId,
+        'expertId': conversation.expertId,
+        // The stored projection is the exact durable record; re-encoding it
+        // from the decoded object could silently drop a field a later schema
+        // added, so the row's own JSON is carried through verbatim.
+        'messages': [
+          for (final row in rows)
+            {
+              'messageId': row.messageId,
+              'projection': jsonDecode(row.projectionJson),
+            },
+        ],
+      });
+    }
+    return bundles;
+  }
+
+  @override
+  Future<void> eraseStoredMessages() async {
+    _ensureOpen();
+    // Conversation bindings deliberately survive: they are shipped identities,
+    // not user content, and dropping them would trip the rebinding guard on
+    // the next launch.
+    await _database.delete(_database.singleChatMessages).go();
+    _protectDatabaseFile();
   }
 
   Future<void> _bindConversations() {

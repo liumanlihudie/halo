@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/local_data_page.dart';
 import 'package:halo_mobile/app/app.dart';
 
@@ -24,7 +27,9 @@ void main() {
     expect(find.text('本地模型'), findsOneWidget);
   });
 
-  testWidgets('local data states local-first boundaries', (tester) async {
+  testWidgets('local data disables every action without storage', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       const HaloApp(initialLocation: '/settings/local-data'),
     );
@@ -32,31 +37,90 @@ void main() {
 
     expect(find.text('数据默认保存在本机'), findsOneWidget);
     expect(find.text('API Key 不进入导出包'), findsOneWidget);
-    expect(find.text('清除本机数据'), findsOneWidget);
-    // Storage figures must come from disk, never from a hardcoded literal, and
-    // unimplemented destructive actions must not look armed.
+    // Storage figures must come from disk, never from a hardcoded literal.
     expect(find.text('2.8 GB'), findsNothing);
     expect(find.text('486 MB'), findsNothing);
-    expect(find.text('尚未开放'), findsNWidgets(3));
+    // No maintenance port means no armed destructive button.
     expect(
       tester
           .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '清除本机数据'))
           .onPressed,
       isNull,
     );
+    expect(find.text('不可用'), findsWidgets);
   });
 
-  testWidgets('local data reports measured storage, never an invented one', (
-    tester,
-  ) async {
+  testWidgets('local data reports measured storage and counts', (tester) async {
     await tester.pumpWidget(
-      const MaterialApp(home: LocalDataPage(usageLoader: _fixedUsage)),
+      MaterialApp(home: LocalDataPage(maintenance: _FakeMaintenance())),
     );
     await tester.pump();
 
     expect(find.text('1.5 MB'), findsOneWidget);
-    expect(find.text('—'), findsNWidgets(2));
+    expect(find.text('42'), findsOneWidget);
+    expect(find.text('7'), findsOneWidget);
+  });
+
+  testWidgets('erasing local data requires confirmation', (tester) async {
+    final maintenance = _FakeMaintenance();
+    await tester.pumpWidget(
+      MaterialApp(home: LocalDataPage(maintenance: maintenance)),
+    );
+    await tester.pump();
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '清除本机数据'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+    expect(maintenance.erased, 0);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '清除本机数据'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '清除'));
+    await tester.pumpAndSettle();
+    expect(maintenance.erased, 1);
+    expect(find.text('本机对话数据已清除'), findsOneWidget);
+  });
+
+  testWidgets('export shares the written bundle', (tester) async {
+    final maintenance = _FakeMaintenance();
+    final shared = <LocalDataExportBundle>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: LocalDataPage(
+          maintenance: maintenance,
+          shareExport: (bundle) async => shared.add(bundle),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.text('导出数据包'));
+    await tester.pumpAndSettle();
+
+    expect(shared, hasLength(1));
+    expect(shared.single.byteCount, 2048);
   });
 }
 
-Future<int> _fixedUsage() async => 1572864;
+class _FakeMaintenance implements LocalDataMaintenancePort {
+  int erased = 0;
+
+  @override
+  Future<LocalDataSnapshot> loadSnapshot() async => const LocalDataSnapshot(
+    storageBytes: 1572864,
+    cacheBytes: 1024,
+    conversationCount: 7,
+    messageCount: 42,
+  );
+
+  @override
+  Future<int> clearCache() async => 1024;
+
+  @override
+  Future<LocalDataExportBundle> exportBundle() async =>
+      LocalDataExportBundle(file: File('halo-export.json'), byteCount: 2048);
+
+  @override
+  Future<void> eraseLocalData() async => erased += 1;
+}

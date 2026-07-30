@@ -1,56 +1,151 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
-import 'package:path_provider/path_provider.dart';
 
-/// Bytes actually occupied by the app's own storage directory.
-typedef LocalDataUsageLoader = Future<int> Function();
+/// Hands a finished export bundle to the platform share sheet.
+typedef LocalDataExportSharer =
+    Future<void> Function(LocalDataExportBundle bundle);
 
 class LocalDataPage extends StatefulWidget {
-  const LocalDataPage({this.usageLoader, super.key});
+  const LocalDataPage({this.maintenance, this.shareExport, super.key});
 
-  /// Injectable so tests do not touch the real application support directory.
-  final LocalDataUsageLoader? usageLoader;
+  /// Absent when the storage kernel failed to boot; every action then stays
+  /// disabled rather than pretending to work.
+  final LocalDataMaintenancePort? maintenance;
+
+  /// Injectable so tests never open a real share sheet.
+  final LocalDataExportSharer? shareExport;
 
   @override
   State<LocalDataPage> createState() => _LocalDataPageState();
 }
 
 class _LocalDataPageState extends State<LocalDataPage> {
-  int? _usedBytes;
-  var _usageFailed = false;
+  LocalDataSnapshot? _snapshot;
+  var _snapshotFailed = false;
+  var _busy = false;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_loadUsage());
+    unawaited(_loadSnapshot());
   }
 
-  Future<void> _loadUsage() async {
+  Future<void> _loadSnapshot() async {
+    final maintenance = widget.maintenance;
+    if (maintenance == null) {
+      if (mounted) setState(() => _snapshotFailed = true);
+      return;
+    }
     try {
-      final bytes = await (widget.usageLoader ?? _measureSupportDirectory)();
+      final snapshot = await maintenance.loadSnapshot();
       if (!mounted) return;
-      setState(() => _usedBytes = bytes);
+      setState(() {
+        _snapshot = snapshot;
+        _snapshotFailed = false;
+      });
     } catch (_) {
       if (!mounted) return;
-      setState(() => _usageFailed = true);
+      setState(() => _snapshotFailed = true);
     }
   }
 
-  String get _usageLabel {
-    if (_usageFailed) return '无法读取';
-    final bytes = _usedBytes;
-    if (bytes == null) return '统计中';
-    return _formatBytes(bytes);
+  /// Serializes the three destructive-ish actions so a second tap during an
+  /// in-flight export or erase cannot interleave two writers on the same
+  /// storage.
+  Future<void> _runExclusive(Future<String> Function() action) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    String message;
+    try {
+      message = await action();
+    } catch (_) {
+      message = '操作失败，请稍后再试';
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+    await _loadSnapshot();
+  }
+
+  Future<void> _clearCache() {
+    final maintenance = widget.maintenance;
+    if (maintenance == null) return Future<void>.value();
+    return _runExclusive(() async {
+      final freed = await maintenance.clearCache();
+      return freed == 0 ? '没有可清理的缓存' : '已清理 ${formatLocalDataBytes(freed)} 缓存';
+    });
+  }
+
+  Future<void> _export() {
+    final maintenance = widget.maintenance;
+    final share = widget.shareExport;
+    if (maintenance == null || share == null) return Future<void>.value();
+    return _runExclusive(() async {
+      final bundle = await maintenance.exportBundle();
+      await share(bundle);
+      return '已导出 ${formatLocalDataBytes(bundle.byteCount)} 数据包';
+    });
+  }
+
+  Future<void> _erase() async {
+    final maintenance = widget.maintenance;
+    if (maintenance == null || _busy) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('清除本机对话数据'),
+        content: const Text(
+          '将删除本机保存的全部对话消息，且无法撤销。\n\n'
+          '模型密钥与服务配置不受影响，联系人列表也会保留。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(foregroundColor: HaloColors.red),
+            child: const Text('清除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _runExclusive(() async {
+      await maintenance.eraseLocalData();
+      return '本机对话数据已清除';
+    });
+  }
+
+  String _metric(int? value) {
+    if (widget.maintenance == null) return '不可用';
+    if (_snapshotFailed) return '无法读取';
+    if (_snapshot == null) return '统计中';
+    return value == null ? '—' : '$value';
+  }
+
+  String _bytesMetric(int? value) {
+    if (widget.maintenance == null) return '不可用';
+    if (_snapshotFailed) return '无法读取';
+    if (_snapshot == null) return '统计中';
+    return value == null ? '—' : formatLocalDataBytes(value);
   }
 
   @override
   Widget build(BuildContext context) {
+    final maintenance = widget.maintenance;
+    final snapshot = _snapshot;
+    final canAct = maintenance != null && !_busy;
+    final cacheBytes = snapshot?.cacheBytes;
     return HaloPageScaffold(
       title: '本地数据与备份',
       compactTitle: true,
@@ -102,21 +197,29 @@ class _LocalDataPageState extends State<LocalDataPage> {
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _Metric(_usageLabel, '本地文件')),
-              // Message and memory counters are not implemented yet; showing a
-              // number here would be inventing one.
-              const Expanded(child: _Metric('—', '消息')),
-              const Expanded(child: _Metric('—', '记忆')),
+              Expanded(
+                child: _Metric(_bytesMetric(snapshot?.storageBytes), '本地文件'),
+              ),
+              Expanded(child: _Metric(_metric(snapshot?.messageCount), '消息')),
+              Expanded(
+                child: _Metric(_metric(snapshot?.conversationCount), '会话'),
+              ),
             ],
           ),
           const HaloSectionLabel('迁移与备份'),
           HaloSettingsGroup(
             children: [
-              const HaloSettingsRow(
+              HaloSettingsRow(
                 label: '导出数据包',
-                detail: '尚未开放',
+                detail: canAct && widget.shareExport != null
+                    ? '导出对话记录 JSON 并分享'
+                    : '不可用',
                 prototypeIconClass: 'ph ph-export',
+                onTap: canAct && widget.shareExport != null ? _export : null,
               ),
+              // Import needs a merge strategy for conversations that already
+              // exist locally; shipping a button before that decision exists
+              // would risk silently overwriting history.
               const HaloSettingsRow(
                 label: '导入数据包',
                 detail: '尚未开放',
@@ -153,7 +256,7 @@ class _LocalDataPageState extends State<LocalDataPage> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        '密钥需在新设备上重新配置，避免备份文件泄露长期凭证。',
+                        '导出包只含对话记录；密钥与服务配置需在新设备上重新配置，避免备份文件泄露长期凭证。',
                         style: TextStyle(
                           fontSize: 9,
                           height: 1.45,
@@ -169,32 +272,29 @@ class _LocalDataPageState extends State<LocalDataPage> {
           const HaloSectionLabel('存储管理'),
           HaloSettingsGroup(
             children: [
-              const HaloSettingsRow(
+              HaloSettingsRow(
                 label: '清理缓存',
-                detail: '尚未开放',
+                detail: cacheBytes == null
+                    ? _bytesMetric(cacheBytes)
+                    : '可释放 ${formatLocalDataBytes(cacheBytes)}',
                 prototypeIconClass: 'ph ph-broom',
+                onTap: canAct ? _clearCache : null,
               ),
             ],
           ),
           const SizedBox(height: 14),
           OutlinedButton(
-            // Destructive and irreversible: it must do nothing visible rather
-            // than look armed while being a no-op.
-            onPressed: null,
+            onPressed: canAct ? _erase : null,
             style: OutlinedButton.styleFrom(foregroundColor: HaloColors.red),
             child: const Text('清除本机数据'),
           ),
           const SizedBox(height: 5),
-          const Text(
-            '导出、导入、清理缓存与清除数据尚未实现，因此这些操作当前不可用。',
+          Text(
+            maintenance == null
+                ? '本机存储当前不可用，导出、清理与清除均已停用。'
+                : '清除只删除本机对话消息，不会删除 Keychain 中的模型密钥，也不会删除联系人。',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 9, color: HaloColors.muted),
-          ),
-          const SizedBox(height: 5),
-          const Text(
-            '该操作会删除本机对话、Agent、记忆和附件，但不会删除 Keychain 中的模型密钥。',
-            textAlign: TextAlign.center,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 9,
               color: HaloColors.muted,
               height: 1.45,
@@ -232,28 +332,4 @@ class _Metric extends StatelessWidget {
       ),
     );
   }
-}
-
-Future<int> _measureSupportDirectory() async {
-  final directory = await getApplicationSupportDirectory();
-  if (!directory.existsSync()) return 0;
-  var total = 0;
-  await for (final entity in directory.list(recursive: true)) {
-    if (entity is File) total += await entity.length();
-  }
-  return total;
-}
-
-String _formatBytes(int bytes) {
-  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-  var value = bytes.toDouble();
-  var unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  final rendered = unit == 0 || value >= 100
-      ? value.toStringAsFixed(0)
-      : value.toStringAsFixed(1);
-  return '$rendered ${units[unit]}';
 }

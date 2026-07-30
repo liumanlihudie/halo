@@ -9,6 +9,7 @@ import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
+import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/drift_chat_message_repository.dart';
 import 'package:halo_mobile/orchestration/sqlite_model_call_journal.dart';
@@ -184,6 +185,12 @@ final class ProductionAppKernelFactory {
           providerSettings: settings,
           modelRouting: modelRouting,
           groupChatPort: ProductionGroupChatPort(orchestrationKernel),
+          localData: ProductionLocalDataMaintenance(
+            history: chatRepository as SingleChatHistoryMaintenance,
+            storageDirectory: () async => supportDirectory,
+            cacheDirectory: getTemporaryDirectory,
+            exportDirectory: getTemporaryDirectory,
+          ),
         ),
         port: singleChatPort,
         orchestrationKernel: orchestrationKernel,

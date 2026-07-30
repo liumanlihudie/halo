@@ -1,21 +1,42 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
-import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
+import 'package:package_info_plus/package_info_plus.dart';
+
+/// Reads the running build's version so the row cannot drift from the binary.
+typedef AppVersionLoader = Future<PackageInfo> Function();
 
 class SettingsPage extends StatefulWidget {
-  const SettingsPage({this.modelRouting, super.key});
+  const SettingsPage({
+    this.modelRouting,
+    this.localData,
+    this.versionLoader,
+    super.key,
+  });
 
   final ModelRoutingController? modelRouting;
+
+  /// Absent when storage failed to boot; the counters then show `—`.
+  final LocalDataMaintenancePort? localData;
+
+  /// Injectable so tests do not need the platform channel.
+  final AppVersionLoader? versionLoader;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
 class _SettingsPageState extends State<SettingsPage> {
+  LocalDataSnapshot? _snapshot;
+  String? _version;
+
   @override
   void initState() {
     super.initState();
@@ -23,6 +44,30 @@ class _SettingsPageState extends State<SettingsPage> {
     if (routing != null) {
       routing.addListener(_refresh);
       routing.load().catchError((Object _) {});
+    }
+    unawaited(_loadSnapshot());
+    unawaited(_loadVersion());
+  }
+
+  Future<void> _loadSnapshot() async {
+    final localData = widget.localData;
+    if (localData == null) return;
+    try {
+      final snapshot = await localData.loadSnapshot();
+      if (mounted) setState(() => _snapshot = snapshot);
+    } catch (_) {
+      // Leaves the counters at `—` rather than inventing one.
+    }
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await (widget.versionLoader ?? PackageInfo.fromPlatform)();
+      if (mounted) {
+        setState(() => _version = '${info.version} (${info.buildNumber})');
+      }
+    } catch (_) {
+      // Falls back to the honest placeholder below.
     }
   }
 
@@ -59,9 +104,10 @@ class _SettingsPageState extends State<SettingsPage> {
         padding: const EdgeInsets.fromLTRB(15, 2, 15, 24),
         children: [
           _LocalProfileCard(
-            agentCount: HaloFixtures.installedExperts.length,
+            agentCount:
+                ExecutableExpertRegistry.installedExpertIdentities.length,
             modelCount: modelCount,
-            conversationCount: HaloFixtures.conversations.length,
+            conversationCount: _snapshot?.conversationCount,
           ),
           const HaloSectionLabel('模型服务'),
           HaloSettingsGroup(
@@ -94,7 +140,7 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               HaloSettingsRow(
                 label: '本地数据与备份',
-                detail: '导出与清理尚未开放',
+                detail: '导出、清理与清除',
                 prototypeIconClass: 'ph ph-database',
                 onTap: () => context.push('/settings/local-data'),
                 trailing: const _Chevron(),
@@ -122,16 +168,16 @@ class _SettingsPageState extends State<SettingsPage> {
             ],
           ),
           const HaloSectionLabel('开源项目'),
-          const HaloSettingsGroup(
+          HaloSettingsGroup(
             children: [
-              HaloSettingsRow(
+              const HaloSettingsRow(
                 label: 'GitHub 项目',
                 detail: '开源准备中，尚未发布',
                 prototypeIconClass: 'ph ph-github-logo',
               ),
               HaloSettingsRow(
                 label: '版本',
-                detail: '1.0.0 (1)',
+                detail: _version ?? '读取中',
                 prototypeIconClass: 'ph ph-info',
               ),
             ],
@@ -164,7 +210,7 @@ class _LocalProfileCard extends StatelessWidget {
 
   final int agentCount;
   final int? modelCount;
-  final int conversationCount;
+  final int? conversationCount;
 
   @override
   Widget build(BuildContext context) {
@@ -239,7 +285,12 @@ class _LocalProfileCard extends StatelessWidget {
                   ),
                 ),
                 Expanded(
-                  child: _Stat(value: '$conversationCount', label: '会话'),
+                  child: _Stat(
+                    value: conversationCount == null
+                        ? '—'
+                        : '$conversationCount',
+                    label: '会话',
+                  ),
                 ),
               ],
             ),
