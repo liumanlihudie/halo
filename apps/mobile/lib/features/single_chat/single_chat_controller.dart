@@ -1,10 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+
+import 'package:halo_mobile/model_runtime/volcano_speech.dart';
 
 import 'chat_message_repository.dart';
 
@@ -552,7 +555,15 @@ class SingleChatController extends ChangeNotifier {
     final String transcript;
     try {
       transcript = await speech.transcribe(path);
-    } catch (_) {
+    } catch (error) {
+      // Diagnostic only: the failure type and its safe message, never the
+      // upstream body. Transcription is the one leg of the voice pipeline with
+      // no proven contract behind it, so a silent failure here is unfixable.
+      developer.log(
+        'voice transcription failed: ${error.runtimeType}'
+        '${error is SpeechException ? ' (${error.safeMessage})' : ''}',
+        name: 'halo.voice',
+      );
       // The recording is kept: a failed transcription must not delete what the
       // user just said.
       _state = _state.copyWith(
