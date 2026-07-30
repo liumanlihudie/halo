@@ -199,7 +199,10 @@ void main() {
       }
 
       final raw = sqlite3.open(fixture.path);
-      expect(raw.select('PRAGMA user_version').single.values.single, 5);
+      expect(
+        raw.select('PRAGMA user_version').single.values.single,
+        SqliteProviderConfigurationStore.schemaVersion,
+      );
       raw.close();
       fixture.delete();
     },
@@ -250,7 +253,10 @@ void main() {
       }
 
       final raw = sqlite3.open(fixture.path);
-      expect(raw.select('PRAGMA user_version').single.values.single, 5);
+      expect(
+        raw.select('PRAGMA user_version').single.values.single,
+        SqliteProviderConfigurationStore.schemaVersion,
+      );
       expect(
         raw
             .select('PRAGMA table_xinfo(provider_configuration_mutations)')
@@ -1079,10 +1085,70 @@ void main() {
     expect(valid.displayName, '模型服务 🚀');
   });
 
+  test('a v5 install gains the v6 tables without losing anything', () async {
+    final fixture = _DatabaseFixture.create();
+    // Build a real v5 database through the shipped code path, then rewind the
+    // version marker so reopening exercises the v5 -> v6 upgrade.
+    final before = SqliteProviderConfigurationStore.open(fixture.path);
+    await before.upsert(
+      ProviderConfig.deepSeek(
+        enabled: true,
+        secretRef: SecretRef.parse(
+          'keychain://halo.provider/2f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6071',
+        ),
+      ),
+    );
+    await before.setGlobalDefaultModel(
+      ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+    );
+    await before.setAgentModelOverride(
+      'product-manager',
+      ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+    );
+    await before.close();
+
+    final raw = sqlite3.open(fixture.path);
+    raw.execute('DROP TABLE purpose_model_bindings');
+    raw.execute('DROP TABLE service_credentials');
+    raw.execute('PRAGMA user_version = 5');
+    raw.close();
+
+    final upgraded = SqliteProviderConfigurationStore.open(fixture.path);
+    addTearDown(upgraded.close);
+
+    // The upgrade is additive: everything the install already had survives.
+    expect(
+      await upgraded.loadGlobalDefaultModel(),
+      ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+    );
+    expect(
+      (await upgraded.loadAgentModelOverrides())['product-manager'],
+      ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+    );
+    expect((await upgraded.loadEnabled()).single.providerId, 'deepseek');
+
+    final reopened = sqlite3.open(fixture.path);
+    expect(
+      reopened.select('PRAGMA user_version').single.values.first,
+      SqliteProviderConfigurationStore.schemaVersion,
+    );
+    expect(
+      reopened
+          .select(
+            "SELECT name FROM sqlite_master WHERE type = 'table' "
+            "AND name IN ('purpose_model_bindings', 'service_credentials')",
+          )
+          .length,
+      2,
+    );
+    reopened.close();
+  });
+
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();
     final raw = sqlite3.open(fixture.path);
-    raw.execute('PRAGMA user_version = 6');
+    final future = SqliteProviderConfigurationStore.schemaVersion + 1;
+    raw.execute('PRAGMA user_version = $future');
     raw.close();
 
     expect(
@@ -1091,7 +1157,7 @@ void main() {
     );
 
     final reopened = sqlite3.open(fixture.path);
-    expect(reopened.select('PRAGMA user_version').single.values.first, 6);
+    expect(reopened.select('PRAGMA user_version').single.values.first, future);
     reopened.close();
     fixture.delete();
   });

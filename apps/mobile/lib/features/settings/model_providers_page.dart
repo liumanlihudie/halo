@@ -133,12 +133,12 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
                 prototypeIconClass: 'ph ph-video-camera',
                 onTap: () {},
               ),
-              HaloSettingsRow(
-                label: 'Router 模型',
-                detail: '尚未配置',
-                prototypeIconClass: 'ph ph-path',
-                onTap: () {},
-              ),
+              // A "Router 模型" row used to sit here. No document ever defined
+              // its behaviour, and model choice is already resolved by
+              // `override ?? globalDefault` per expert — predictably and with
+              // no extra model call. A second routing layer would only
+              // contradict that, so the empty row is gone rather than left
+              // looking configurable.
             ],
           ),
           const HaloSectionLabel('多个 Provider 可同时启用'),

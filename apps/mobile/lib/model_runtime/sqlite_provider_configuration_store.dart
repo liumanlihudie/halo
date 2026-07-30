@@ -27,7 +27,7 @@ final class SqliteProviderConfigurationStore
     }
   }
 
-  static const schemaVersion = 5;
+  static const schemaVersion = 6;
   static const _providerConfigsSql = '''
       CREATE TABLE provider_configs (
         provider_id TEXT PRIMARY KEY,
@@ -178,6 +178,39 @@ final class SqliteProviderConfigurationStore
       ) STRICT
     ''';
 
+  /// Global model bindings for purposes other than text.
+  ///
+  /// Deliberately a separate table rather than a `purpose` column on
+  /// `model_bindings`: that table is on the working text path (twenty query
+  /// sites plus the strict schema validator) and carries per-expert overrides,
+  /// while image and video defaults are global-only. Adding a dimension there
+  /// would put the shipped text binding at risk for no gain.
+  static const _purposeModelBindingsSql = '''
+      CREATE TABLE purpose_model_bindings (
+        purpose TEXT PRIMARY KEY CHECK (purpose IN ('image', 'video')),
+        provider_id TEXT NOT NULL
+          REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+        model_id TEXT NOT NULL CHECK (length(model_id) > 0)
+      ) STRICT
+    ''';
+
+  /// Services that are a credential and nothing else.
+  ///
+  /// Doubao speech, Doubao realtime audio and Vidu have no model catalogue to
+  /// discover and no OpenAI-compatible chat endpoint, so they cannot be rows in
+  /// `provider_configs` — that table requires a base URI, a protocol from a
+  /// fixed enum, and a catalogue. Only the Keychain locator is stored here; key
+  /// material never reaches SQLite.
+  static const _serviceCredentialsSql = '''
+      CREATE TABLE service_credentials (
+        service_id TEXT PRIMARY KEY
+          CHECK (length(service_id) > 0 AND service_id NOT GLOB '*[^a-z0-9-]*'),
+        secret_ref TEXT NOT NULL,
+        enabled INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+        configured_at_ms INTEGER NOT NULL CHECK (configured_at_ms > 0)
+      ) STRICT
+    ''';
+
   final Database _database;
   final Map<String, PendingProviderOperationRecovery> _recoveredOperations = {};
   bool _closed = false;
@@ -200,12 +233,17 @@ final class SqliteProviderConfigurationStore
       } else if (version == 3) {
         _migrateV3ToV4();
         _migrateV4ToV5();
+        _migrateV5ToV6();
         _database.execute('PRAGMA user_version = $schemaVersion');
       } else if (version == 4) {
         if (_isExactPreMetadataV4Schema()) {
           _migratePreMetadataV4ToFinalV4();
         }
         _migrateV4ToV5();
+        _migrateV5ToV6();
+        _database.execute('PRAGMA user_version = $schemaVersion');
+      } else if (version == 5) {
+        _migrateV5ToV6();
         _database.execute('PRAGMA user_version = $schemaVersion');
       } else if (version != schemaVersion) {
         if (version == 1 || version == 2) {
@@ -241,6 +279,8 @@ final class SqliteProviderConfigurationStore
     _database.execute(_activeCredentialOwnerIndexSql);
     _database.execute(_removalLeasesSql);
     _database.execute(_mutationLeasesSql);
+    _database.execute(_purposeModelBindingsSql);
+    _database.execute(_serviceCredentialsSql);
   }
 
   void _migrateV3ToV4() {
@@ -296,6 +336,13 @@ final class SqliteProviderConfigurationStore
       "ADD COLUMN state TEXT NOT NULL DEFAULT 'staged' "
       "CHECK (state IN ('staged', 'runtimePublished'))",
     );
+  }
+
+  /// Purely additive: two new tables, nothing existing is rewritten, so an
+  /// install that only ever used the text default keeps working untouched.
+  void _migrateV5ToV6() {
+    _database.execute(_purposeModelBindingsSql);
+    _database.execute(_serviceCredentialsSql);
   }
 
   bool _isExactPreMetadataV4Schema() {
@@ -437,6 +484,8 @@ final class SqliteProviderConfigurationStore
       'credential_bindings_active_owner',
       'provider_removal_leases',
       'provider_configuration_mutations',
+      'purpose_model_bindings',
+      'service_credentials',
     };
     final objects = _database.select('''
       SELECT type, name FROM sqlite_master
@@ -489,6 +538,17 @@ final class SqliteProviderConfigurationStore
       'provider_model_catalogs': [
         ('provider_id', 'TEXT', 1, 1),
         ('discovered_at_ms', 'INTEGER', 1, 0),
+      ],
+      'purpose_model_bindings': [
+        ('purpose', 'TEXT', 1, 1),
+        ('provider_id', 'TEXT', 1, 0),
+        ('model_id', 'TEXT', 1, 0),
+      ],
+      'service_credentials': [
+        ('service_id', 'TEXT', 1, 1),
+        ('secret_ref', 'TEXT', 1, 0),
+        ('enabled', 'INTEGER', 1, 0),
+        ('configured_at_ms', 'INTEGER', 1, 0),
       ],
       'provider_models': [
         ('provider_id', 'TEXT', 1, 1),
@@ -556,6 +616,7 @@ final class SqliteProviderConfigurationStore
       'model_bindings': 'provider_configs',
       'provider_model_catalogs': 'provider_configs',
       'provider_models': 'provider_model_catalogs',
+      'purpose_model_bindings': 'provider_configs',
     };
     for (final entry in expectedForeignKeys.entries) {
       final table = entry.key;
@@ -579,6 +640,8 @@ final class SqliteProviderConfigurationStore
       'model_bindings': ['pk'],
       'provider_model_catalogs': ['pk'],
       'provider_models': ['pk'],
+      'purpose_model_bindings': ['pk'],
+      'service_credentials': ['pk'],
       'credential_bindings': ['c', 'pk'],
       'provider_removal_leases': ['pk', 'u', 'u'],
       'provider_configuration_mutations': ['pk', 'u', 'u'],
@@ -602,6 +665,8 @@ final class SqliteProviderConfigurationStore
       'model_bindings': {'scope,scope_id'},
       'provider_model_catalogs': {'provider_id'},
       'provider_models': {'provider_id,model_id'},
+      'purpose_model_bindings': {'purpose'},
+      'service_credentials': {'service_id'},
       'credential_bindings': {'secret_ref', 'provider_id,credential_slot'},
       'provider_removal_leases': {'lease_id', 'operation_id', 'provider_id'},
       'provider_configuration_mutations': {
