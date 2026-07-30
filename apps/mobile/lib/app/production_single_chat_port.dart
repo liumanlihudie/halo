@@ -203,7 +203,14 @@ final class ProductionSingleChatPort implements SingleChatPort {
             case ChatStreamEventType.delta:
               final text = event.text ?? '';
               raw.write(text);
-              if (extractor.feed(text).isNotEmpty && !partials.isClosed) {
+              if (expert.usesPlainAnswer) {
+                // Plain text: every delta is answer text already.
+                if (text.isNotEmpty && !partials.isClosed) {
+                  previews += 1;
+                  partials.add(raw.toString());
+                }
+              } else if (extractor.feed(text).isNotEmpty &&
+                  !partials.isClosed) {
                 previews += 1;
                 partials.add(extractor.answerSoFar);
               }
@@ -264,6 +271,15 @@ final class ProductionSingleChatPort implements SingleChatPort {
         name: 'halo.stream',
       );
       var projected = _decodeAndProject(expert, raw.toString());
+      if (projected == null &&
+          !expert.usesPlainAnswer &&
+          extractor.answerComplete) {
+        // The user watched this answer arrive in full. The extractor saw the
+        // Answer value's closing quote, so the reply genuinely finished; only
+        // the surrounding internal fields — which are never shown — failed to
+        // parse. Discarding a complete answer over them is indefensible.
+        projected = expert.projectAdviceAnswer(extractor.answerSoFar);
+      }
       if (projected == null && !cancellationToken.isCancelled) {
         projected = await _repairRetry(
           request: request,
@@ -274,6 +290,21 @@ final class ProductionSingleChatPort implements SingleChatPort {
         );
       }
       if (projected == null) {
+        // Last resort before failing: the user already watched this text
+        // arrive. Replacing what they read with 发送失败 destroys a real reply;
+        // keeping it while saying plainly that it may be cut short is both
+        // more useful and more honest. Content rules still apply.
+        final partial = expert.projectAdviceAnswer(
+          expert.usesPlainAnswer
+              ? raw.toString().trim()
+              : extractor.answerSoFar,
+        );
+        if (partial != null) {
+          return SingleAgentRunOutcome.completed(
+            answer: partial,
+            uncertainty: '回答在传输中断开，内容可能不完整',
+          );
+        }
         return const SingleAgentRunOutcome.failed(
           failure: SingleAgentRunFailure.malformedOutput,
         );
@@ -309,12 +340,18 @@ final class ProductionSingleChatPort implements SingleChatPort {
         model: model,
         messages: [
           ..._conversationMessages(expert, request),
-          ChatMessage(role: ChatRole.assistant, content: previousOutput),
+          // An empty previous reply cannot be echoed back: a blank message is
+          // not a valid turn, and trying to send one used to turn a plainly
+          // unusable answer into a misleading transient failure.
+          if (previousOutput.trim().isNotEmpty)
+            ChatMessage(role: ChatRole.assistant, content: previousOutput),
           ChatMessage(
             role: ChatRole.user,
-            content:
-                '你上一条回复没有按要求返回。请重新只返回一个符合模板的 JSON 对象：'
-                '不要 Markdown、不要代码围栏、不要任何解释文字。',
+            content: expert.usesPlainAnswer
+                ? '你上一条回复是空的或超出长度限制。请直接用中文重新回答一次，'
+                      '不超过 1200 字。'
+                : '你上一条回复没有按要求返回。请重新只返回一个符合模板的 JSON 对象：'
+                      '不要 Markdown、不要代码围栏、不要任何解释文字。',
           ),
         ],
         cancellationToken: cancellationToken,
@@ -398,10 +435,46 @@ String _unwrapModelJsonObjectText(String raw) {
   return text;
 }
 
+/// Why a model reply could not be projected, as a classification only.
+///
+/// Never carries upstream text: a reason name and a length are enough to tell
+/// a truncated reply from an over-long one or a broken contract, and neither
+/// can leak provider content into logs.
+void _logProjectionFailure(String reason, {int? length}) => developer.log(
+  'projection failed: $reason${length == null ? '' : ' len=$length'}',
+  name: 'halo.chat',
+);
+
 String? _decodeAndProject(ExecutableExpert expert, String rawModelOutput) {
+  if (expert.usesPlainAnswer) {
+    // The reply is the answer. Nothing to parse means nothing to lose.
+    final trimmed = rawModelOutput.trim();
+    // Models trained on the old contract (or on other tools) sometimes send a
+    // JSON envelope anyway. Showing that raw to the user would be worse than
+    // the bug we just removed, so an Answer field is still honoured — and a
+    // self-claimed execution envelope is still refused.
+    final legacy = _tryReadLegacyEnvelope(trimmed);
+    if (legacy != null && _isUnsupportedExecutionEnvelope(legacy)) {
+      _logProjectionFailure('executionEnvelope');
+      return null;
+    }
+    final answer = expert.projectAdviceAnswer(
+      legacy?[expertAnswerField] ?? trimmed,
+    );
+    if (answer == null) {
+      _logProjectionFailure(
+        'plainAnswerRejected',
+        length: rawModelOutput.length,
+      );
+    }
+    return answer;
+  }
   try {
     final decoded = jsonDecode(_unwrapModelJsonObjectText(rawModelOutput));
-    if (decoded is! Map) return null;
+    if (decoded is! Map) {
+      _logProjectionFailure('notJsonObject', length: rawModelOutput.length);
+      return null;
+    }
     final output = <String, Object?>{};
     for (final entry in decoded.entries) {
       final key = entry.key;
@@ -411,8 +484,59 @@ String? _decodeAndProject(ExecutableExpert expert, String rawModelOutput) {
     // The iPhone P0 is advice-only. Execution claims need a future trusted
     // tool/receipt context, so model-supplied receipt-shaped JSON is never
     // treated as evidence or passed through as a completed answer.
-    if (_isUnsupportedExecutionEnvelope(output)) return null;
-    return expert.validateAndProject(output);
+    if (_isUnsupportedExecutionEnvelope(output)) {
+      _logProjectionFailure('executionEnvelope');
+      return null;
+    }
+    final strict = expert.validateAndProject(output);
+    if (strict != null) return strict;
+    // The model answered but botched the constant advice envelope around it.
+    // That envelope is pinned by the app either way, so losing a complete
+    // answer to it is pure damage. Evidence-bearing experts are excluded
+    // inside projectAdviceAnswer.
+    final rescued = expert.projectAdviceAnswer(output[expertAnswerField]);
+    if (rescued == null) {
+      final answer = output[expertAnswerField];
+      _logProjectionFailure(
+        answer == null
+            ? 'noAnswerField'
+            : answer is! String
+            ? 'answerNotString'
+            : 'answerRejected',
+        length: answer is String ? answer.length : null,
+      );
+    }
+    return rescued;
+  } catch (error) {
+    _logProjectionFailure(
+      error is FormatException ? 'jsonParse' : 'unexpected',
+      length: rawModelOutput.length,
+    );
+    return null;
+  }
+}
+
+/// Reads a JSON object reply from an expert that was asked for plain text.
+///
+/// Returns null when the text is what it should be: ordinary prose.
+Map<String, Object?>? _tryReadLegacyEnvelope(String text) {
+  if (!text.startsWith('{') &&
+      !text.startsWith('```') &&
+      !text.contains('"$expertAnswerField"')) {
+    return null;
+  }
+  try {
+    final decoded = jsonDecode(_unwrapModelJsonObjectText(text));
+    if (decoded is! Map) return null;
+    final output = <String, Object?>{};
+    for (final entry in decoded.entries) {
+      if (entry.key is! String) return null;
+      output[entry.key as String] = entry.value;
+    }
+    return output.containsKey(expertAnswerField) ||
+            output.containsKey('Verification')
+        ? output
+        : null;
   } catch (_) {
     return null;
   }

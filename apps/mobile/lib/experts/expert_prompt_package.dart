@@ -1088,6 +1088,45 @@ class ExecutableExpert {
       profile.validationPolicy == ExpertValidationPolicy.structural &&
       _structuralValidator.preflight(output);
 
+  /// Whether this expert answers in plain text instead of a JSON envelope.
+  ///
+  /// The advice envelope is a constant the application pins, so for these
+  /// experts the JSON wrapper carried no information and only created a way
+  /// for a finished answer to be thrown away. Experts that adjudicate
+  /// evidence still return structured output.
+  bool get usesPlainAnswer =>
+      profile.validationPolicy == ExpertValidationPolicy.structural &&
+      profile.outputSchema.fields[expertAnswerField] ==
+          OutputValueType.answerText &&
+      !profile.outputSchema.hasDirectionalEvidenceContract;
+
+  /// Projects a natural answer when only the answer itself is trustworthy.
+  ///
+  /// The advice envelope this expert would otherwise have to echo
+  /// (claimType=advice, tense=proposed, verified=false, source=none) is a
+  /// constant the application pins regardless of model output, so demanding
+  /// the model reproduce it exactly adds no safety while routinely destroying
+  /// complete answers over a stray verb or a non-kebab-case target.
+  ///
+  /// This path is therefore deliberately narrow: structural policy only, an
+  /// `Answer` field the schema itself declares as answer text, and no
+  /// directional evidence contract — a verdict/evidence expert must still go
+  /// through [validateAndProject], where evidence is actually adjudicated. The
+  /// answer text passes the same content rules as the strict path, and no
+  /// model-supplied verification or execution claim is consulted at all.
+  String? projectAdviceAnswer(Object? answerValue) {
+    if (profile.validationPolicy != ExpertValidationPolicy.structural) {
+      return null;
+    }
+    final schema = profile.outputSchema;
+    if (schema.fields[expertAnswerField] != OutputValueType.answerText ||
+        schema.hasDirectionalEvidenceContract) {
+      return null;
+    }
+    if (!_isValidAnswerText(answerValue)) return null;
+    return answerValue! as String;
+  }
+
   /// Returns the only structural text safe for direct user presentation.
   ///
   /// Raw model fields such as `Analysis` are deliberately excluded. Advice is
