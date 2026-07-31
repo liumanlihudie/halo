@@ -168,6 +168,20 @@ final class VolcanoRealtimeDialog {
     return events.stream;
   }
 
+  /// Asks the expert to open the call, the way a person says hello first.
+  void sayHello(String content) {
+    final socket = _socket;
+    final sessionId = _sessionId;
+    if (socket == null || sessionId == null || content.isEmpty) return;
+    socket.add(
+      _jsonFrame(
+        event: 300,
+        sessionId: sessionId,
+        payload: {'content': content},
+      ),
+    );
+  }
+
   /// Pushes one chunk of microphone audio (PCM s16le, mono).
   void sendAudio(Uint8List pcm) {
     final socket = _socket;

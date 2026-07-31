@@ -220,7 +220,8 @@ final class ProductionAppKernelFactory {
                         // Proximity only takes over while the loudspeaker is on;
                         // choosing the earpiece explicitly stays chosen.
                         await DeviceCallSpeaker.followProximity(speaker);
-                      }),
+                      })
+                      ..ringback = DeviceCallSpeaker.ringback,
           localData: ProductionLocalDataMaintenance(
             history: chatRepository as SingleChatHistoryMaintenance,
             storageDirectory: () async => supportDirectory,

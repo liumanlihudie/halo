@@ -87,8 +87,9 @@ void main() {
     expect(call.status, VoiceCallStatus.listening);
     microphone.emit(Uint8List.fromList([1, 2]));
     await Future<void>.delayed(const Duration(milliseconds: 80));
-    // Handshake, StartSession, then the microphone chunk.
-    expect(received, hasLength(3));
+    // Handshake, StartSession, the greeting the expert opens with, then the
+    // microphone chunk.
+    expect(received, hasLength(4));
   });
 
   test('the user cutting in silences the expert at once', () async {

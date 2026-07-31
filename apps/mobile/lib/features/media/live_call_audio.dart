@@ -63,6 +63,17 @@ final class DeviceCallSpeaker implements CallSpeaker {
     }
   }
 
+  /// Plays or stops the dialling tone.
+  static Future<void> ringback(bool ringing) async {
+    try {
+      await _audio.invokeMethod<bool>(
+        ringing ? 'startRingback' : 'stopRingback',
+      );
+    } catch (_) {
+      // A silent dial is worse than no call, but not worth failing over.
+    }
+  }
+
   /// Routes call audio to the loudspeaker or the earpiece.
   static Future<void> useSpeaker(bool speaker) async {
     try {

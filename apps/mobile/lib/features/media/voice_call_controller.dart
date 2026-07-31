@@ -80,6 +80,9 @@ final class VoiceCallController extends ChangeNotifier {
 
   /// Injected so the route can be exercised without a device.
   Future<void> Function(bool speaker)? routeAudio;
+
+  /// Plays and stops the dialling tone. Injected for the same reason.
+  Future<void> Function(bool ringing)? ringback;
   Future<void> Function(bool speaker)? get _routeAudio => routeAudio;
 
   Future<void> start({
@@ -92,8 +95,10 @@ final class VoiceCallController extends ChangeNotifier {
       return;
     }
     _set(VoiceCallStatus.connecting, failure: null);
+    await ringback?.call(true);
     final dialog = await _openDialog();
     if (dialog == null) {
+      await ringback?.call(false);
       _set(VoiceCallStatus.failed, failure: '尚未配置语音服务');
       return;
     }
@@ -102,9 +107,11 @@ final class VoiceCallController extends ChangeNotifier {
     try {
       events = await dialog.start(systemRole: systemRole, botName: botName);
     } on RealtimeDialogException catch (error) {
+      await ringback?.call(false);
       _set(VoiceCallStatus.failed, failure: error.safeMessage);
       return;
     } catch (_) {
+      await ringback?.call(false);
       _set(VoiceCallStatus.failed, failure: '无法接通语音通话，请重试');
       return;
     }
@@ -118,8 +125,11 @@ final class VoiceCallController extends ChangeNotifier {
       _set(VoiceCallStatus.failed, failure: '需要麦克风权限才能通话');
       return;
     }
+    await ringback?.call(false);
     _connectedAt = DateTime.now();
     _set(VoiceCallStatus.listening);
+    // The expert speaks first, the way answering a call does.
+    dialog.sayHello('你好，我是$botName，有什么可以帮你的？');
   }
 
   void _onEvent(RealtimeDialogEvent event) {

@@ -17,6 +17,8 @@ import Speech
 final class CallAudioOutput {
   private let engine = AVAudioEngine()
   private let node = AVAudioPlayerNode()
+  private let ringback = AVAudioPlayerNode()
+  private var ringbackFormat: AVAudioFormat?
   private var format: AVAudioFormat?
 
   func enqueue(_ pcm: Data) {
@@ -64,8 +66,59 @@ final class CallAudioOutput {
     node.scheduleBuffer(buffer, completionHandler: nil)
   }
 
+  /// The classic two-tone ringback, repeating until the call connects.
+  func startRingback() {
+    stopRingback()
+    let rate: Double = 24000
+    guard
+      let toneFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: rate,
+        channels: 1,
+        interleaved: false
+      )
+    else { return }
+    ringbackFormat = toneFormat
+    engine.attach(ringback)
+    engine.connect(ringback, to: engine.mainMixerNode, format: toneFormat)
+    if !engine.isRunning { try? engine.start() }
+    ringback.play()
+    scheduleRingback()
+  }
+
+  private func scheduleRingback() {
+    guard let toneFormat = ringbackFormat, ringback.isPlaying else { return }
+    let rate = toneFormat.sampleRate
+    // One second of tone, three of silence: the rhythm of a phone ringing.
+    let frames = AVAudioFrameCount(rate * 4)
+    guard
+      let buffer = AVAudioPCMBuffer(pcmFormat: toneFormat, frameCapacity: frames)
+    else { return }
+    buffer.frameLength = frames
+    guard let samples = buffer.floatChannelData?[0] else { return }
+    for index in 0..<Int(frames) {
+      let seconds = Double(index) / rate
+      if seconds < 1.0 {
+        let a = sin(2 * Double.pi * 440 * seconds)
+        let b = sin(2 * Double.pi * 480 * seconds)
+        samples[index] = Float((a + b) * 0.12)
+      } else {
+        samples[index] = 0
+      }
+    }
+    ringback.scheduleBuffer(buffer, at: nil, options: []) { [weak self] in
+      DispatchQueue.main.async { self?.scheduleRingback() }
+    }
+  }
+
+  func stopRingback() {
+    ringback.stop()
+    ringbackFormat = nil
+  }
+
   /// Drops anything still queued, so an interruption goes quiet at once.
   func stop() {
+    stopRingback()
     node.stop()
     engine.stop()
     format = nil
@@ -118,6 +171,14 @@ final class OnDeviceSpeechRecognizer: NSObject {
       } catch {
         result(FlutterError(code: "audio_route_failed", message: nil, details: nil))
       }
+    case "startRingback":
+      // A synthesised ringback, so dialling sounds like dialling without
+      // shipping an audio file.
+      output.startRingback()
+      result(true)
+    case "stopRingback":
+      output.stopRingback()
+      result(true)
     case "playPcm":
       // Continuous playback:每块 PCM 直接排进播放队列，而不是每几百毫秒起一个
       // 新播放器——后者会打断上一段，正是通话断续的原因。
