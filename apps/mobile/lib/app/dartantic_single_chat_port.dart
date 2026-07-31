@@ -9,6 +9,7 @@ import 'package:halo_mobile/experts/expert_output_prompt.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/app/generation_tools.dart';
 import 'package:halo_mobile/app/production_vision_describer.dart';
+import 'package:halo_mobile/app/web_search_tool.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 
@@ -54,10 +55,12 @@ final class DartanticSingleChatPort implements SingleChatPort {
     required ExecutableExpertRegistry experts,
     VisionDescriber? vision,
     GenerationService? generation,
+    WebSearchBackend? webSearch,
   }) : _agents = agents,
        _experts = experts,
        _vision = vision,
-       _generation = generation;
+       _generation = generation,
+       _webSearch = webSearch;
 
   final SingleChatAgentFactory _agents;
   final ExecutableExpertRegistry _experts;
@@ -70,6 +73,11 @@ final class DartanticSingleChatPort implements SingleChatPort {
   /// capability. Absent in prototype wiring, where the tools are simply not
   /// declared and the model never offers what it cannot do.
   final GenerationService? _generation;
+
+  /// Looks things up on the web. Absent when no search key is configured, in
+  /// which case the tool is never declared — an expert cannot claim to have
+  /// searched when there was nothing to search with.
+  final WebSearchBackend? _webSearch;
   final Map<String, _ActiveRun> _active = {};
   bool _closed = false;
 
@@ -142,17 +150,21 @@ final class DartanticSingleChatPort implements SingleChatPort {
       final generation = _generation;
       final agent = await _agents.agentFor(
         request.expertId,
-        tools: generation == null
-            ? const []
-            : buildGenerationTools(
-                service: generation,
-                // The most recent attachment doubles as the reference image,
-                // so "把这张改成赛博朋克风" works without a second picker.
-                referencePath: request.imagePaths.isEmpty
-                    ? null
-                    : request.imagePaths.last,
-                onGenerated: (asset) => generated.add(asset.localPath),
-              ),
+        tools: [
+          if (_webSearch case final search?)
+            buildWebSearchTool(backend: search),
+          ...generation == null
+              ? const <llm.Tool>[]
+              : buildGenerationTools(
+                  service: generation,
+                  // The most recent attachment doubles as the reference image,
+                  // so "把这张改成赛博朋克风" works without a second picker.
+                  referencePath: request.imagePaths.isEmpty
+                      ? null
+                      : request.imagePaths.last,
+                  onGenerated: (asset) => generated.add(asset.localPath),
+                ),
+        ],
       );
       final history = <llm.ChatMessage>[
         llm.ChatMessage.system(_systemPrompt(expert)),

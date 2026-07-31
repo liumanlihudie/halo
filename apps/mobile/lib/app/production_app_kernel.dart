@@ -14,6 +14,7 @@ import 'package:halo_mobile/app/generation_tools.dart';
 import 'package:halo_mobile/app/generation_transport.dart';
 import 'package:halo_mobile/app/production_single_chat_speech.dart';
 import 'package:halo_mobile/app/production_vision_describer.dart';
+import 'package:halo_mobile/app/web_search_tool.dart';
 import 'package:halo_mobile/features/media/live_call_audio.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:halo_mobile/model_runtime/local_secret_store.dart';
@@ -139,6 +140,24 @@ final class ProductionAppKernelFactory {
         resolveModel: ({required agentId}) =>
             runtimeSlot!.resolveConfiguredModel(agentId: agentId),
       );
+      // Voice and video calls are optional, so a store that cannot record
+      // service credentials degrades to "unavailable" rather than failing app
+      // startup: the settings page already disables its fields and says so.
+      final credentialPersistence =
+          settingsStore is ServiceCredentialPersistence
+          ? settingsStore as ServiceCredentialPersistence
+          : null;
+      // One backend for both surfaces: an expert should not be able to look
+      // something up in a single chat but not in a group.
+      final webSearch = credentialPersistence == null
+          ? null
+          : TavilyWebSearchBackend(
+              credentials: credentialPersistence,
+              secretResolver: KeychainSecretResolver(store: _credentials),
+              transport: GenerationTransport(
+                endpointPolicy: _searchEndpointPolicy,
+              ),
+            );
       singleChatPort = DartanticSingleChatPort(
         agents: agentFactory,
         experts: ExecutableExpertRegistry(
@@ -155,6 +174,7 @@ final class ProductionAppKernelFactory {
                 ),
               )
             : null,
+        webSearch: webSearch,
         vision: settingsStore is PurposeModelBindingStore
             ? ProductionVisionDescriber(
                 store: settingsStore,
@@ -187,13 +207,6 @@ final class ProductionAppKernelFactory {
         circleController = null;
         groupStore = null;
       }
-      // Voice and video calls are optional, so a store that cannot record
-      // service credentials degrades to "unavailable" rather than failing app
-      // startup: the settings page already disables its fields and says so.
-      final credentialPersistence =
-          settingsStore is ServiceCredentialPersistence
-          ? settingsStore as ServiceCredentialPersistence
-          : null;
       ServiceCredentialsController? serviceCredentials;
       if (credentialPersistence != null) {
         final credentialStore = FallbackCredentialStore(
@@ -223,6 +236,7 @@ final class ProductionAppKernelFactory {
           experts: experts,
           journal: modelCallJournal,
           store: settingsStore,
+          webSearch: webSearch,
         ),
       );
       final orchestrationKernel = await orchestrationFactory.create();
@@ -365,6 +379,12 @@ final class ProductionAppKernelFactory {
           endpointPolicy: _endpointPolicy,
         ),
       );
+
+  /// Search talks to its own host, so it gets its own allowlist rather than
+  /// widening the one that guards model traffic.
+  static final _searchEndpointPolicy = TrustedProviderEndpointPolicy(
+    providerHosts: const {'api.tavily.com'},
+  );
 
   /// The vision pre-pass shares the vetted HTTP path: same endpoint policy,
   /// same body limits, same redaction of sensitive headers.
