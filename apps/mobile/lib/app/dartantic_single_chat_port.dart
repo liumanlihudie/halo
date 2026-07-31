@@ -6,6 +6,7 @@ import 'package:dartantic_ai/dartantic_ai.dart' as dartantic;
 import 'package:dartantic_interface/dartantic_interface.dart' as llm;
 import 'package:halo_mobile/experts/expert_output_prompt.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/app/production_vision_describer.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 
@@ -39,11 +40,17 @@ final class DartanticSingleChatPort implements SingleChatPort {
   DartanticSingleChatPort({
     required SingleChatAgentFactory agents,
     required ExecutableExpertRegistry experts,
+    VisionDescriber? vision,
   }) : _agents = agents,
-       _experts = experts;
+       _experts = experts,
+       _vision = vision;
 
   final SingleChatAgentFactory _agents;
   final ExecutableExpertRegistry _experts;
+
+  /// Reads attached images. Absent in prototype wiring, where an attachment is
+  /// reported as unsupported rather than quietly dropped.
+  final VisionDescriber? _vision;
   final Map<String, _ActiveRun> _active = {};
   bool _closed = false;
 
@@ -84,6 +91,21 @@ final class DartanticSingleChatPort implements SingleChatPort {
     );
   }
 
+  /// Turns every attached image into quoted description text, or throws
+  /// [VisionUnavailable].
+  Future<String?> _describeImages(StartSingleAgentRunRequest request) async {
+    if (request.imagePaths.isEmpty) return null;
+    final vision = _vision;
+    if (vision == null) {
+      throw const VisionUnavailable('本机未接入图片识别');
+    }
+    final described = <String>[];
+    for (final path in request.imagePaths) {
+      described.add(await vision.describe(path));
+    }
+    return buildVisionContext(described.join('\n\n'));
+  }
+
   Future<SingleAgentRunOutcome> _run({
     required ExecutableExpert expert,
     required StartSingleAgentRunRequest request,
@@ -92,6 +114,11 @@ final class DartanticSingleChatPort implements SingleChatPort {
   }) async {
     final answer = StringBuffer();
     try {
+      // An expert answering about an image it never received is the failure
+      // the owner hit: the model says it can see, the relay drops the image,
+      // the reply reads as if nothing was attached. So a turn carrying images
+      // either gets a real description or fails loudly.
+      final visionContext = await _describeImages(request);
       final agent = await _agents.agentFor(request.expertId);
       final history = <llm.ChatMessage>[
         llm.ChatMessage.system(_systemPrompt(expert)),
@@ -101,7 +128,10 @@ final class DartanticSingleChatPort implements SingleChatPort {
           else
             llm.ChatMessage.model(turn.text),
       ];
-      final stream = agent.sendStream(request.text, history: history);
+      final prompt = visionContext == null
+          ? request.text
+          : '$visionContext\n\n${request.text}';
+      final stream = agent.sendStream(prompt, history: history);
       await for (final chunk in stream) {
         if (cancelled.isCompleted) break;
         final text = chunk.output;
@@ -109,6 +139,13 @@ final class DartanticSingleChatPort implements SingleChatPort {
         answer.write(text);
         if (!partials.isClosed) partials.add(answer.toString());
       }
+    } on VisionUnavailable {
+      // The image could not be read. Answering anyway would produce a reply
+      // about nothing, which is exactly what looks like the app ignoring the
+      // picture.
+      return const SingleAgentRunOutcome.failed(
+        failure: SingleAgentRunFailure.notConfigured,
+      );
     } on StateError {
       // No usable model binding: retrying cannot help, so say so plainly.
       return const SingleAgentRunOutcome.failed(

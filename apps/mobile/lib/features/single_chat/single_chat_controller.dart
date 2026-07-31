@@ -43,6 +43,7 @@ class StartSingleAgentRunRequest {
     required this.text,
     required this.clientCommandId,
     this.history = const [],
+    this.imagePaths = const [],
   });
 
   final String conversationId;
@@ -53,6 +54,10 @@ class StartSingleAgentRunRequest {
   /// Earlier turns, oldest first, so the expert can actually follow the
   /// conversation. Without it every message is answered in isolation.
   final List<SingleChatHistoryTurn> history;
+
+  /// Images attached to this message, as sandbox paths. Empty for a plain
+  /// text turn.
+  final List<String> imagePaths;
   SingleAgentRunMode get mode => SingleAgentRunMode.mentioned;
   List<String> get memberExpertIds => [expertId];
 }
@@ -576,6 +581,19 @@ class SingleChatController extends ChangeNotifier {
     return "${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}";
   }
 
+  final List<String> _pendingImagePaths = [];
+  List<String> _activeImagePaths = const [];
+
+  /// Attaches [path] to the next message the user sends.
+  ///
+  /// Riding along with the next send rather than firing its own run: the user
+  /// almost always has something to ask about the picture, and a run per
+  /// attachment would spend money before they have said anything.
+  void attachPendingImage(String path) {
+    if (_disposed || path.isEmpty) return;
+    _pendingImagePaths.add(path);
+  }
+
   Future<void> submit(String text) {
     final normalized = text.trim();
     if (normalized.isEmpty || _disposed || _outboxReconciliationBlocked) {
@@ -628,6 +646,10 @@ class SingleChatController extends ChangeNotifier {
     required int attempt,
     required String normalized,
   }) async {
+    // Moved to the turn here, so a retry of the same command re-sends the same
+    // images and an attachment made later cannot join a run already in flight.
+    _activeImagePaths = List.unmodifiable(_pendingImagePaths);
+    _pendingImagePaths.clear();
     try {
       final command = repository.commandOutbox.reserve(
         conversationId: conversationId,
@@ -773,6 +795,7 @@ class SingleChatController extends ChangeNotifier {
           text: text,
           clientCommandId: commandId,
           history: _historyForModel(excludingCommandId: commandId),
+          imagePaths: _activeImagePaths,
         ),
       );
       _activeHandle = handleFuture;

@@ -11,6 +11,8 @@ import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
 import 'package:halo_mobile/app/production_single_chat_speech.dart';
+import 'package:halo_mobile/app/production_vision_describer.dart';
+import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
@@ -133,6 +135,14 @@ final class ProductionAppKernelFactory {
         experts: ExecutableExpertRegistry(
           gateway: const ExpertOutputValidationGateway(),
         ),
+        vision: settingsStore is PurposeModelBindingStore
+            ? ProductionVisionDescriber(
+                store: settingsStore,
+                bindings: settingsStore as PurposeModelBindingStore,
+                secretResolver: KeychainSecretResolver(store: _credentials),
+                httpClient: _visionHttpClient(),
+              )
+            : null,
       );
       // Voice and video calls are optional, so a store that cannot record
       // service credentials degrades to "unavailable" rather than failing app
@@ -265,6 +275,13 @@ final class ProductionAppKernelFactory {
           endpointPolicy: _endpointPolicy,
         ),
       );
+
+  /// The vision pre-pass shares the vetted HTTP path: same endpoint policy,
+  /// same body limits, same redaction of sensitive headers.
+  SecureJsonHttpClient _visionHttpClient() => SecureJsonHttpClient(
+    adapter: _unaryHttpAdapter,
+    endpointPolicy: _endpointPolicy,
+  );
 
   Future<List<ModelDescriptor>> _loadPersistedProductionModels(
     String databasePath,

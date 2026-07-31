@@ -280,10 +280,8 @@ class _SingleChatPageState extends State<SingleChatPage> {
     });
   }
 
-  /// Picks an attachment and appends it to the durable conversation.
-  ///
-  /// Stored locally only: the text-only P0 runtime does not receive it, and
-  /// nothing here pretends otherwise.
+  /// Picks an attachment, appends it to the durable conversation, and — for an
+  /// image — hands it to the controller so the next message carries it.
   Future<void> _attach(
     Future<ChatAttachment?> Function() pick,
     ChatMessageKind kind,
@@ -309,6 +307,9 @@ class _SingleChatPageState extends State<SingleChatPage> {
                 secondaryText: _formatAttachmentBytes(attachment.byteSize),
               ),
       );
+      if (kind == ChatMessageKind.userImage) {
+        controller.attachPendingImage(attachment.storedPath);
+      }
       await controller.initialize();
       _scrollToBottomSoon();
     } on ChatAttachmentException catch (error) {
