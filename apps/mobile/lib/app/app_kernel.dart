@@ -7,6 +7,7 @@ import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
+import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
@@ -24,6 +25,7 @@ class AppDependencies {
     this.serviceCredentials,
     this.speech,
     this.circle,
+    this.circlePublisher,
     this.allowEphemeralChatRepositoryForTesting = false,
   });
 
@@ -51,6 +53,9 @@ class AppDependencies {
   /// The circle feed. Absent when its storage failed to open, in which case
   /// the page says so instead of showing fixtures.
   final CircleController? circle;
+
+  /// Publishes an answer from a conversation into the feed.
+  final CirclePublisher? circlePublisher;
   final bool allowEphemeralChatRepositoryForTesting;
 }
 

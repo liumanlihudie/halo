@@ -114,6 +114,7 @@ GoRouter createAppRouter({
             repository: current?.chatRepository,
             modelRouting: current?.modelRouting,
             speech: current?.speech,
+            circlePublisher: current?.circlePublisher,
             allowEphemeralRepositoryForTesting:
                 current?.allowEphemeralChatRepositoryForTesting ?? false,
           );

@@ -17,6 +17,7 @@ import 'package:halo_mobile/app/production_vision_describer.dart';
 import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
 import 'package:halo_mobile/features/circle/circle_post_store.dart';
+import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
@@ -244,6 +245,9 @@ final class ProductionAppKernelFactory {
                   ),
                 ),
           circle: circleController,
+          circlePublisher: circleStore == null
+              ? null
+              : CirclePublisher(store: circleStore),
           localData: ProductionLocalDataMaintenance(
             circle: circleStore == null
                 ? null
