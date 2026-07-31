@@ -1,36 +1,24 @@
 import 'package:flutter/services.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
-import 'package:record/record.dart';
 
 /// The device microphone, streaming the PCM shape the dialogue service wants.
+/// The call microphone, captured on the same engine that plays the call.
+///
+/// A separate recorder cannot hold the input hardware while playback runs
+/// voice processing on it: capture died as soon as the expert first spoke and
+/// the call went one-sided after a single exchange.
 final class DeviceCallMicrophone implements CallMicrophone {
-  DeviceCallMicrophone({AudioRecorder? recorder})
-    : _recorder = recorder ?? AudioRecorder();
+  const DeviceCallMicrophone();
 
-  final AudioRecorder _recorder;
+  static const _mic = EventChannel('halo.speech/mic');
 
   @override
-  Future<Stream<Uint8List>> start() async {
-    if (!await _recorder.hasPermission()) {
-      throw StateError('Microphone permission was refused');
-    }
-    // s16le mono at 16 kHz: the uplink format the realtime dialogue expects.
-    return _recorder.startStream(
-      const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
-        numChannels: 1,
-      ),
-    );
-  }
+  Future<Stream<Uint8List>> start() async =>
+      _mic.receiveBroadcastStream().map((event) => event as Uint8List);
 
   @override
   Future<void> stop() async {
-    try {
-      await _recorder.stop();
-    } catch (_) {
-      // Hanging up must succeed even if the recorder is already gone.
-    }
+    // Cancelling the stream subscription tears the tap down natively.
   }
 }
 
