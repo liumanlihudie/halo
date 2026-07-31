@@ -6,6 +6,7 @@ import 'package:dartantic_ai/dartantic_ai.dart' as dartantic;
 import 'package:dartantic_interface/dartantic_interface.dart' as llm;
 import 'package:halo_mobile/experts/expert_output_prompt.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/app/generation_tools.dart';
 import 'package:halo_mobile/app/production_vision_describer.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
@@ -16,7 +17,14 @@ import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 /// handed to the client library without ever passing through the chat layer.
 abstract interface class SingleChatAgentFactory {
   /// Throws [StateError] when no usable model binding exists yet.
-  Future<dartantic.Agent> agentFor(String expertId);
+  ///
+  /// [tools] are the capabilities this turn may use. Passed per run rather
+  /// than baked into the agent because each one closes over where its result
+  /// should land.
+  Future<dartantic.Agent> agentFor(
+    String expertId, {
+    List<dartantic.Tool> tools = const [],
+  });
 }
 
 /// Builds an agent for an already-resolved model binding.
@@ -25,7 +33,10 @@ abstract interface class SingleChatAgentFactory {
 /// so it needs this shape rather than the per-expert one.
 abstract interface class ModelAgentFactory {
   /// Throws [StateError] when the provider is disabled or has no credential.
-  Future<dartantic.Agent> agentForModel(ModelRef model);
+  Future<dartantic.Agent> agentForModel(
+    ModelRef model, {
+    List<dartantic.Tool> tools = const [],
+  });
 }
 
 /// Single chat on top of dartantic_ai.
@@ -41,9 +52,11 @@ final class DartanticSingleChatPort implements SingleChatPort {
     required SingleChatAgentFactory agents,
     required ExecutableExpertRegistry experts,
     VisionDescriber? vision,
+    GenerationService? generation,
   }) : _agents = agents,
        _experts = experts,
-       _vision = vision;
+       _vision = vision,
+       _generation = generation;
 
   final SingleChatAgentFactory _agents;
   final ExecutableExpertRegistry _experts;
@@ -51,6 +64,11 @@ final class DartanticSingleChatPort implements SingleChatPort {
   /// Reads attached images. Absent in prototype wiring, where an attachment is
   /// reported as unsupported rather than quietly dropped.
   final VisionDescriber? _vision;
+
+  /// Image and video generation, offered to every expert as an ordinary
+  /// capability. Absent in prototype wiring, where the tools are simply not
+  /// declared and the model never offers what it cannot do.
+  final GenerationService? _generation;
   final Map<String, _ActiveRun> _active = {};
   bool _closed = false;
 
@@ -113,13 +131,28 @@ final class DartanticSingleChatPort implements SingleChatPort {
     required Completer<void> cancelled,
   }) async {
     final answer = StringBuffer();
+    final generated = <String>[];
     try {
       // An expert answering about an image it never received is the failure
       // the owner hit: the model says it can see, the relay drops the image,
       // the reply reads as if nothing was attached. So a turn carrying images
       // either gets a real description or fails loudly.
       final visionContext = await _describeImages(request);
-      final agent = await _agents.agentFor(request.expertId);
+      final generation = _generation;
+      final agent = await _agents.agentFor(
+        request.expertId,
+        tools: generation == null
+            ? const []
+            : buildGenerationTools(
+                service: generation,
+                // The most recent attachment doubles as the reference image,
+                // so "把这张改成赛博朋克风" works without a second picker.
+                referencePath: request.imagePaths.isEmpty
+                    ? null
+                    : request.imagePaths.last,
+                onGenerated: (asset) => generated.add(asset.localPath),
+              ),
+      );
       final history = <llm.ChatMessage>[
         llm.ChatMessage.system(_systemPrompt(expert)),
         for (final turn in request.history)
@@ -159,6 +192,7 @@ final class DartanticSingleChatPort implements SingleChatPort {
         return SingleAgentRunOutcome.completed(
           answer: partial,
           uncertainty: '回答在传输中断开，内容可能不完整',
+          generatedAssetPaths: List.unmodifiable(generated),
         );
       }
       return const SingleAgentRunOutcome.failed(
@@ -176,7 +210,10 @@ final class DartanticSingleChatPort implements SingleChatPort {
         failure: SingleAgentRunFailure.retryable,
       );
     }
-    return SingleAgentRunOutcome.completed(answer: projected);
+    return SingleAgentRunOutcome.completed(
+      answer: projected,
+      generatedAssetPaths: List.unmodifiable(generated),
+    );
   }
 
   @override

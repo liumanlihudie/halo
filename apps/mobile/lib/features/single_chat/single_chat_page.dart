@@ -622,6 +622,12 @@ class _ProjectedMessage extends StatelessWidget {
         child: _FileMessage(message),
       ),
       ChatMessageKind.userImage => _MineImageMessage(message.imageUrl),
+      // Shown as the expert's own bubble: it drew this, so it belongs on that
+      // side of the conversation.
+      ChatMessageKind.agentImage => _AgentBubble(
+        conversation: conversation,
+        child: _GeneratedImageMessage(message.imageUrl),
+      ),
       ChatMessageKind.quote => _AgentBubble(
         conversation: conversation,
         child: _QuoteMessage(message),
@@ -983,6 +989,32 @@ class _FileMessage extends StatelessWidget {
           const Divider(height: 18),
           Text(message.tertiaryText ?? '', style: HaloTextStyles.caption),
         ],
+      ),
+    );
+  }
+}
+
+class _GeneratedImageMessage extends StatelessWidget {
+  const _GeneratedImageMessage(this.path);
+
+  final String? path;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = path;
+    if (source == null || source.isEmpty) {
+      return const Text('图片已生成，但文件不可用', style: HaloTextStyles.caption);
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.file(
+        File(source),
+        width: 220,
+        fit: BoxFit.cover,
+        // The file lives in the sandbox and can be cleared; a broken image is
+        // better than a crash in the middle of a conversation.
+        errorBuilder: (context, _, _) =>
+            const Text('图片已不在本机', style: HaloTextStyles.caption),
       ),
     );
   }

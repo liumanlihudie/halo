@@ -177,21 +177,25 @@ final class _FakeAgents implements SingleChatAgentFactory {
   final int port;
 
   @override
-  Future<dartantic.Agent> agentFor(String expertId) async =>
-      dartantic.Agent.forProvider(
-        dartantic.OpenAIProvider(
-          name: 'halo-test',
-          apiKey: 'test-key-never-real',
-          baseUrl: Uri.parse('http://127.0.0.1:$port/v1'),
-        ),
-        chatModelName: 'deepseek-chat',
-      );
+  Future<dartantic.Agent> agentFor(
+    String expertId, {
+    List<dartantic.Tool> tools = const [],
+  }) async => dartantic.Agent.forProvider(
+    dartantic.OpenAIProvider(
+      name: 'halo-test',
+      apiKey: 'test-key-never-real',
+      baseUrl: Uri.parse('http://127.0.0.1:$port/v1'),
+    ),
+    chatModelName: 'deepseek-chat',
+  );
 }
 
 final class _UnconfiguredAgents implements SingleChatAgentFactory {
   const _UnconfiguredAgents();
 
   @override
-  Future<dartantic.Agent> agentFor(String expertId) async =>
-      throw StateError('No model is configured for this expert');
+  Future<dartantic.Agent> agentFor(
+    String expertId, {
+    List<dartantic.Tool> tools = const [],
+  }) async => throw StateError('No model is configured for this expert');
 }

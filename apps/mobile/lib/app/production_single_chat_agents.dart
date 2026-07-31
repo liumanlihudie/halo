@@ -26,18 +26,24 @@ final class ProductionSingleChatAgentFactory
   final Future<ModelRef> Function({required String agentId}) _resolveModel;
 
   @override
-  Future<dartantic.Agent> agentFor(String expertId) async {
+  Future<dartantic.Agent> agentFor(
+    String expertId, {
+    List<dartantic.Tool> tools = const [],
+  }) async {
     final ModelRef model;
     try {
       model = await _resolveModel(agentId: expertId);
     } catch (_) {
       throw StateError('No model is configured for this expert');
     }
-    return agentForModel(model);
+    return agentForModel(model, tools: tools);
   }
 
   @override
-  Future<dartantic.Agent> agentForModel(ModelRef model) async {
+  Future<dartantic.Agent> agentForModel(
+    ModelRef model, {
+    List<dartantic.Tool> tools = const [],
+  }) async {
     final config = await _enabledConfig(model.providerId);
     if (config == null) {
       throw StateError('The configured provider is not enabled');
@@ -57,6 +63,7 @@ final class ProductionSingleChatAgentFactory
         baseUrl: config.baseUri,
       ),
       chatModelName: model.modelId,
+      tools: tools.isEmpty ? null : tools,
     );
   }
 

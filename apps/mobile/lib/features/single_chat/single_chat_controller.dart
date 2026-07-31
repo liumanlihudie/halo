@@ -256,6 +256,7 @@ class SingleAgentRunOutcome {
     this.uncertainty = '未提供不确定性说明',
     this.evidenceReferences = const [],
     this.verifierToken,
+    this.generatedAssetPaths = const [],
   }) : failure = SingleAgentRunFailure.none;
 
   const SingleAgentRunOutcome.failed({required this.failure})
@@ -263,7 +264,8 @@ class SingleAgentRunOutcome {
       sourceType = ChatMessageSourceType.modelOutput,
       uncertainty = '',
       evidenceReferences = const [],
-      verifierToken = null;
+      verifierToken = null,
+      generatedAssetPaths = const [];
 
   final String answer;
   final SingleAgentRunFailure failure;
@@ -271,6 +273,10 @@ class SingleAgentRunOutcome {
   final String uncertainty;
   final List<String> evidenceReferences;
   final SingleChatVerifierToken? verifierToken;
+
+  /// Sandbox paths of anything the expert generated this turn. Rendered as
+  /// their own messages so the picture is visible, not described.
+  final List<String> generatedAssetPaths;
   bool get isCompleted => failure == SingleAgentRunFailure.none;
 }
 
@@ -914,6 +920,24 @@ class SingleChatController extends ChangeNotifier {
             _state.status != SingleChatRunStatus.running) {
           return;
         }
+        // Generated pictures land as their own messages: an expert that drew
+        // something should show it, not describe it.
+        final assets = <ChatMessageProjection>[];
+        for (final (index, path) in outcome.generatedAssetPaths.indexed) {
+          final asset = ChatMessageProjection(
+            id: '$commandId:asset:$index',
+            kind: ChatMessageKind.agentImage,
+            imageUrl: path,
+            text: '',
+          );
+          try {
+            await repository.append(conversationId, asset);
+            assets.add(asset);
+          } catch (_) {
+            // The answer is already committed; a missing picture is better
+            // than losing the reply it came with.
+          }
+        }
         _state = _state.copyWith(
           messages: commit.inserted
               ? [
@@ -921,8 +945,9 @@ class SingleChatController extends ChangeNotifier {
                     (message) => message.id != answer.id,
                   ),
                   answer,
+                  ...assets,
                 ]
-              : _state.messages,
+              : [..._state.messages, ...assets],
           status: SingleChatRunStatus.completed,
           canRetry: false,
         );
