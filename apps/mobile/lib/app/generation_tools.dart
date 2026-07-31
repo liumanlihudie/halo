@@ -153,6 +153,9 @@ final class ProductionGenerationService implements GenerationService {
         taskId: taskId,
       );
       final stem = 'gen-${_now().toUtc().microsecondsSinceEpoch}';
+      // Host only — never the full URL, whose query can carry a signature.
+      // ignore: avoid_print
+      print('halo.tools result host=${Uri.parse(resultUrl).host}');
       final path = await _transport.download(
         Uri.parse(resultUrl),
         _outputDirectory,

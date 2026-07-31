@@ -75,7 +75,8 @@ class PublicEndpointPolicy implements EndpointPolicy {
   Future<void> validateBeforeConnect(Uri endpoint) async {
     try {
       final addresses = await resolver.lookup(endpoint.host);
-      if (addresses.isEmpty || addresses.any(_isNonPublicAddress)) {
+      if (addresses.isEmpty ||
+          addresses.any((address) => !_allows(endpoint, address))) {
         throw const UnaryTransportException(
           UnaryTransportErrorCode.endpointRejected,
         );
@@ -91,12 +92,21 @@ class PublicEndpointPolicy implements EndpointPolicy {
 
   @override
   void validateAfterConnect(Uri endpoint, InternetAddress remoteAddress) {
-    if (_isNonPublicAddress(remoteAddress)) {
+    if (!_allows(endpoint, remoteAddress)) {
       throw const UnaryTransportException(
         UnaryTransportErrorCode.endpointRejected,
       );
     }
   }
+
+  /// Public addresses pass. Behind a fake-IP proxy every name resolves into
+  /// 198.18/15, so that range is tolerated too — but only for named hosts:
+  /// the proxy re-resolves a name upstream, whereas a literal-IP URL targets
+  /// the address itself and stays fully blocked.
+  bool _allows(Uri endpoint, InternetAddress address) =>
+      !_isNonPublicAddress(address) ||
+      (_isBenchmarkFakeIp(address) &&
+          InternetAddress.tryParse(endpoint.host) == null);
 }
 
 class TrustedProviderEndpointPolicy implements EndpointPolicy {

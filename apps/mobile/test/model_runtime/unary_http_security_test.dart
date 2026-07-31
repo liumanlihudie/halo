@@ -91,7 +91,6 @@ void main() {
         '192.0.0.1',
         '192.0.2.1',
         '192.88.99.1',
-        '198.18.0.1',
         '198.51.100.1',
         '203.0.113.1',
         '240.0.0.1',
@@ -136,6 +135,38 @@ void main() {
       InternetAddress('8.8.4.4'),
     );
   });
+
+  test(
+    'public endpoint policy tolerates fake-IP DNS for named hosts only',
+    () async {
+      // Behind a fake-IP proxy every name resolves into 198.18/15; a
+      // generation result on an arbitrary CDN host must still download.
+      for (final fake in ['198.18.0.151', '198.19.255.1']) {
+        final policy = PublicEndpointPolicy(
+          resolver: _FixedResolver([InternetAddress(fake)]),
+        );
+        await policy.validateBeforeConnect(
+          Uri.parse('https://cdn.example.com/result.png'),
+        );
+        policy.validateAfterConnect(
+          Uri.parse('https://cdn.example.com/result.png'),
+          InternetAddress(fake),
+        );
+        // A literal-IP URL targets the address itself: still blocked.
+        await expectLater(
+          policy.validateBeforeConnect(Uri.parse('https://$fake/result.png')),
+          throwsA(_transportError(UnaryTransportErrorCode.endpointRejected)),
+        );
+        expect(
+          () => policy.validateAfterConnect(
+            Uri.parse('https://$fake/result.png'),
+            InternetAddress(fake),
+          ),
+          throwsA(_transportError(UnaryTransportErrorCode.endpointRejected)),
+        );
+      }
+    },
+  );
 
   test(
     'trusted provider policy accepts fake-IP DNS only for allowlisted hosts',
