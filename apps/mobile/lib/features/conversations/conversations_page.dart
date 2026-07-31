@@ -32,6 +32,9 @@ class _ConversationsPageState extends State<ConversationsPage> {
   void initState() {
     super.initState();
     unawaited(_loadCreatedGroups());
+    // Must load here too: without it the list is empty on first open and only
+    // fills in if a dependency happens to change afterwards.
+    unawaited(_loadConversations());
   }
 
   @override
@@ -39,6 +42,8 @@ class _ConversationsPageState extends State<ConversationsPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.groupStore != widget.groupStore) {
       unawaited(_loadCreatedGroups());
+    }
+    if (oldWidget.repository != widget.repository) {
       unawaited(_loadConversations());
     }
   }
