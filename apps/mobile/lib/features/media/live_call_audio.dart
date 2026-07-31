@@ -1,7 +1,100 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:flutter/services.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:record/record.dart';
+
+/// Restarts a capture whose opening chunks are pure digital silence.
+///
+/// The first capture after app launch can bind to an input unit that the
+/// voice-processing setup is still rebuilding; that capture delivers zeros
+/// forever, the service never hears the caller, and the first call of every
+/// launch is mute while the second works. A real microphone always carries a
+/// noise floor, so a run of exactly-zero chunks at the head of the stream
+/// means the capture is dead, not that the room is quiet — reopening it once
+/// the session has settled brings the audio back.
+Stream<Uint8List> restartSilentCapture({
+  required Future<Stream<Uint8List>> Function() open,
+  required Future<void> Function() close,
+  int silentLeadLimit = 10,
+  int maxRestarts = 2,
+}) {
+  final out = StreamController<Uint8List>();
+  StreamSubscription<Uint8List>? sub;
+  var restarts = 0;
+  var closed = false;
+  // Chunks still in flight from a capture that was already given up on must
+  // not count against the fresh one, or a dead stream's tail could burn
+  // through the restart budget before the new capture says a word.
+  var generation = 0;
+
+  bool isSilent(Uint8List bytes) {
+    for (var i = 0; i + 1 < bytes.length; i += 2) {
+      var sample = bytes[i] | (bytes[i + 1] << 8);
+      if (sample > 32767) sample -= 65536;
+      // Allow converter dither; anything louder is a live microphone.
+      if (sample.abs() > 8) return false;
+    }
+    return true;
+  }
+
+  Future<void> attach() async {
+    final gen = ++generation;
+    final source = await open();
+    if (closed || gen != generation) return;
+    var silentLead = 0;
+    var heard = false;
+    sub = source.listen(
+      (bytes) {
+        if (gen != generation) return; // a replaced capture's leftovers
+        if (!heard) {
+          if (isSilent(bytes)) {
+            silentLead += 1;
+            if (silentLead >= silentLeadLimit && restarts < maxRestarts) {
+              restarts += 1;
+              developer.log(
+                'mic delivered only silence, restarting capture ($restarts)',
+                name: 'halo.call',
+              );
+              generation += 1;
+              final dead = sub;
+              sub = null;
+              unawaited(() async {
+                await dead?.cancel();
+                try {
+                  await close();
+                } catch (_) {
+                  // The point is the reopen; a failed stop must not block it.
+                }
+                if (!closed) await attach();
+              }());
+              return;
+            }
+          } else {
+            heard = true;
+          }
+        }
+        // Silent chunks still go out: the uplink cadence must not gap.
+        if (!out.isClosed) out.add(bytes);
+      },
+      onError: (Object error, StackTrace stack) {
+        if (!out.isClosed) out.addError(error, stack);
+      },
+      onDone: () {
+        // A capture that ends on its own ends the stream; a replaced one
+        // merely hands over to its successor.
+        if (gen == generation && !out.isClosed) unawaited(out.close());
+      },
+    );
+  }
+
+  out.onListen = () => unawaited(attach());
+  out.onCancel = () async {
+    closed = true;
+    await sub?.cancel();
+  };
+  return out.stream;
+}
 
 /// The device microphone, streaming the PCM shape the dialogue service wants.
 /// The call microphone, captured on the same engine that plays the call.
@@ -35,12 +128,17 @@ final class DeviceCallMicrophone implements CallMicrophone {
       throw StateError('Microphone permission was refused');
     }
     // s16le mono at 16 kHz: the uplink format the realtime dialogue expects.
-    return _recorder.startStream(
-      const RecordConfig(
-        encoder: AudioEncoder.pcm16bits,
-        sampleRate: 16000,
-        numChannels: 1,
+    // Guarded against the dead first capture of a fresh launch, which binds
+    // before voice processing settles and would leave the whole call mute.
+    return restartSilentCapture(
+      open: () => _recorder.startStream(
+        const RecordConfig(
+          encoder: AudioEncoder.pcm16bits,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
       ),
+      close: () => _recorder.stop(),
     );
   }
 
