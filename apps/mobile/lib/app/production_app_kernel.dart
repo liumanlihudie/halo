@@ -187,6 +187,12 @@ final class ProductionAppKernelFactory {
         runtime: runtimeReloader,
         mutationCoordinator: mutationCoordinator,
       );
+      // Development convenience: a key baked in with --dart-define seeds the
+      // store on first launch, so a reinstall does not mean typing it again.
+      // Release builds ship without the define and are unaffected.
+      if (credentialPersistence != null) {
+        await _seedDevelopmentCredentials(serviceCredentials);
+      }
       final speech = credentialPersistence == null
           ? null
           : ProductionSingleChatSpeech(
@@ -335,6 +341,36 @@ Future<DurableChatMessageRepository> _openDriftChatMessageRepository({
   conversations: conversations,
   supersededExpertBindings: supersededExpertBindings,
 );
+
+/// Writes keys supplied at build time, once, when none are stored yet.
+///
+/// Reinstalling a development build can leave the Keychain entry behind while
+/// the row survives, and retyping a key after every install is the kind of
+/// friction that makes a device stop being tested. Nothing happens without the
+/// define, so a shipped build behaves exactly as before.
+Future<void> _seedDevelopmentCredentials(
+  ServiceCredentialsController? credentials,
+) async {
+  if (credentials == null) return;
+  const seeds = {
+    KeyOnlyService.doubaoSpeech: String.fromEnvironment('HALO_DOUBAO_SPEECH'),
+    KeyOnlyService.doubaoRealtimeAudio: String.fromEnvironment(
+      'HALO_DOUBAO_REALTIME',
+    ),
+    KeyOnlyService.vidu: String.fromEnvironment('HALO_VIDU'),
+  };
+  if (seeds.values.every((value) => value.isEmpty)) return;
+  try {
+    await credentials.load();
+    for (final entry in seeds.entries) {
+      if (entry.value.isEmpty) continue;
+      if (credentials.statusFor(entry.key).configured) continue;
+      await credentials.save(entry.key, entry.value);
+    }
+  } catch (_) {
+    // Seeding is a convenience; a failure must never stop the app booting.
+  }
+}
 
 final class _SlotRuntimeReloader implements ProviderRuntimeReloader {
   const _SlotRuntimeReloader(this.slot, this.factory);

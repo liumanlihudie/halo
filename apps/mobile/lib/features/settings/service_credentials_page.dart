@@ -284,7 +284,7 @@ class _ServiceCard extends StatelessWidget {
               enabled: enabled && !busy,
               onChanged: onChanged,
               decoration: const InputDecoration(
-                hintText: 'App ID（控制台应用管理）',
+                hintText: 'App ID（豆包语音项目，纯数字）',
                 isDense: true,
               ),
             ),
@@ -294,7 +294,7 @@ class _ServiceCard extends StatelessWidget {
               enabled: enabled && !busy,
               onChanged: onChanged,
               decoration: const InputDecoration(
-                hintText: 'App Key（留空则用官方固定值）',
+                hintText: 'App Key（一般留空，用官方固定值）',
                 isDense: true,
               ),
             ),
