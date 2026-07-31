@@ -21,6 +21,11 @@ abstract interface class SingleChatSpeech {
   /// Renders [text] to audio and returns the file path, or null when speech
   /// synthesis is unavailable — a reply must never be lost to it.
   Future<String?> synthesize(String text, {required String messageId});
+
+  /// Why the last synthesis produced nothing, when it did. A silent fallback
+  /// to text is indistinguishable from a missing key, a rejected token and a
+  /// service outage, which leaves nobody anything to act on.
+  String? get lastSynthesisFailure => null;
 }
 
 /// The recording waiting to be attached to the user's own bubble.
@@ -852,6 +857,26 @@ class SingleChatController extends ChangeNotifier {
           outcome.answer,
           messageId: '$commandId-answer',
         );
+        if (spoken == null && speech != null) {
+          final reason = speech!.lastSynthesisFailure;
+          if (reason != null) {
+            developer.log(
+              'voice synthesis failed: $reason',
+              name: 'halo.voice',
+            );
+            _state = _state.copyWith(
+              messages: [
+                ..._state.messages,
+                ChatMessageProjection(
+                  id: 'tts-error-${_nowEpochMs()}',
+                  kind: ChatMessageKind.systemNotice,
+                  text: '语音条未生成：$reason',
+                ),
+              ],
+            );
+            notifyListeners();
+          }
+        }
         final answer = ChatMessageProjection(
           id: '$commandId:answer',
           kind: spoken == null

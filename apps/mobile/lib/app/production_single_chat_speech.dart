@@ -63,10 +63,19 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
     return _transcriber.transcribe(recordingPath);
   }
 
+  String? _lastSynthesisFailure;
+
+  @override
+  String? get lastSynthesisFailure => _lastSynthesisFailure;
+
   @override
   Future<String?> synthesize(String text, {required String messageId}) async {
+    _lastSynthesisFailure = null;
     final config = await _config();
-    if (config == null) return null;
+    if (config == null) {
+      _lastSynthesisFailure = '未配置豆包语音 Key';
+      return null;
+    }
     try {
       await _audioDirectory.create(recursive: true);
       // Message-scoped filename so replaying a reply reuses one file instead of
@@ -78,8 +87,13 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
         config: config,
         newRequestId: _newRequestId,
       ).synthesize(text: text, targetPath: target);
+    } on SpeechException catch (error) {
+      // The words are already on screen; losing the audio is the lesser harm,
+      // but the reason is worth saying out loud.
+      _lastSynthesisFailure = error.safeMessage;
+      return null;
     } catch (_) {
-      // The words are already on screen; losing the audio is the lesser harm.
+      _lastSynthesisFailure = '语音合成失败，请重试';
       return null;
     }
   }
