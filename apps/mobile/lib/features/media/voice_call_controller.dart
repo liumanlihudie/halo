@@ -95,6 +95,9 @@ final class VoiceCallController extends ChangeNotifier {
       return;
     }
     _set(VoiceCallStatus.connecting, failure: null);
+    // Route first: the ringback runs on the same engine, and starting it
+    // before the session is a voice-chat session can leave it stuck.
+    await _routeAudio?.call(_speakerOn);
     await ringback?.call(true);
     final dialog = await _openDialog();
     if (dialog == null) {
@@ -116,7 +119,6 @@ final class VoiceCallController extends ChangeNotifier {
       return;
     }
     _events = events.listen(_onEvent);
-    await _routeAudio?.call(_speakerOn);
     try {
       final microphone = await _microphone.start();
       _audio = microphone.listen(dialog.sendAudio);

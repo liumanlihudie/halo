@@ -37,10 +37,15 @@ class VoiceCallPage extends StatefulWidget {
 }
 
 class _VoiceCallPageState extends State<VoiceCallPage> {
+  /// Held for the life of the screen. The route builds a fresh controller on
+  /// every rebuild, and reading `widget.controller` would then show a brand
+  /// new one that never started — a call stuck on 正在拨号 forever.
+  VoiceCallController? _call;
+
   @override
   void initState() {
     super.initState();
-    final controller = widget.controller;
+    final controller = _call = widget.controller;
     if (controller == null) return;
     controller.addListener(_refresh);
     unawaited(
@@ -53,8 +58,8 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
 
   @override
   void dispose() {
-    widget.controller?.removeListener(_refresh);
-    unawaited(widget.controller?.hangUp());
+    _call?.removeListener(_refresh);
+    unawaited(_call?.hangUp());
     super.dispose();
   }
 
@@ -63,7 +68,7 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
   }
 
   String get _statusLabel {
-    final controller = widget.controller;
+    final controller = _call;
     if (controller == null) return '尚未配置语音服务';
     return switch (controller.status) {
       VoiceCallStatus.idle => '正在拨号…',
@@ -76,8 +81,8 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
   }
 
   Future<void> _hangUp() async {
-    final duration = widget.controller?.duration;
-    await widget.controller?.hangUp();
+    final duration = _call?.duration;
+    await _call?.hangUp();
     final summary = duration == null
         ? '语音通话已取消'
         : '语音通话  ${duration.inMinutes}:'
@@ -88,7 +93,7 @@ class _VoiceCallPageState extends State<VoiceCallPage> {
 
   @override
   Widget build(BuildContext context) {
-    final controller = widget.controller;
+    final controller = _call;
     final speakerOn = controller?.speakerOn ?? true;
     return Scaffold(
       backgroundColor: const Color(0xFF111522),
