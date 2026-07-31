@@ -1,12 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/features/group_chat/group_store.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
 class ConversationsPage extends StatefulWidget {
-  const ConversationsPage({super.key});
+  const ConversationsPage({this.groupStore, super.key});
+
+  /// Groups the user created. Without it only the shipped conversations are
+  /// listed — which is what made a created group impossible to find again.
+  final GroupStore? groupStore;
 
   @override
   State<ConversationsPage> createState() => _ConversationsPageState();
@@ -14,13 +21,58 @@ class ConversationsPage extends StatefulWidget {
 
 class _ConversationsPageState extends State<ConversationsPage> {
   String _query = '';
+  List<ConversationFixture> _createdGroups = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCreatedGroups());
+  }
+
+  @override
+  void didUpdateWidget(ConversationsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.groupStore != widget.groupStore) {
+      unawaited(_loadCreatedGroups());
+    }
+  }
+
+  Future<void> _loadCreatedGroups() async {
+    final store = widget.groupStore;
+    if (store == null) return;
+    try {
+      final groups = await store.loadGroups();
+      if (!mounted) return;
+      setState(() {
+        _createdGroups = [
+          for (final group in groups)
+            ConversationFixture(
+              id: group.groupId,
+              title: group.name,
+              // No invented last message: nothing has been said yet, and a
+              // fabricated preview is the thing this app keeps removing.
+              preview: '${group.memberExpertIds.length} 位专家 · 还没有消息',
+              time: '',
+              avatarLetter: group.name.isEmpty
+                  ? '群'
+                  : String.fromCharCode(group.name.runes.first),
+            ),
+        ];
+      });
+    } catch (_) {
+      // Leaves the shipped list alone.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final query = _query.trim();
+    // Newest first: a group just created should be at the top, where the user
+    // is already looking.
+    final all = [..._createdGroups, ...HaloFixtures.conversations];
     final conversations = query.isEmpty
-        ? HaloFixtures.conversations
-        : HaloFixtures.conversations
+        ? all
+        : all
               .where(
                 (conversation) =>
                     conversation.title.contains(query) ||

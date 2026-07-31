@@ -14,6 +14,7 @@ import 'package:halo_mobile/features/expert_market/expert_profile_page.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_page.dart';
 import 'package:halo_mobile/features/group_chat/group_context_page.dart';
 import 'package:halo_mobile/features/group_chat/group_info_page.dart';
+import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
 import 'package:halo_mobile/features/group_chat/new_group_page.dart';
 import 'package:halo_mobile/features/media/call_demo_page.dart';
 import 'package:halo_mobile/features/media/media_preview_page.dart';
@@ -48,7 +49,32 @@ GoRouter createAppRouter({
           return AppShell(navigationShell: navigationShell);
         },
         branches: [
-          _branch('/conversations', const ConversationsPage()),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/conversations',
+                pageBuilder: (context, state) {
+                  Widget buildPage(AppDependencies? current) =>
+                      ConversationsPage(
+                        key: ValueKey(current),
+                        groupStore: current?.groupStore,
+                      );
+                  final listenable = dependencyListenable;
+                  if (listenable == null) {
+                    return NoTransitionPage(
+                      child: buildPage(fixedDependencies),
+                    );
+                  }
+                  return NoTransitionPage(
+                    child: ListenableBuilder(
+                      listenable: listenable,
+                      builder: (context, _) => buildPage(resolveDependencies()),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
           _branch('/experts', const ExpertTeamPage()),
           StatefulShellBranch(
             routes: [
@@ -140,7 +166,16 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/group/new',
-        builder: (context, state) => const NewGroupPage(),
+        builder: (context, state) {
+          Widget buildPage(AppDependencies? current) =>
+              NewGroupPage(key: ValueKey(current), store: current?.groupStore);
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/group/:groupId',
@@ -161,8 +196,22 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/group/:groupId/info',
-        builder: (context, state) =>
-            GroupInfoPage(groupId: state.pathParameters['groupId']!),
+        builder: (context, state) {
+          final groupId = state.pathParameters['groupId']!;
+          Widget buildPage(AppDependencies? current) => GroupInfoPage(
+            key: ValueKey(current),
+            groupId: groupId,
+            membersRepository:
+                current?.groupMembers ??
+                const PrototypeGroupMembersRepository(),
+          );
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/group/:groupId/context',

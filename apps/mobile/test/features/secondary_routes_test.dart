@@ -28,9 +28,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('完成'), findsOneWidget);
-    expect(find.text('新项目评审组'), findsOneWidget);
-    expect(find.text('选择成员 · 已选 3 个'), findsOneWidget);
-    expect(find.text('从 AI 市场添加'), findsOneWidget);
+    // Starts empty: pre-filling a name and pre-selecting members was prototype
+    // behaviour, and creating a group with choices the user did not make is
+    // exactly what made 完成 meaningless before.
+    expect(find.text('选择成员 · 至少 2 位'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextButton>(find.widgetWithText(TextButton, '完成'))
+          .onPressed,
+      isNull,
+    );
+    // Candidates are the installed experts, not prototype ids.
+    expect(find.text('产品经理'), findsWidgets);
   });
 
   testWidgets('group context preserves shared and isolated sections', (
