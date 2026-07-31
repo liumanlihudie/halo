@@ -6,6 +6,7 @@ import 'package:halo_mobile/model_runtime/secret_ref.dart';
 enum ProviderKind {
   toApis,
   deepSeek,
+  moonshot,
   openAI,
   anthropic,
   gemini,
@@ -26,6 +27,11 @@ class ProviderConfig {
   static final Uri toApisCanonicalBaseUri = Uri.parse('https://toapis.com/v1');
   static final Uri deepSeekCanonicalBaseUri = Uri.parse(
     'https://api.deepseek.com/v1',
+  );
+
+  /// Moonshot (Kimi). OpenAI-compatible chat, so it needs no new protocol.
+  static final Uri moonshotCanonicalBaseUri = Uri.parse(
+    'https://api.moonshot.cn/v1',
   );
   static final Uri openAICanonicalBaseUri = Uri.parse(
     'https://api.openai.com/v1',
@@ -118,6 +124,11 @@ class ProviderConfig {
         ProviderProtocol.openAICompatible,
         deepSeekCanonicalBaseUri,
       ),
+      ProviderKind.moonshot => (
+        'moonshot',
+        ProviderProtocol.openAICompatible,
+        moonshotCanonicalBaseUri,
+      ),
       ProviderKind.openAI => (
         'openai',
         ProviderProtocol.openAI,
@@ -139,7 +150,14 @@ class ProviderConfig {
         null,
       ),
     };
-    const builtInIds = {'toapis', 'deepseek', 'openai', 'anthropic', 'gemini'};
+    const builtInIds = {
+      'toapis',
+      'deepseek',
+      'moonshot',
+      'openai',
+      'anthropic',
+      'gemini',
+    };
     final invalidIdentity = expectedProviderId == null
         ? builtInIds.contains(providerId)
         : providerId != expectedProviderId;
@@ -170,6 +188,21 @@ class ProviderConfig {
     protocol: ProviderProtocol.openAICompatible,
     displayName: 'DeepSeek',
     baseUri: deepSeekCanonicalBaseUri,
+    enabled: enabled,
+    secretRef: secretRef,
+    headerSecretRefs: const {},
+    allowInsecureHttp: false,
+  );
+
+  factory ProviderConfig.moonshot({
+    bool enabled = true,
+    SecretRef? secretRef,
+  }) => ProviderConfig._(
+    providerId: 'moonshot',
+    kind: ProviderKind.moonshot,
+    protocol: ProviderProtocol.openAICompatible,
+    displayName: 'Kimi (Moonshot)',
+    baseUri: moonshotCanonicalBaseUri,
     enabled: enabled,
     secretRef: secretRef,
     headerSecretRefs: const {},

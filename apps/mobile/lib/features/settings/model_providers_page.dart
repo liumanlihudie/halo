@@ -21,6 +21,7 @@ class ModelProvidersPage extends StatefulWidget {
   static const providers = <(String, String, String, bool)>[
     ('toapis', 'ToAPIs', '推荐聚合 · OpenAI-compatible · 多模态', true),
     ('deepseek', 'DeepSeek', '官方 API · 推理与通用文字', true),
+    ('moonshot', 'Kimi (Moonshot)', '官方 API · 长上下文与联网', true),
     ('openai', 'OpenAI', '官方 API · 文字与多模态', false),
     ('anthropic', 'Anthropic Claude', '官方 API · Claude 系列', false),
     ('gemini', 'Google Gemini', '官方 API · 文字与多模态', false),
@@ -54,7 +55,7 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
   void _loadSupported() {
     final controller = widget.controller;
     if (controller == null) return;
-    for (final providerId in const ['toapis', 'deepseek']) {
+    for (final providerId in const ['toapis', 'deepseek', 'moonshot']) {
       controller.load(providerId).catchError((Object _) => null);
     }
   }

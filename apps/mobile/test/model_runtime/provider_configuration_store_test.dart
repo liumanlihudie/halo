@@ -1406,6 +1406,28 @@ void main() {
     },
   );
 
+  test('Kimi is a first-class provider with a pinned identity', () async {
+    final fixture = _DatabaseFixture.create();
+    final store = SqliteProviderConfigurationStore.open(fixture.path);
+    addTearDown(store.close);
+
+    final config = ProviderConfig.moonshot(
+      secretRef: SecretRef.parse(
+        'keychain://halo.provider/5f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6074',
+      ),
+    );
+    expect(config.providerId, 'moonshot');
+    // OpenAI-compatible, so it rides the existing chat and streaming paths
+    // rather than needing a protocol of its own.
+    expect(config.protocol, ProviderProtocol.openAICompatible);
+    expect(config.baseUri, ProviderConfig.moonshotCanonicalBaseUri);
+
+    await store.upsert(config);
+    final reopened = (await store.loadEnabled()).single;
+    expect(reopened.providerId, 'moonshot');
+    expect(reopened.displayName, 'Kimi (Moonshot)');
+  });
+
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();
     final raw = sqlite3.open(fixture.path);

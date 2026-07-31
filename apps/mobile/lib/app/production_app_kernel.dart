@@ -76,7 +76,11 @@ final class ProductionAppKernelFactory {
            openChatRepository ?? _openDriftChatMessageRepository,
        _unaryHttpAdapter = unaryHttpAdapter ?? DartIoUnaryHttpAdapter(),
        _endpointPolicy = TrustedProviderEndpointPolicy(
-         providerHosts: const {'api.deepseek.com', 'toapis.com'},
+         providerHosts: const {
+           'api.deepseek.com',
+           'api.moonshot.cn',
+           'toapis.com',
+         },
        );
 
   final ApplicationSupportDirectoryProvider _applicationSupportDirectory;
