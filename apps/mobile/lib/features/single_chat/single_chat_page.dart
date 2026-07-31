@@ -605,6 +605,16 @@ class _SingleChatPageState extends State<SingleChatPage> {
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
         children: [
+          // Newest first in a reversed list: the generation placeholder sits
+          // below the reply that announced it, where the picture will appear.
+          for (final generation
+              in (controller?.activeGenerations ?? const []).reversed)
+            _GenerationPlaceholder(
+              key: ValueKey('generation-${generation.id}'),
+              conversation: _conversation,
+              prompt: generation.prompt,
+              isVideo: generation.isVideo,
+            ),
           // First child renders at the bottom in a reversed list, so the live
           // reply sits below the newest message, where it does in the chat.
           if (state.status == SingleChatRunStatus.running)
@@ -1082,6 +1092,54 @@ class _FileMessage extends StatelessWidget {
           ),
           const Divider(height: 18),
           Text(message.tertiaryText ?? '', style: HaloTextStyles.caption),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown from the moment the provider accepts the task until the result
+/// arrives.
+///
+/// Carries the prompt the expert actually sent, so the wait is legible: the
+/// user can see what is being drawn instead of watching an unexplained spinner
+/// for what can be minutes.
+class _GenerationPlaceholder extends StatelessWidget {
+  const _GenerationPlaceholder({
+    required this.conversation,
+    required this.prompt,
+    required this.isVideo,
+    super.key,
+  });
+
+  final SingleChatConversationProjection conversation;
+  final String prompt;
+  final bool isVideo;
+
+  @override
+  Widget build(BuildContext context) {
+    return _AgentBubble(
+      conversation: conversation,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isVideo ? '正在生成视频' : '正在生成图片',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(prompt, style: HaloTextStyles.caption),
+          const SizedBox(height: 9),
+          Container(
+            width: 200,
+            height: isVideo ? 120 : 200,
+            decoration: BoxDecoration(
+              color: HaloColors.soft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const _ProgressMessage(),
+          ),
         ],
       ),
     );

@@ -97,11 +97,13 @@ final class DartanticSingleChatPort implements SingleChatPort {
       throw StateError('A run with this command identity is already active');
     }
     final partials = StreamController<String>.broadcast();
+    final progress = StreamController<GenerationProgress>.broadcast();
     final cancelled = Completer<void>();
     final outcome = _run(
       expert: expert,
       request: request,
       partials: partials,
+      progress: progress,
       cancelled: cancelled,
     );
     _active[runId] = _ActiveRun(cancelled, outcome);
@@ -109,12 +111,14 @@ final class DartanticSingleChatPort implements SingleChatPort {
       outcome.whenComplete(() {
         _active.remove(runId);
         unawaited(partials.close());
+        unawaited(progress.close());
       }),
     );
     return SingleAgentRunHandle(
       runId: runId,
       outcome: outcome,
       partialAnswers: partials.stream,
+      generationProgress: progress.stream,
     );
   }
 
@@ -137,10 +141,15 @@ final class DartanticSingleChatPort implements SingleChatPort {
     required ExecutableExpert expert,
     required StartSingleAgentRunRequest request,
     required StreamController<String> partials,
+    required StreamController<GenerationProgress> progress,
     required Completer<void> cancelled,
   }) async {
     final answer = StringBuffer();
     final generated = <String>[];
+    // What the tools actually did, recorded by the app. The model's own
+    // account of a tool call is not evidence: given a failure it will still
+    // reach for the reply that pleases.
+    final toolFailures = <String>[];
     try {
       // An expert answering about an image it never received is the failure
       // the owner hit: the model says it can see, the relay drops the image,
@@ -213,6 +222,7 @@ final class DartanticSingleChatPort implements SingleChatPort {
           answer: partial,
           uncertainty: '回答在传输中断开，内容可能不完整',
           generatedAssetPaths: List.unmodifiable(generated),
+          toolFailures: List.unmodifiable(toolFailures),
         );
       }
       return const SingleAgentRunOutcome.failed(
@@ -233,6 +243,7 @@ final class DartanticSingleChatPort implements SingleChatPort {
     return SingleAgentRunOutcome.completed(
       answer: projected,
       generatedAssetPaths: List.unmodifiable(generated),
+      toolFailures: List.unmodifiable(toolFailures),
     );
   }
 

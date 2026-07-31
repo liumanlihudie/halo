@@ -70,11 +70,47 @@ class StartSingleAgentRunRequest {
   List<String> get memberExpertIds => [expertId];
 }
 
+/// One step of a generation, as the chat should show it.
+@immutable
+class GenerationProgress {
+  const GenerationProgress.submitted({
+    required this.id,
+    required this.prompt,
+    required this.isVideo,
+  }) : localPath = null,
+       failure = null;
+
+  const GenerationProgress.completed({
+    required this.id,
+    required this.prompt,
+    required this.isVideo,
+    required this.localPath,
+  }) : failure = null;
+
+  const GenerationProgress.failed({
+    required this.id,
+    required this.prompt,
+    required this.isVideo,
+    required this.failure,
+  }) : localPath = null;
+
+  /// Identifies one generation across its steps, so a placeholder is replaced
+  /// rather than accumulating beside its own result.
+  final String id;
+  final String prompt;
+  final bool isVideo;
+  final String? localPath;
+  final String? failure;
+
+  bool get isPending => localPath == null && failure == null;
+}
+
 class SingleAgentRunHandle {
   const SingleAgentRunHandle({
     required this.runId,
     required this.outcome,
     this.partialAnswers,
+    this.generationProgress,
   });
 
   final String runId;
@@ -84,6 +120,11 @@ class SingleAgentRunHandle {
   /// Null when the backing port has no streaming transport; existing ports
   /// and fakes are unaffected.
   final Stream<String>? partialAnswers;
+
+  /// Steps of any image or video the expert produces this turn, so the chat can
+  /// show the prompt and a placeholder while the provider works rather than
+  /// leaving the user in front of a blank wait.
+  final Stream<GenerationProgress>? generationProgress;
 }
 
 enum SingleAgentRunFailure {
@@ -265,6 +306,7 @@ class SingleAgentRunOutcome {
     this.evidenceReferences = const [],
     this.verifierToken,
     this.generatedAssetPaths = const [],
+    this.toolFailures = const [],
   }) : failure = SingleAgentRunFailure.none;
 
   const SingleAgentRunOutcome.failed({required this.failure})
@@ -273,7 +315,8 @@ class SingleAgentRunOutcome {
       uncertainty = '',
       evidenceReferences = const [],
       verifierToken = null,
-      generatedAssetPaths = const [];
+      generatedAssetPaths = const [],
+      toolFailures = const [];
 
   final String answer;
   final SingleAgentRunFailure failure;
@@ -285,6 +328,11 @@ class SingleAgentRunOutcome {
   /// Sandbox paths of anything the expert generated this turn. Rendered as
   /// their own messages so the picture is visible, not described.
   final List<String> generatedAssetPaths;
+
+  /// User-facing reasons a tool did not do what it was asked. Reported by the
+  /// app rather than left to the model, which will otherwise announce a
+  /// picture it never produced.
+  final List<String> toolFailures;
   bool get isCompleted => failure == SingleAgentRunFailure.none;
 }
 
@@ -627,6 +675,12 @@ class SingleChatController extends ChangeNotifier {
     return "${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}";
   }
 
+  /// Generations still in flight this turn, newest last. Rendered as the
+  /// prompt plus a placeholder until the provider returns something.
+  List<GenerationProgress> _activeGenerations = const [];
+  List<GenerationProgress> get activeGenerations => _activeGenerations;
+  StreamSubscription<GenerationProgress>? _generationSub;
+
   final List<String> _pendingImagePaths = [];
   List<String> _activeImagePaths = const [];
 
@@ -861,9 +915,13 @@ class SingleChatController extends ChangeNotifier {
       }
 
       final partialSubscription = _subscribeToPartialAnswers(handle, attempt);
+      _subscribeToGenerationProgress(handle, attempt);
 
       final outcome = await handle.outcome;
       _cancelPartialAnswers(partialSubscription);
+      unawaited(_generationSub?.cancel());
+      _generationSub = null;
+      _activeGenerations = const [];
       // The run is terminal from here on: the live preview never outlives it.
       _state = _state.copyWith(streamingAnswer: '');
       if (_disposed ||
@@ -991,6 +1049,23 @@ class SingleChatController extends ChangeNotifier {
             _state.status != SingleChatRunStatus.running) {
           return;
         }
+        // Whatever a tool failed to do is stated by the app, next to the
+        // reply. The model has already been seen claiming success it did not
+        // have, so its account is not what the user is shown.
+        for (final (index, reason) in outcome.toolFailures.indexed) {
+          try {
+            await repository.append(
+              conversationId,
+              ChatMessageProjection(
+                id: '$commandId:tool-failure:$index',
+                kind: ChatMessageKind.systemNotice,
+                text: reason,
+              ),
+            );
+          } catch (_) {
+            // The answer is committed; a missing note is the lesser loss.
+          }
+        }
         // Generated pictures land as their own messages: an expert that drew
         // something should show it, not describe it.
         final assets = <ChatMessageProjection>[];
@@ -1084,6 +1159,31 @@ class SingleChatController extends ChangeNotifier {
     } catch (_) {
       // Nothing to escalate: the failure is already on screen.
     }
+  }
+
+  /// Mirrors generation steps into [activeGenerations].
+  ///
+  /// The chat shows what is being made while it is being made; a completed or
+  /// failed step drops out of the list, because by then the real message (the
+  /// picture, or the app's own failure note) has taken its place.
+  void _subscribeToGenerationProgress(
+    SingleAgentRunHandle handle,
+    int attempt,
+  ) {
+    final steps = handle.generationProgress;
+    if (steps == null) return;
+    unawaited(_generationSub?.cancel());
+    _activeGenerations = const [];
+    _generationSub = steps.listen((step) {
+      if (_disposed || attempt != _attempt) return;
+      final next = [
+        for (final existing in _activeGenerations)
+          if (existing.id != step.id) existing,
+        if (step.isPending) step,
+      ];
+      _activeGenerations = List.unmodifiable(next);
+      notifyListeners();
+    }, onError: (Object _) {});
   }
 
   /// Mirrors streamed Answer snapshots into [SingleChatState.streamingAnswer].

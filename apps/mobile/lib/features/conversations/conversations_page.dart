@@ -31,7 +31,10 @@ class _ConversationsPageState extends State<ConversationsPage> {
   @override
   void initState() {
     super.initState();
+    // Both, on first build. Loading only the groups left the single chats
+    // missing until some dependency happened to change.
     unawaited(_loadCreatedGroups());
+    unawaited(_loadConversations());
   }
 
   @override
@@ -39,6 +42,8 @@ class _ConversationsPageState extends State<ConversationsPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.groupStore != widget.groupStore) {
       unawaited(_loadCreatedGroups());
+    }
+    if (oldWidget.repository != widget.repository) {
       unawaited(_loadConversations());
     }
   }
