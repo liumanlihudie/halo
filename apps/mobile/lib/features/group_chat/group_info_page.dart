@@ -4,18 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
+import 'package:halo_mobile/features/group_chat/group_store.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
-import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 
 class GroupInfoPage extends StatefulWidget {
   const GroupInfoPage({
     required this.groupId,
     this.membersRepository = const PrototypeGroupMembersRepository(),
+    this.groupStore,
     super.key,
   });
 
   final String groupId;
+
+  /// Where a user-created group's real name lives. Absent for shipped
+  /// prototype groups, which keep their seeded title.
+  final GroupStore? groupStore;
 
   /// Same source the group chat uses, so the strip cannot drift from who is
   /// actually in the group.
@@ -27,11 +32,27 @@ class GroupInfoPage extends StatefulWidget {
 
 class _GroupInfoPageState extends State<GroupInfoPage> {
   List<GroupChatMember> _members = const [];
+  String? _groupName;
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadMembers());
+    unawaited(_loadGroupName());
+  }
+
+  Future<void> _loadGroupName() async {
+    final store = widget.groupStore;
+    if (store == null) return;
+    try {
+      final groups = await store.loadGroups();
+      final match = groups
+          .where((group) => group.groupId == widget.groupId)
+          .firstOrNull;
+      if (match != null && mounted) setState(() => _groupName = match.name);
+    } catch (_) {
+      // No name is better than an invented one.
+    }
   }
 
   Future<void> _loadMembers() async {
@@ -58,13 +79,7 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
         onPressed: () =>
             context.canPop() ? context.pop() : context.go('/group/$groupId'),
       ),
-      actions: [
-        HaloIconButton(
-          prototypeIconClass: 'ph ph-share-network',
-          semanticLabel: '分享群聊',
-          onPressed: () {},
-        ),
-      ],
+
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
@@ -75,68 +90,27 @@ class _GroupInfoPageState extends State<GroupInfoPage> {
           ),
           _InsetGroup(
             children: [
-              HaloSettingsRow(label: '群名称', detail: 'iOS 产品小组', onTap: () {}),
-              HaloSettingsRow(label: '群目标', detail: '验证 iOS MVP', onTap: () {}),
-              HaloSettingsRow(label: '主持 Agent', detail: '产品经理', onTap: () {}),
+              // Facts only: the seeded '群目标' and '主持 Agent' rows described
+              // a group nobody configured.
+              HaloSettingsRow(label: '群名称', detail: _groupName ?? '群聊'),
+              HaloSettingsRow(label: '成员', detail: '${_members.length} 位专家'),
             ],
           ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('发言与上下文'),
           ),
-          _InsetGroup(
+          const _InsetGroup(
             children: [
-              HaloSettingsRow(label: '默认发言规则', detail: '自动选择', onTap: () {}),
+              HaloSettingsRow(label: '默认发言规则', detail: '自动选择'),
               HaloSettingsRow(
-                label: '共享上下文',
-                detail: '3 个来源',
-                onTap: () => context.push('/group/$groupId/context'),
-              ),
-              const HaloSettingsRow(
                 label: '每次讨论自动总结',
                 trailing: HaloSwitch(value: true, onChanged: null),
               ),
-              const HaloSettingsRow(
+              HaloSettingsRow(
                 label: '讨论总结发布到圈层',
                 trailing: HaloSwitch(value: true, onChanged: null),
               ),
-            ],
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 15),
-            child: HaloSectionLabel('群聊内容'),
-          ),
-          _InsetGroup(
-            children: [HaloSettingsRow(label: '查找群聊记录', onTap: () {})],
-          ),
-          const _AssetShortcuts(),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 15),
-            child: HaloSectionLabel('当前群聊'),
-          ),
-          const _InsetGroup(
-            children: [
-              HaloSettingsRow(
-                label: '消息免打扰',
-                trailing: HaloSwitch(value: false, onChanged: null),
-              ),
-              HaloSettingsRow(
-                label: '置顶群聊',
-                trailing: HaloSwitch(value: false, onChanged: null),
-              ),
-              HaloSettingsRow(
-                label: '讨论完成提醒',
-                trailing: HaloSwitch(value: true, onChanged: null),
-              ),
-              HaloSettingsRow(label: '设置当前群聊背景', detail: '默认浅灰'),
-              HaloSettingsRow(label: '导出群聊记录', detail: 'Markdown / JSON / ZIP'),
-            ],
-          ),
-          const SizedBox(height: 10),
-          const _InsetGroup(
-            children: [
-              HaloSettingsRow(label: '清空群聊记录', detail: '保留群配置'),
-              HaloSettingsRow(label: '删除群聊'),
             ],
           ),
         ],
@@ -225,55 +199,6 @@ class _MemberTile extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _AssetShortcuts extends StatelessWidget {
-  const _AssetShortcuts();
-
-  @override
-  Widget build(BuildContext context) {
-    const items = [
-      ('ph ph-images', '图片与视频'),
-      ('ph ph-files', '文件'),
-      ('ph ph-link', '链接'),
-      ('ph ph-sparkle', 'AI 成果'),
-    ];
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(15, 10, 15, 0),
-      child: Row(
-        children: [
-          for (final item in items)
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: Material(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(11),
-                  child: InkWell(
-                    onTap: () {},
-                    borderRadius: BorderRadius.circular(11),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 11),
-                      child: Column(
-                        children: [
-                          Icon(
-                            HaloIcon.requirePrototypeClass(item.$1),
-                            size: 20,
-                            color: HaloColors.accentDeep,
-                          ),
-                          const SizedBox(height: 5),
-                          Text(item.$2, style: HaloTextStyles.caption),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
     );
   }

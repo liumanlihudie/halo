@@ -260,11 +260,6 @@ class _GroupChatPageState extends State<GroupChatPage> {
       ),
       actions: [
         HaloIconButton(
-          prototypeIconClass: 'ph ph-magnifying-glass',
-          semanticLabel: '搜索群消息',
-          onPressed: () {},
-        ),
-        HaloIconButton(
           prototypeIconClass: 'ph ph-dots-three',
           semanticLabel: '群资料',
           onPressed: () => context.push('/group/${widget.groupId}/info'),

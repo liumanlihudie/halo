@@ -102,13 +102,7 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
         onPressed: () =>
             context.canPop() ? context.pop() : context.go('/settings'),
       ),
-      actions: [
-        HaloIconButton(
-          prototypeIconClass: 'ph ph-question',
-          semanticLabel: '帮助',
-          onPressed: () {},
-        ),
-      ],
+
       body: ListView(
         padding: const EdgeInsets.fromLTRB(15, 10, 15, 24),
         children: [

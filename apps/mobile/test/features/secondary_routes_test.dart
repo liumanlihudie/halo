@@ -52,10 +52,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('群内 Agent 均可读取'), findsOneWidget);
-    expect(find.text('IOS-IM 产品规格'), findsOneWidget);
-    expect(find.text('不会共享'), findsOneWidget);
-    expect(find.text('Agent 私有关系记忆'), findsOneWidget);
+    // The page used to list invented shared sources; now it says the
+    // feature is not built rather than describing one that never ran.
+    expect(find.textContaining('群共享上下文还未实装'), findsOneWidget);
+    expect(find.text('IOS-IM 产品规格'), findsNothing);
   });
 
   testWidgets('group chat title carries its loaded member-count badge', (

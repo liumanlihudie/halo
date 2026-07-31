@@ -3,7 +3,13 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
+
+/// Read-only catalog lookups; the row states executability, never a model.
+final _marketRegistry = ExecutableExpertRegistry(
+  gateway: const ExpertOutputValidationGateway(),
+);
 
 class ExpertMarketPage extends StatefulWidget {
   const ExpertMarketPage({super.key});
@@ -87,10 +93,14 @@ class _ExpertMarketPageState extends State<ExpertMarketPage> {
                   );
                 }
                 final expert = experts[index - 4];
+                // Executability is a fact; the model it will run on is the
+                // user's own binding, so no model string is claimed here.
+                final executable =
+                    _marketRegistry.canonicalIdForMarketId(expert.id) != null;
                 return _MarketExpertRow(
                   name: expert.name,
                   category: expert.category,
-                  model: expert.model,
+                  model: executable ? '可执行 · 使用你配置的模型' : '上架准备中',
                   description: expert.description,
                   onTap: () => context.push('/market/${expert.id}'),
                 );

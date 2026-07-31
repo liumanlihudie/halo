@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
@@ -19,13 +20,7 @@ class SelfHostedGatewayPage extends StatelessWidget {
         onPressed: () =>
             context.canPop() ? context.pop() : context.go('/settings'),
       ),
-      actions: [
-        HaloIconButton(
-          prototypeIconClass: 'ph ph-question',
-          semanticLabel: '帮助',
-          onPressed: () {},
-        ),
-      ],
+
       body: ListView(
         padding: const EdgeInsets.fromLTRB(15, 10, 15, 24),
         children: [
@@ -106,7 +101,19 @@ class SelfHostedGatewayPage extends StatelessWidget {
                   'docker compose up -d',
                   style: TextStyle(fontFamily: 'monospace', fontSize: 12),
                 ),
-                TextButton(onPressed: () {}, child: const Text('复制命令')),
+                TextButton(
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      const ClipboardData(text: 'docker compose up -d'),
+                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.maybeOf(
+                        context,
+                      )?.showSnackBar(const SnackBar(content: Text('命令已复制')));
+                    }
+                  },
+                  child: const Text('复制命令'),
+                ),
               ],
             ),
           ),

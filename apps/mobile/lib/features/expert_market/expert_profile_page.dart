@@ -38,13 +38,13 @@ class ExpertProfilePage extends StatelessWidget {
         .where((expert) => expert.id == expertId)
         .firstOrNull;
     final name = installed?.name ?? market?.name ?? '合同审阅助手';
-    final model =
-        installed?.model ?? market?.model ?? 'Anthropic / claude-sonnet-4';
     // An installed expert's real binding is rendered by the 模型 row below,
     // which resolves it from the routing controller. Repeating a fixture model
     // string here would contradict it — 通用助理 claimed
     // `ToAPIs / doubao-s2s · 可用` while the row correctly read 尚未配置.
-    final profileModel = installed?.status ?? '可用';
+    // Availability is a fact about the catalog, not a mood: either an
+    // executable profile stands behind this expert or it does not.
+    final profileModel = installedIdentity != null ? '可用' : '未实装';
     // Resolve the executable catalog profile so the page can show real
     // skills and tool permissions instead of prototype placeholders. Pure
     // fixture market experts stay on their short description.
@@ -88,7 +88,9 @@ class ExpertProfilePage extends StatelessWidget {
         children: [
           _ProfileHero(
             name: name,
-            model: marketMode ? model : profileModel,
+            model: marketMode
+                ? (catalog != null ? '可执行 · 使用你配置的模型' : '上架准备中')
+                : profileModel,
             avatarUrl: avatarUrl,
           ),
           ColoredBox(
@@ -114,7 +116,9 @@ class ExpertProfilePage extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 15),
               child: Text(
-                '$model · BYOK · 按服务商账单结算',
+                // No model is claimed here: the expert runs on whatever the
+                // user binds, and the bill is the provider's own.
+                'BYOK · 使用你配置的模型与 Key · 按服务商账单结算',
                 style: HaloTextStyles.body,
               ),
             ),

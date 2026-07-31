@@ -239,6 +239,7 @@ GoRouter createAppRouter({
             membersRepository:
                 current?.groupMembers ??
                 const PrototypeGroupMembersRepository(),
+            groupStore: current?.groupStore,
           );
           final listenable = dependencyListenable;
           if (listenable == null) return buildPage(fixedDependencies);

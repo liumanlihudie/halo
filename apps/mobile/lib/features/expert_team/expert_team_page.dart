@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
@@ -11,6 +12,22 @@ class ExpertTeamPage extends StatefulWidget {
 
   @override
   State<ExpertTeamPage> createState() => _ExpertTeamPageState();
+}
+
+/// Read-only catalog lookups; presence is derived, never invented.
+final _teamRegistry = ExecutableExpertRegistry(
+  gateway: const ExpertOutputValidationGateway(),
+);
+
+/// What is actually true of this expert right now: it either has an
+/// executable profile behind it or it does not. The fixture used to claim
+/// live moods ('忙碌 · 正在整理需求优先级') nobody was having.
+(String, bool) expertAvailability(ExpertFixture expert) {
+  final identity = _teamRegistry.installedIdentityForProfileId(expert.id);
+  if (identity == null) return ('未实装 · 暂无可执行数据', false);
+  final catalog = _teamRegistry.catalogById(identity.canonicalExpertId);
+  final description = catalog?.description ?? '';
+  return (description.isEmpty ? '可用' : '可用 · $description', true);
 }
 
 class _ExpertTeamPageState extends State<ExpertTeamPage> {
@@ -38,7 +55,7 @@ class _ExpertTeamPageState extends State<ExpertTeamPage> {
     final query = _query.trim().toLowerCase();
     if (query.isEmpty) return true;
     return expert.name.toLowerCase().contains(query) ||
-        expert.status.toLowerCase().contains(query);
+        expertAvailability(expert).$1.toLowerCase().contains(query);
   }
 
   @override
@@ -56,7 +73,7 @@ class _ExpertTeamPageState extends State<ExpertTeamPage> {
         HaloIconButton(
           prototypeIconClass: 'ph ph-user-plus',
           semanticLabel: '添加专家',
-          onPressed: () {},
+          onPressed: () => context.push('/market'),
         ),
       ],
       body: ListView(
@@ -252,6 +269,7 @@ class _ExpertRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final (status, available) = expertAvailability(expert);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -289,18 +307,16 @@ class _ExpertRow extends StatelessWidget {
                           height: 8,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: expert.status.startsWith('忙碌')
-                                ? HaloColors.amber
-                                : expert.status.startsWith('离线')
-                                ? HaloColors.muted
-                                : HaloColors.green,
+                            color: available
+                                ? HaloColors.green
+                                : HaloColors.muted,
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      expert.status,
+                      status,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(

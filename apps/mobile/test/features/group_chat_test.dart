@@ -38,8 +38,11 @@ void main() {
       scrollable: find.byType(Scrollable).last,
     );
     expect(find.text('默认发言规则'), findsOneWidget);
-    expect(find.text('共享上下文'), findsOneWidget);
     expect(find.text('每次讨论自动总结'), findsOneWidget);
     expect(find.text('讨论总结发布到圈层'), findsOneWidget);
+    // Facts nobody configured are gone: no invented goal, host or sources.
+    expect(find.text('群目标'), findsNothing);
+    expect(find.text('主持 Agent'), findsNothing);
+    expect(find.text('共享上下文'), findsNothing);
   });
 }
