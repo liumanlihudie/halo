@@ -16,8 +16,14 @@ import 'package:halo_mobile/model_runtime/unary_http_transport.dart';
 final class GenerationTransport {
   GenerationTransport({
     required EndpointPolicy endpointPolicy,
+    EndpointPolicy? downloadPolicy,
     HttpClient Function()? httpClientFactory,
   }) : _endpointPolicy = endpointPolicy,
+       // Results live on whatever CDN the provider uses, never on the API
+       // host itself — holding the download to the provider allowlist rejects
+       // every finished generation. Public-https keeps the private-network
+       // guard while accepting an unknown host.
+       _downloadPolicy = downloadPolicy ?? const PublicEndpointPolicy(),
        _httpClientFactory = httpClientFactory ?? HttpClient.new;
 
   /// A generated image or short video. Beyond this the result is refused
@@ -27,6 +33,7 @@ final class GenerationTransport {
   static const maximumUploadBytes = 10 * 1024 * 1024;
 
   final EndpointPolicy _endpointPolicy;
+  final EndpointPolicy _downloadPolicy;
   final HttpClient Function() _httpClientFactory;
 
   Future<Map<String, Object?>> postJson({
@@ -79,7 +86,7 @@ final class GenerationTransport {
     Directory targetDirectory,
     String stem,
   ) async {
-    await _endpointPolicy.validateBeforeConnect(_requireHttps(url));
+    await _downloadPolicy.validateBeforeConnect(_requireHttps(url));
     final client = _httpClientFactory();
     try {
       final request = await client.getUrl(url);

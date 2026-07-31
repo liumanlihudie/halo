@@ -1052,18 +1052,20 @@ class SingleChatController extends ChangeNotifier {
         // Whatever a tool failed to do is stated by the app, next to the
         // reply. The model has already been seen claiming success it did not
         // have, so its account is not what the user is shown.
+        final failureNotices = <ChatMessageProjection>[];
         for (final (index, reason) in outcome.toolFailures.indexed) {
+          final notice = ChatMessageProjection(
+            id: '$commandId:tool-failure:$index',
+            kind: ChatMessageKind.systemNotice,
+            text: reason,
+          );
           try {
-            await repository.append(
-              conversationId,
-              ChatMessageProjection(
-                id: '$commandId:tool-failure:$index',
-                kind: ChatMessageKind.systemNotice,
-                text: reason,
-              ),
-            );
+            await repository.append(conversationId, notice);
+            failureNotices.add(notice);
           } catch (_) {
-            // The answer is committed; a missing note is the lesser loss.
+            // Still shown this session: hiding a failure because its record
+            // did not persist would repeat the very bug this exists to fix.
+            failureNotices.add(notice);
           }
         }
         // Generated pictures land as their own messages: an expert that drew
@@ -1091,9 +1093,10 @@ class SingleChatController extends ChangeNotifier {
                     (message) => message.id != answer.id,
                   ),
                   answer,
+                  ...failureNotices,
                   ...assets,
                 ]
-              : [..._state.messages, ...assets],
+              : [..._state.messages, ...failureNotices, ...assets],
           status: SingleChatRunStatus.completed,
           canRetry: false,
         );
