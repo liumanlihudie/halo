@@ -19,6 +19,7 @@ import 'package:video_player/video_player.dart';
 import 'attachments/chat_attachment_service.dart';
 import 'chat_message_repository.dart';
 import 'message_actions_service.dart';
+import 'composer_draft_store.dart';
 import 'single_chat_controller.dart';
 
 class SingleChatPage extends StatefulWidget {
@@ -86,8 +87,26 @@ class _SingleChatPageState extends State<SingleChatPage> {
   @override
   void initState() {
     super.initState();
+    _restoreDraft();
+    _textController.addListener(_saveDraft);
     _resetConversationPlaceholder();
     _startDependencyInitialization();
+  }
+
+  /// What was typed comes back when the user does; leaving a chat is not a
+  /// reason to lose a half-written message.
+  void _restoreDraft() {
+    final draft = ComposerDraftStore.instance.read(widget.conversationId);
+    if (draft.isEmpty) return;
+    _textController.text = draft;
+    _textController.selection = TextSelection.collapsed(offset: draft.length);
+  }
+
+  void _saveDraft() {
+    ComposerDraftStore.instance.write(
+      widget.conversationId,
+      _textController.text,
+    );
   }
 
   @override
@@ -105,7 +124,12 @@ class _SingleChatPageState extends State<SingleChatPage> {
     }
     if (oldWidget.conversationId != widget.conversationId ||
         oldWidget.expertId != widget.expertId) {
-      _textController.clear();
+      // Read before touching the controller: clearing would fire the save
+      // listener under the NEW conversation id and wipe the draft being
+      // restored.
+      final draft = ComposerDraftStore.instance.read(widget.conversationId);
+      _textController.text = draft;
+      _textController.selection = TextSelection.collapsed(offset: draft.length);
     }
     _chatController
       ?..removeListener(_onChatChanged)
