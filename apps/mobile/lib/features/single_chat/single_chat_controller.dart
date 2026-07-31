@@ -844,9 +844,20 @@ class SingleChatController extends ChangeNotifier {
           canonicalEvidence: canonicalEvidence,
           verifier: verifier,
         );
+        // Speak the reply as well as show it: the bubble then offers a play
+        // control with the transcript beside it, so the user listens or reads
+        // as they prefer. Synthesis is best effort — a reply is never held
+        // back, let alone lost, because audio failed.
+        final spoken = await speech?.synthesize(
+          outcome.answer,
+          messageId: '$commandId-answer',
+        );
         final answer = ChatMessageProjection(
           id: '$commandId:answer',
-          kind: ChatMessageKind.agentText,
+          kind: spoken == null
+              ? ChatMessageKind.agentText
+              : ChatMessageKind.voice,
+          imageUrl: spoken,
           text: outcome.answer,
           sourceType: source.sourceType,
           uncertainty: outcome.uncertainty,
