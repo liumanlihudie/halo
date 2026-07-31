@@ -1342,17 +1342,15 @@ class ExecutableExpertRegistry {
   ];
 
   static const marketIdMappings = <String, String>{
-    'market-5': 'project-manager',
-    'market-9': 'automation-engineer',
-    'market-10': 'user-researcher',
-    'market-11': 'industry-researcher',
-    'market-15': 'fact-checker',
-    'market-20': 'editor-proofreader',
-    'market-24': 'localization-specialist',
-    'market-27': 'data-analyst',
-    'market-28': 'database-engineer',
-    'market-35': 'legal-risk-advisor',
-    'market-36': 'finance-tax-analyst',
+    'market-130': 'project-manager',
+    'market-133': 'automation-engineer',
+    'market-134': 'user-researcher',
+    'market-135': 'industry-researcher',
+    'market-151': 'finance-tax-analyst',
+    'market-182': 'database-engineer',
+    'market-188': 'fact-checker',
+    'market-189': 'editor-proofreader',
+    'market-190': 'localization-specialist',
   };
 
   /// Installed contact profiles that have an executable single-chat expert.

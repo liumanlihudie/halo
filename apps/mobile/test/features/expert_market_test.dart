@@ -4,15 +4,17 @@ import 'package:halo_mobile/app/app.dart';
 
 void main() {
   testWidgets(
-    'market exposes 50 experts without a visible horizontal scrollbar',
+    'market exposes the full expert catalog without horizontal overflow',
     (tester) async {
       await tester.pumpWidget(const HaloApp(initialLocation: '/market'));
       await tester.pumpAndSettle();
 
       expect(find.text('AI 市场'), findsOneWidget);
-      expect(find.text('已显示 50 / 50'), findsOneWidget);
-      expect(find.text('任务规划师'), findsOneWidget);
-      expect(find.text('法律财税'), findsOneWidget);
+      expect(find.text('已显示 200 / 200'), findsOneWidget);
+      // The installed nine open the list as ordinary market entries.
+      expect(find.text('Halo 助理'), findsWidgets);
+      expect(find.text('已入驻 · 可直接对话'), findsWidgets);
+      expect(find.text('商业职场'), findsOneWidget);
     },
   );
 
@@ -86,12 +88,12 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      const HaloApp(initialLocation: '/expert/market-1/data'),
+      const HaloApp(initialLocation: '/expert/market-10/data'),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('专家数据'), findsOneWidget);
-    expect(find.text('任务规划师'), findsOneWidget);
+    expect(find.text('写作助理'), findsOneWidget);
     expect(find.text('该专家暂无可执行数据'), findsOneWidget);
   });
 
@@ -115,10 +117,12 @@ void main() {
   testWidgets('market profile resolves catalog facts for a mapped expert', (
     tester,
   ) async {
-    await tester.pumpWidget(const HaloApp(initialLocation: '/market/market-5'));
+    await tester.pumpWidget(
+      const HaloApp(initialLocation: '/market/market-130'),
+    );
     await tester.pumpAndSettle();
 
-    // 'market-5' maps to canonical expert 'project-manager'.
+    // 'market-130' (项目协调员) maps to canonical expert 'project-manager'.
     expect(find.text('专家简介'), findsOneWidget);
     expect(find.text('技能'), findsOneWidget);
     expect(find.text('project.planning'), findsOneWidget);
@@ -130,7 +134,9 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(390, 844));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(const HaloApp(initialLocation: '/market/market-5'));
+    await tester.pumpWidget(
+      const HaloApp(initialLocation: '/market/market-130'),
+    );
     await tester.pumpAndSettle();
 
     for (final label in const ['先聊聊', '添加到群聊', '添加到专家团']) {

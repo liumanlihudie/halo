@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/experts/market_catalog.dart';
 import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
@@ -36,10 +37,47 @@ void main() {
       expect(asset, isNotNull, reason: '${expert.id} 没有徽章映射');
       expect(File(asset!).existsSync(), isTrue, reason: asset);
     }
-    for (final expert in HaloFixtures.marketExperts) {
+    for (final expert in marketExperts) {
       final asset = ExpertAvatars.assetFor(expert.id);
       expect(asset, isNotNull, reason: '${expert.id} 没有徽章映射');
       expect(File(asset!).existsSync(), isTrue, reason: asset);
+    }
+  });
+
+  test('the market carries two hundred distinct prompt experts', () {
+    expect(marketExperts, hasLength(200));
+    expect(marketExperts.map((e) => e.id).toSet(), hasLength(200));
+    expect(marketExperts.map((e) => e.name).toSet(), hasLength(200));
+    final installed = marketExperts
+        .where((e) => e.installedProfileId != null)
+        .toList();
+    expect(installed, hasLength(9));
+    for (final expert in marketExperts) {
+      if (expert.installedProfileId == null) {
+        // An expert IS its prompt: every non-installed entry carries one.
+        expect(expert.prompt.trim(), isNotEmpty, reason: expert.id);
+        expect(expert.description.trim(), isNotEmpty, reason: expert.id);
+      }
+    }
+    // No two market badges may be the same file, and installed entries wear
+    // their profile badge.
+    final assets = [
+      for (final e in marketExperts) ExpertAvatars.assetFor(e.id)!,
+    ];
+    expect(assets.toSet(), hasLength(200 - 9 + 9));
+    for (final e in installed) {
+      expect(
+        ExpertAvatars.assetFor(e.id),
+        'assets/experts/${e.installedProfileId}.svg',
+      );
+    }
+    // Every executable mapping points at a real catalog entry.
+    for (final marketId in ExecutableExpertRegistry.marketIdMappings.keys) {
+      expect(
+        marketExperts.any((e) => e.id == marketId),
+        isTrue,
+        reason: '$marketId 映射指向不存在的市场条目',
+      );
     }
   });
 

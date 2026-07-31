@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:halo_mobile/experts/market_catalog.dart';
 import 'package:halo_mobile/app/app.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
 void main() {
   test('prototype fixtures keep the complete primary-screen data contract', () {
     expect(HaloFixtures.conversations, hasLength(12));
-    expect(HaloFixtures.marketExperts, hasLength(50));
+    expect(marketExperts, hasLength(200));
     expect(HaloFixtures.circlePosts.length, greaterThanOrEqualTo(5));
     expect(HaloFixtures.installedExperts.length, greaterThanOrEqualTo(9));
   });

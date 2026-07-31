@@ -19,6 +19,15 @@ abstract final class ExpertAvatars {
   /// Mirrors [ExecutableExpertRegistry.installedExpertIdentities]; the
   /// completeness test keeps the two from drifting apart.
   static const _aliases = {
+    'market-1': 'general',
+    'market-2': 'product',
+    'market-3': 'data',
+    'market-4': 'writing',
+    'market-5': 'contract',
+    'market-6': 'watcher',
+    'market-7': 'researcher',
+    'market-8': 'calendar',
+    'market-9': 'fitness',
     'general-assistant': 'general',
     'halo-assistant': 'general',
     'product-manager-chat': 'product',

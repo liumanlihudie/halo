@@ -7,6 +7,7 @@ import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/features/settings/model_picker_sheet.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
+import 'package:halo_mobile/experts/market_catalog.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
 /// Read-only catalog lookups only; execution stays with the app kernel.
@@ -35,7 +36,7 @@ class ExpertProfilePage extends StatelessWidget {
     final installed = HaloFixtures.installedExperts
         .where((expert) => expert.id == normalizedExpertId)
         .firstOrNull;
-    final market = HaloFixtures.marketExperts
+    final market = marketExperts
         .where((expert) => expert.id == expertId)
         .firstOrNull;
     final name = installed?.name ?? market?.name ?? '合同审阅助手';
@@ -112,7 +113,30 @@ class ExpertProfilePage extends StatelessWidget {
               showDescription: catalog.description != description,
             ),
           if (marketMode) ...[
-            if (catalog == null) const _AbilityGrid(),
+            if (market case final entry? when entry.prompt.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 15),
+                child: HaloSectionLabel('提示词'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 15),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: HaloColors.paper,
+                    borderRadius: BorderRadius.circular(HaloRadii.card),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(13),
+                    child: SelectableText(
+                      entry.prompt,
+                      style: HaloTextStyles.body.copyWith(height: 1.6),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            if (catalog == null && (market?.prompt.isEmpty ?? true))
+              const _AbilityGrid(),
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 15),
               child: HaloSectionLabel('模型与用量'),

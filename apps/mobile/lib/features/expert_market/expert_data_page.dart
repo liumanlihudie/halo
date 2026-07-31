@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
+import 'package:halo_mobile/experts/market_catalog.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
 /// Read-only catalog lookups only; execution stays with the app kernel.
@@ -62,7 +63,7 @@ class _UnavailableBody extends StatelessWidget {
             .where((expert) => expert.id == normalized)
             .firstOrNull
             ?.name ??
-        HaloFixtures.marketExperts
+        marketExperts
             .where((expert) => expert.id == expertId)
             .firstOrNull
             ?.name;

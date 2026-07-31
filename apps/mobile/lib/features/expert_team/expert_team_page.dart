@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/experts/market_catalog.dart';
 import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
@@ -90,7 +91,7 @@ class _ExpertTeamPageState extends State<ExpertTeamPage> {
                 onCancel: _toggleSearch,
               ),
             ),
-          _MarketBanner(count: HaloFixtures.marketExperts.length),
+          _MarketBanner(count: marketExperts.length),
           for (final category in const ['工作型', '资讯型', '生活型'])
             if (!searching ||
                 matches.any((expert) => expert.category == category)) ...[

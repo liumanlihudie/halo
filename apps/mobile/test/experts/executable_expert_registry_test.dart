@@ -135,10 +135,12 @@ void main() {
   });
 
   test('market IDs resolve only through the explicit canonical mapping', () {
-    expect(registry.canonicalIdForMarketId('market-5'), 'project-manager');
-    expect(registry.canonicalIdForMarketId('market-10'), 'user-researcher');
-    expect(registry.canonicalIdForMarketId('market-15'), 'fact-checker');
-    expect(registry.canonicalIdForMarketId('market-27'), 'data-analyst');
+    expect(registry.canonicalIdForMarketId('market-130'), 'project-manager');
+    expect(registry.canonicalIdForMarketId('market-134'), 'user-researcher');
+    expect(registry.canonicalIdForMarketId('market-188'), 'fact-checker');
+    expect(registry.canonicalIdForMarketId('market-182'), 'database-engineer');
+    // Installed entries route through their profile, not the market mapping.
+    expect(registry.canonicalIdForMarketId('market-3'), isNull);
     expect(registry.canonicalIdForMarketId('market-50'), isNull);
     expect(registry.canonicalIdForMarketId('用户研究员'), isNull);
     expect(registry.singleChatByMarketId('market-50'), isNull);
@@ -300,17 +302,19 @@ void main() {
 
   test('market aliases cannot bypass canonical chat authorization', () {
     expect(
-      registry.singleChatByMarketId('market-5')?.profile.id,
+      registry.singleChatByMarketId('market-130')?.profile.id,
       'project-manager',
     );
-    expect(registry.singleChatByMarketId('market-9'), isNull);
+    expect(registry.singleChatByMarketId('market-99'), isNull);
     expect(registry.singleChatByMarketId('market-10'), isNull);
     expect(
-      registry.singleChatByMarketId('market-27')?.profile.id,
-      'data-analyst',
+      registry.singleChatByMarketId('market-135')?.profile.id,
+      'industry-researcher',
     );
+    // Mapped but not single-chat authorized: the mapping alone opens nothing.
+    expect(registry.singleChatByMarketId('market-182'), isNull);
     expect(
-      registry.singleChatByMarketId('market-15')?.profile.id,
+      registry.singleChatByMarketId('market-188')?.profile.id,
       'fact-checker',
     );
     expect(registry.singleChatByMarketId('market-28'), isNull);

@@ -5,7 +5,7 @@ import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
-import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
+import 'package:halo_mobile/experts/market_catalog.dart';
 
 /// Read-only catalog lookups; the row states executability, never a model.
 final _marketRegistry = ExecutableExpertRegistry(
@@ -33,11 +33,13 @@ class _ExpertMarketPageState extends State<ExpertMarketPage> {
   @override
   Widget build(BuildContext context) {
     final query = _query.trim().toLowerCase();
-    final experts = HaloFixtures.marketExperts
+    final experts = marketExperts
         .where(
           (expert) =>
               (category == '推荐' || expert.category == category) &&
-              (query.isEmpty || expert.name.toLowerCase().contains(query)),
+              (query.isEmpty ||
+                  expert.name.toLowerCase().contains(query) ||
+                  expert.description.contains(query)),
         )
         .toList();
     return HaloPageScaffold(
@@ -86,7 +88,7 @@ class _ExpertMarketPageState extends State<ExpertMarketPage> {
                         ),
                         const Spacer(),
                         Text(
-                          '已显示 ${experts.length} / 50',
+                          '已显示 ${experts.length} / ${marketExperts.length}',
                           style: HaloTextStyles.caption,
                         ),
                       ],
@@ -94,17 +96,28 @@ class _ExpertMarketPageState extends State<ExpertMarketPage> {
                   );
                 }
                 final expert = experts[index - 4];
-                // Executability is a fact; the model it will run on is the
-                // user's own binding, so no model string is claimed here.
+                // Every entry is a real prompt; what varies is whether an
+                // executable profile already stands behind it. No entry
+                // claims a model — the user's binding decides that.
+                final installed = expert.installedProfileId;
                 final executable =
+                    installed != null ||
                     _marketRegistry.canonicalIdForMarketId(expert.id) != null;
                 return _MarketExpertRow(
                   id: expert.id,
                   name: expert.name,
                   category: expert.category,
-                  model: executable ? '可执行 · 使用你配置的模型' : '上架准备中',
-                  description: expert.description,
-                  onTap: () => context.push('/market/${expert.id}'),
+                  model: installed != null
+                      ? '已入驻 · 可直接对话'
+                      : executable
+                      ? '可执行 · 使用你配置的模型'
+                      : '提示词专家 · 查看提示词',
+                  description: installed != null
+                      ? '已在你的专家团中'
+                      : expert.description,
+                  onTap: () => installed != null
+                      ? context.push('/expert/$installed')
+                      : context.push('/market/${expert.id}'),
                 );
               },
             ),
@@ -166,7 +179,7 @@ class _CategoryChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const categories = ['推荐', '效率', '研究', '内容', '数据', '法律财税', '生活'];
+    final categories = ['推荐', ...marketCategories()];
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Wrap(
@@ -219,7 +232,10 @@ class _MarketExpertRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             children: [
-              HaloAvatar(svgAsset: ExpertAvatars.assetFor(id), letter: name.characters.first),
+              HaloAvatar(
+                svgAsset: ExpertAvatars.assetFor(id),
+                letter: name.characters.first,
+              ),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(

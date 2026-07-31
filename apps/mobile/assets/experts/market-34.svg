@@ -1,14 +1,13 @@
 <svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="g-m34" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8559EB"/>
-      <stop offset="1" stop-color="#9433B8"/>
+    <linearGradient id="g33" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5F94ED"/>
+      <stop offset="1" stop-color="#3E32B2"/>
     </linearGradient>
   </defs>
-  <rect width="120" height="120" rx="28" fill="url(#g-m34)"/>
+  <rect width="120" height="120" rx="28" fill="url(#g33)"/>
   <circle cx="88" cy="26" r="30" fill="#FFFFFF" opacity="0.10"/>
   <circle cx="20" cy="102" r="24" fill="#FFFFFF" opacity="0.07"/>
-  <path d="M38 90 V62" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <path d="M60 90 V42" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
-  <path d="M82 90 V70" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <ellipse cx="60" cy="38" rx="26" ry="10" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M34 38 V78 C34 84 46 88 60 88 C74 88 86 84 86 78 V38" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M34 58 C34 64 46 68 60 68 C74 68 86 64 86 58" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  
 </svg>
