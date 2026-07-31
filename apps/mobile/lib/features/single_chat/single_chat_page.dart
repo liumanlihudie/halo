@@ -220,8 +220,6 @@ class _SingleChatPageState extends State<SingleChatPage> {
       });
       unawaited(_loadModelLabel(described.expertId));
       await controller.initialize();
-      // Opening a conversation should land on the newest message.
-      _jumpToBottomSoon();
     } catch (_) {
       if (mounted && generation == _dependencyGeneration) {
         setState(() {
@@ -279,22 +277,19 @@ class _SingleChatPageState extends State<SingleChatPage> {
   /// once the rebuilt list has laid out.
   /// Jump (no animation) for the initial history load, so opening the page
   /// starts at the newest message instead of animating past the backlog.
-  void _jumpToBottomSoon() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-    });
-  }
-
+  /// Brings the newest message back into view after the user has scrolled up.
+  ///
+  /// A short glide rather than a jump, and skipped entirely when already at the
+  /// bottom, which is the common case — sending a message from the bottom of
+  /// the conversation should not animate anything.
   void _scrollToBottomSoon() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
-      final target = _scrollController.position.maxScrollExtent;
-      if ((_scrollController.offset - target).abs() < 1) return;
+      if (_scrollController.offset < 1) return;
       _scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
+        0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
       );
     });
   }
@@ -599,23 +594,19 @@ class _SingleChatPageState extends State<SingleChatPage> {
         ),
       ],
       backgroundColor: HaloColors.soft,
+      // Reversed, the way every chat client does it: the newest message sits at
+      // offset zero, so opening a conversation is already at the bottom and a
+      // new message grows the list away from the viewport. Chasing the bottom
+      // with a controller instead means the first frame scrolls before the
+      // history has loaded, and every new message jolts the position.
       body: ListView(
         controller: _scrollController,
+        reverse: true,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
         children: [
-          if (_conversationNotInstalled)
-            const _SystemNotice('这个联系人还没有可执行的专家，暂时无法对话。')
-          else if (_dependencyLoadFailed)
-            const _SystemNotice('聊天存储暂不可用，请稍后重试'),
-          if (state.historyLoadFailed) const _SystemNotice('历史消息加载失败，可继续当前对话'),
-          for (final message in state.messages)
-            _ProjectedMessage(
-              message: message,
-              conversation: _conversation,
-              modelLabel: _modelLabel,
-              onLongPress: _showMessageActions,
-            ),
+          // First child renders at the bottom in a reversed list, so the live
+          // reply sits below the newest message, where it does in the chat.
           if (state.status == SingleChatRunStatus.running)
             _AgentBubble(
               conversation: _conversation,
@@ -639,6 +630,18 @@ class _SingleChatPageState extends State<SingleChatPage> {
                     : null,
               ),
             ),
+          for (final message in state.messages.reversed)
+            _ProjectedMessage(
+              message: message,
+              conversation: _conversation,
+              modelLabel: _modelLabel,
+              onLongPress: _showMessageActions,
+            ),
+          if (state.historyLoadFailed) const _SystemNotice('历史消息加载失败，可继续当前对话'),
+          if (_conversationNotInstalled)
+            const _SystemNotice('这个联系人还没有可执行的专家，暂时无法对话。')
+          else if (_dependencyLoadFailed)
+            const _SystemNotice('聊天存储暂不可用，请稍后重试'),
         ],
       ),
       bottom: _Composer(
