@@ -3,6 +3,7 @@
 import 'dart:io';
 
 import 'package:dartantic_interface/dartantic_interface.dart' as llm;
+import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
@@ -23,8 +24,19 @@ class GeneratedAsset {
 /// can write a paragraph. A per-expert switch would only create a setting
 /// nobody wants to find before they can get a picture.
 abstract interface class GenerationService {
-  Future<GeneratedAsset> generateImage(String prompt, {String? referencePath});
-  Future<GeneratedAsset> generateVideo(String prompt, {String? referencePath});
+  /// [onSubmitted] fires once the provider has accepted the task and polling
+  /// begins — the moment a placeholder stops being a guess, because from here
+  /// something is genuinely being made.
+  Future<GeneratedAsset> generateImage(
+    String prompt, {
+    String? referencePath,
+    void Function()? onSubmitted,
+  });
+  Future<GeneratedAsset> generateVideo(
+    String prompt, {
+    String? referencePath,
+    void Function()? onSubmitted,
+  });
 }
 
 /// Raised when generation cannot run. Carries text safe to show.
@@ -76,19 +88,22 @@ final class ProductionGenerationService implements GenerationService {
   Future<GeneratedAsset> generateImage(
     String prompt, {
     String? referencePath,
-  }) => _generate(ModelPurpose.image, prompt, referencePath);
+    void Function()? onSubmitted,
+  }) => _generate(ModelPurpose.image, prompt, referencePath, onSubmitted);
 
   @override
   Future<GeneratedAsset> generateVideo(
     String prompt, {
     String? referencePath,
-  }) => _generate(ModelPurpose.video, prompt, referencePath);
+    void Function()? onSubmitted,
+  }) => _generate(ModelPurpose.video, prompt, referencePath, onSubmitted);
 
   Future<GeneratedAsset> _generate(
     ModelPurpose purpose,
     String prompt,
-    String? referencePath,
-  ) async {
+    String? referencePath, [
+    void Function()? onSubmitted,
+  ]) async {
     final trimmed = prompt.trim();
     if (trimmed.isEmpty) {
       throw const GenerationUnavailable('没有可用于生成的描述');
@@ -126,6 +141,9 @@ final class ProductionGenerationService implements GenerationService {
       if (taskId is! String || taskId.isEmpty) {
         throw const GenerationUnavailable('模型服务没有返回任务号');
       }
+      // Accepted and queued: from here there is genuinely something to wait
+      // for, which is when a placeholder stops being a guess.
+      onSubmitted?.call();
       final resultUrl = await _awaitResult(
         baseUri: config.baseUri,
         purpose: purpose,
@@ -245,6 +263,15 @@ final class ProductionGenerationService implements GenerationService {
 List<llm.Tool> buildGenerationTools({
   required GenerationService service,
   required void Function(GeneratedAsset asset) onGenerated,
+
+  /// Reports each step so the chat can show the prompt, then a placeholder,
+  /// then the result — rather than a blank wait of up to several minutes.
+  void Function(GenerationProgress progress)? onProgress,
+
+  /// Called with a user-facing reason whenever a generation fails. The app
+  /// reports it directly, because handing the reason to the model and trusting
+  /// it to relay produced replies that announced a picture that did not exist.
+  void Function(String reason)? onFailed,
   String? referencePath,
 }) => [
   llm.Tool<Map<String, dynamic>>(
@@ -261,19 +288,61 @@ List<llm.Tool> buildGenerationTools({
     onCall: (input) async {
       final prompt = input['prompt'];
       if (prompt is! String) return {'ok': false, 'error': '缺少描述'};
+      final id = 'gen-${DateTime.now().microsecondsSinceEpoch}';
       try {
         final asset = await service.generateImage(
           prompt,
           referencePath: referencePath,
+          onSubmitted: () => onProgress?.call(
+            GenerationProgress.submitted(
+              id: id,
+              prompt: prompt,
+              isVideo: false,
+            ),
+          ),
         );
         onGenerated(asset);
+        onProgress?.call(
+          GenerationProgress.completed(
+            id: id,
+            prompt: prompt,
+            isVideo: false,
+            localPath: asset.localPath,
+          ),
+        );
         return {'ok': true, 'note': '图片已生成并展示给用户'};
       } on GenerationUnavailable catch (error) {
-        // Handed back to the model so it can tell the user in its own words
-        // instead of the turn dying with a bare failure.
-        return {'ok': false, 'error': error.safeMessage};
+        onProgress?.call(
+          GenerationProgress.failed(
+            id: id,
+            prompt: prompt,
+            isVideo: false,
+            failure: error.safeMessage,
+          ),
+        );
+        onFailed?.call('图片没有生成：${error.safeMessage}');
+        return {
+          'ok': false,
+          'error': error.safeMessage,
+          // Stops a model from narrating a success it did not get. The user is
+          // told by the app either way.
+          'instruction': '生成失败。必须如实告诉用户失败原因，不要声称图片已生成。',
+        };
       } catch (_) {
-        return {'ok': false, 'error': '生成失败'};
+        onProgress?.call(
+          GenerationProgress.failed(
+            id: id,
+            prompt: prompt,
+            isVideo: false,
+            failure: '生成失败',
+          ),
+        );
+        onFailed?.call('图片没有生成：生成失败');
+        return {
+          'ok': false,
+          'error': '生成失败',
+          'instruction': '生成失败。必须如实告诉用户，不要声称图片已生成。',
+        };
       }
     },
   ),
@@ -287,17 +356,55 @@ List<llm.Tool> buildGenerationTools({
     onCall: (input) async {
       final prompt = input['prompt'];
       if (prompt is! String) return {'ok': false, 'error': '缺少描述'};
+      final id = 'gen-${DateTime.now().microsecondsSinceEpoch}';
       try {
         final asset = await service.generateVideo(
           prompt,
           referencePath: referencePath,
+          onSubmitted: () => onProgress?.call(
+            GenerationProgress.submitted(id: id, prompt: prompt, isVideo: true),
+          ),
         );
         onGenerated(asset);
+        onProgress?.call(
+          GenerationProgress.completed(
+            id: id,
+            prompt: prompt,
+            isVideo: true,
+            localPath: asset.localPath,
+          ),
+        );
         return {'ok': true, 'note': '视频已生成并展示给用户'};
       } on GenerationUnavailable catch (error) {
-        return {'ok': false, 'error': error.safeMessage};
+        onProgress?.call(
+          GenerationProgress.failed(
+            id: id,
+            prompt: prompt,
+            isVideo: true,
+            failure: error.safeMessage,
+          ),
+        );
+        onFailed?.call('视频没有生成：${error.safeMessage}');
+        return {
+          'ok': false,
+          'error': error.safeMessage,
+          'instruction': '生成失败。必须如实告诉用户失败原因，不要声称视频已生成。',
+        };
       } catch (_) {
-        return {'ok': false, 'error': '生成失败'};
+        onProgress?.call(
+          GenerationProgress.failed(
+            id: id,
+            prompt: prompt,
+            isVideo: true,
+            failure: '生成失败',
+          ),
+        );
+        onFailed?.call('视频没有生成：生成失败');
+        return {
+          'ok': false,
+          'error': '生成失败',
+          'instruction': '生成失败。必须如实告诉用户，不要声称视频已生成。',
+        };
       }
     },
   ),

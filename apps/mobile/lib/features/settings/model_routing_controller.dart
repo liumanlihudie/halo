@@ -101,6 +101,9 @@ final class SqliteModelRoutingPersistence
     if (catalogStore == null) {
       throw StateError('Provider model catalog persistence is unavailable');
     }
+    // Every model from every enabled provider, unfiltered. Filtering on
+    // declared kinds hid models that were plainly there, because a relay
+    // labels what it feels like labelling.
     final options = <AvailableModelOption>[];
     for (final provider in await _store.loadEnabled()) {
       final catalog = await catalogStore.loadProviderModelCatalog(
@@ -108,7 +111,6 @@ final class SqliteModelRoutingPersistence
       );
       if (catalog == null) continue;
       for (final model in catalog.models) {
-        if (!ModelPurposeSuitability.allows(purpose, model)) continue;
         options.add(
           AvailableModelOption(
             ref: model.ref,

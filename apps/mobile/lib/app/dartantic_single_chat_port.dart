@@ -9,6 +9,7 @@ import 'package:halo_mobile/experts/expert_output_prompt.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/app/generation_tools.dart';
 import 'package:halo_mobile/app/production_vision_describer.dart';
+import 'package:halo_mobile/app/web_search_tool.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 
@@ -54,10 +55,12 @@ final class DartanticSingleChatPort implements SingleChatPort {
     required ExecutableExpertRegistry experts,
     VisionDescriber? vision,
     GenerationService? generation,
+    WebSearchBackend? webSearch,
   }) : _agents = agents,
        _experts = experts,
        _vision = vision,
-       _generation = generation;
+       _generation = generation,
+       _webSearch = webSearch;
 
   final SingleChatAgentFactory _agents;
   final ExecutableExpertRegistry _experts;
@@ -70,6 +73,11 @@ final class DartanticSingleChatPort implements SingleChatPort {
   /// capability. Absent in prototype wiring, where the tools are simply not
   /// declared and the model never offers what it cannot do.
   final GenerationService? _generation;
+
+  /// Looks things up on the web. Absent when no search key is configured, in
+  /// which case the tool is never declared — an expert cannot claim to have
+  /// searched when there was nothing to search with.
+  final WebSearchBackend? _webSearch;
   final Map<String, _ActiveRun> _active = {};
   bool _closed = false;
 
@@ -89,11 +97,13 @@ final class DartanticSingleChatPort implements SingleChatPort {
       throw StateError('A run with this command identity is already active');
     }
     final partials = StreamController<String>.broadcast();
+    final progress = StreamController<GenerationProgress>.broadcast();
     final cancelled = Completer<void>();
     final outcome = _run(
       expert: expert,
       request: request,
       partials: partials,
+      progress: progress,
       cancelled: cancelled,
     );
     _active[runId] = _ActiveRun(cancelled, outcome);
@@ -101,12 +111,14 @@ final class DartanticSingleChatPort implements SingleChatPort {
       outcome.whenComplete(() {
         _active.remove(runId);
         unawaited(partials.close());
+        unawaited(progress.close());
       }),
     );
     return SingleAgentRunHandle(
       runId: runId,
       outcome: outcome,
       partialAnswers: partials.stream,
+      generationProgress: progress.stream,
     );
   }
 
@@ -129,10 +141,15 @@ final class DartanticSingleChatPort implements SingleChatPort {
     required ExecutableExpert expert,
     required StartSingleAgentRunRequest request,
     required StreamController<String> partials,
+    required StreamController<GenerationProgress> progress,
     required Completer<void> cancelled,
   }) async {
     final answer = StringBuffer();
     final generated = <String>[];
+    // What the tools actually did, recorded by the app. The model's own
+    // account of a tool call is not evidence: given a failure it will still
+    // reach for the reply that pleases.
+    final toolFailures = <String>[];
     try {
       // An expert answering about an image it never received is the failure
       // the owner hit: the model says it can see, the relay drops the image,
@@ -142,17 +159,21 @@ final class DartanticSingleChatPort implements SingleChatPort {
       final generation = _generation;
       final agent = await _agents.agentFor(
         request.expertId,
-        tools: generation == null
-            ? const []
-            : buildGenerationTools(
-                service: generation,
-                // The most recent attachment doubles as the reference image,
-                // so "把这张改成赛博朋克风" works without a second picker.
-                referencePath: request.imagePaths.isEmpty
-                    ? null
-                    : request.imagePaths.last,
-                onGenerated: (asset) => generated.add(asset.localPath),
-              ),
+        tools: [
+          if (_webSearch case final search?)
+            buildWebSearchTool(backend: search),
+          ...generation == null
+              ? const <llm.Tool>[]
+              : buildGenerationTools(
+                  service: generation,
+                  // The most recent attachment doubles as the reference image,
+                  // so "把这张改成赛博朋克风" works without a second picker.
+                  referencePath: request.imagePaths.isEmpty
+                      ? null
+                      : request.imagePaths.last,
+                  onGenerated: (asset) => generated.add(asset.localPath),
+                ),
+        ],
       );
       final history = <llm.ChatMessage>[
         llm.ChatMessage.system(_systemPrompt(expert)),
@@ -201,6 +222,7 @@ final class DartanticSingleChatPort implements SingleChatPort {
           answer: partial,
           uncertainty: '回答在传输中断开，内容可能不完整',
           generatedAssetPaths: List.unmodifiable(generated),
+          toolFailures: List.unmodifiable(toolFailures),
         );
       }
       return const SingleAgentRunOutcome.failed(
@@ -221,6 +243,7 @@ final class DartanticSingleChatPort implements SingleChatPort {
     return SingleAgentRunOutcome.completed(
       answer: projected,
       generatedAssetPaths: List.unmodifiable(generated),
+      toolFailures: List.unmodifiable(toolFailures),
     );
   }
 

@@ -1,4 +1,5 @@
 import 'package:halo_mobile/app/dartantic_single_chat_port.dart';
+import 'package:halo_mobile/app/web_search_tool.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/orchestration/dartantic_agent_runtime.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
@@ -47,14 +48,17 @@ final class LiveRoutingAgentRuntime
     required ExecutableExpertRegistry experts,
     required SqliteModelCallJournal journal,
     required ProviderConfigurationStore store,
+    WebSearchBackend? webSearch,
   }) : _agents = agents,
        _experts = experts,
        _journal = journal,
-       _store = store;
+       _store = store,
+       _webSearch = webSearch;
 
   // ignore_for_file: prefer_initializing_formals
 
   final ModelAgentFactory _agents;
+  final WebSearchBackend? _webSearch;
   final ExecutableExpertRegistry _experts;
   final SqliteModelCallJournal _journal;
   final ProviderConfigurationStore _store;
@@ -94,6 +98,7 @@ final class LiveRoutingAgentRuntime
       agents: _agents,
       experts: _experts,
       journal: _journal,
+      webSearch: _webSearch,
       policy: AgentExecutionPolicy(
         defaultModel: effective,
         summarizerModel: effective,

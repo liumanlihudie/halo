@@ -14,11 +14,14 @@ import 'package:halo_mobile/app/generation_tools.dart';
 import 'package:halo_mobile/app/generation_transport.dart';
 import 'package:halo_mobile/app/production_single_chat_speech.dart';
 import 'package:halo_mobile/app/production_vision_describer.dart';
+import 'package:halo_mobile/app/web_search_tool.dart';
 import 'package:halo_mobile/features/media/live_call_audio.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:halo_mobile/model_runtime/local_secret_store.dart';
 import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
+import 'package:halo_mobile/features/circle/circle_news_runner.dart';
+import 'package:halo_mobile/features/circle/circle_news_store.dart';
 import 'package:halo_mobile/features/circle/circle_post_store.dart';
 import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/group_chat/group_store.dart';
@@ -75,7 +78,11 @@ final class ProductionAppKernelFactory {
            openChatRepository ?? _openDriftChatMessageRepository,
        _unaryHttpAdapter = unaryHttpAdapter ?? DartIoUnaryHttpAdapter(),
        _endpointPolicy = TrustedProviderEndpointPolicy(
-         providerHosts: const {'api.deepseek.com', 'toapis.com'},
+         providerHosts: const {
+           'api.deepseek.com',
+           'api.moonshot.cn',
+           'toapis.com',
+         },
        );
 
   final ApplicationSupportDirectoryProvider _applicationSupportDirectory;
@@ -139,6 +146,24 @@ final class ProductionAppKernelFactory {
         resolveModel: ({required agentId}) =>
             runtimeSlot!.resolveConfiguredModel(agentId: agentId),
       );
+      // Voice and video calls are optional, so a store that cannot record
+      // service credentials degrades to "unavailable" rather than failing app
+      // startup: the settings page already disables its fields and says so.
+      final credentialPersistence =
+          settingsStore is ServiceCredentialPersistence
+          ? settingsStore as ServiceCredentialPersistence
+          : null;
+      // One backend for both surfaces: an expert should not be able to look
+      // something up in a single chat but not in a group.
+      final webSearch = credentialPersistence == null
+          ? null
+          : TavilyWebSearchBackend(
+              credentials: credentialPersistence,
+              secretResolver: KeychainSecretResolver(store: _credentials),
+              transport: GenerationTransport(
+                endpointPolicy: _searchEndpointPolicy,
+              ),
+            );
       singleChatPort = DartanticSingleChatPort(
         agents: agentFactory,
         experts: ExecutableExpertRegistry(
@@ -155,6 +180,7 @@ final class ProductionAppKernelFactory {
                 ),
               )
             : null,
+        webSearch: webSearch,
         vision: settingsStore is PurposeModelBindingStore
             ? ProductionVisionDescriber(
                 store: settingsStore,
@@ -164,6 +190,7 @@ final class ProductionAppKernelFactory {
               )
             : null,
       );
+      SqliteCircleNewsStore? newsStore;
       SqliteGroupStore? groupStore;
       SqliteCirclePostStore? circleStore;
       CircleController? circleController;
@@ -175,6 +202,9 @@ final class ProductionAppKernelFactory {
           ).path,
         );
         circleController = CircleController(store: circleStore);
+        newsStore = SqliteCircleNewsStore.open(
+          '${supportDirectory.path}${Platform.pathSeparator}halo_circle.sqlite',
+        );
         // Same file as the circle: both are small tables of things the user
         // assembled, and one fewer database is one fewer thing to migrate.
         groupStore = SqliteGroupStore.open(
@@ -186,14 +216,8 @@ final class ProductionAppKernelFactory {
         circleStore = null;
         circleController = null;
         groupStore = null;
+        newsStore = null;
       }
-      // Voice and video calls are optional, so a store that cannot record
-      // service credentials degrades to "unavailable" rather than failing app
-      // startup: the settings page already disables its fields and says so.
-      final credentialPersistence =
-          settingsStore is ServiceCredentialPersistence
-          ? settingsStore as ServiceCredentialPersistence
-          : null;
       ServiceCredentialsController? serviceCredentials;
       // Every credential read and write goes through this one store. Saving
       // through the fallback and reading straight from the Keychain is how a
@@ -226,6 +250,7 @@ final class ProductionAppKernelFactory {
           experts: experts,
           journal: modelCallJournal,
           store: settingsStore,
+          webSearch: webSearch,
         ),
       );
       final orchestrationKernel = await orchestrationFactory.create();
@@ -293,6 +318,32 @@ final class ProductionAppKernelFactory {
           circlePublisher: circleStore == null
               ? null
               : CirclePublisher(store: circleStore),
+          newsStore: newsStore,
+          runDueNews:
+              (newsStore == null || circleStore == null || webSearch == null)
+              ? null
+              : () async {
+                  // Only when the app is open, because nothing runs while it
+                  // is suspended. Failures stay quiet: a missed digest must
+                  // not interrupt whatever the user opened the app to do.
+                  try {
+                    await CircleNewsRunner(
+                      news: newsStore!,
+                      circle: circleStore!,
+                      search: webSearch,
+                      curator: ({required expertId, required prompt}) async {
+                        final agent = await agentFactory.agentFor(expertId);
+                        final buffer = StringBuffer();
+                        await agent
+                            .sendStream(prompt)
+                            .forEach((chunk) => buffer.write(chunk.output));
+                        return buffer.toString();
+                      },
+                    ).runDueJobs();
+                  } catch (_) {
+                    // Nothing to report: the feed simply has no new entry.
+                  }
+                },
           groupStore: groupStore,
           groupMembers: groupStore == null
               ? null
@@ -371,6 +422,12 @@ final class ProductionAppKernelFactory {
           endpointPolicy: _endpointPolicy,
         ),
       );
+
+  /// Search talks to its own host, so it gets its own allowlist rather than
+  /// widening the one that guards model traffic.
+  static final _searchEndpointPolicy = TrustedProviderEndpointPolicy(
+    providerHosts: const {'api.tavily.com'},
+  );
 
   /// The vision pre-pass shares the vetted HTTP path: same endpoint policy,
   /// same body limits, same redaction of sensitive headers.

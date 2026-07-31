@@ -201,6 +201,17 @@ class _SingleChatPageState extends State<SingleChatPage> {
         repository: resolvedRepository,
         commandIdFactory: _newCommandId,
         speech: widget.speech,
+        reportFailure: widget.circlePublisher == null
+            ? null
+            : ({required commandId, required reason}) async {
+                await widget.circlePublisher!.publishFailure(
+                  canonicalExpertId: described.expertId,
+                  conversationId: widget.conversationId,
+                  commandId: commandId,
+                  reason: reason,
+                  sourceLabel: '来自与${described.agentName}的对话',
+                );
+              },
         verifier: verifier,
       )..addListener(_onChatChanged);
       setState(() {
@@ -209,8 +220,6 @@ class _SingleChatPageState extends State<SingleChatPage> {
       });
       unawaited(_loadModelLabel(described.expertId));
       await controller.initialize();
-      // Opening a conversation should land on the newest message.
-      _jumpToBottomSoon();
     } catch (_) {
       if (mounted && generation == _dependencyGeneration) {
         setState(() {
@@ -268,22 +277,19 @@ class _SingleChatPageState extends State<SingleChatPage> {
   /// once the rebuilt list has laid out.
   /// Jump (no animation) for the initial history load, so opening the page
   /// starts at the newest message instead of animating past the backlog.
-  void _jumpToBottomSoon() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-    });
-  }
-
+  /// Brings the newest message back into view after the user has scrolled up.
+  ///
+  /// A short glide rather than a jump, and skipped entirely when already at the
+  /// bottom, which is the common case — sending a message from the bottom of
+  /// the conversation should not animate anything.
   void _scrollToBottomSoon() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
-      final target = _scrollController.position.maxScrollExtent;
-      if ((_scrollController.offset - target).abs() < 1) return;
+      if (_scrollController.offset < 1) return;
       _scrollController.animateTo(
-        target,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOut,
+        0,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
       );
     });
   }
@@ -588,23 +594,29 @@ class _SingleChatPageState extends State<SingleChatPage> {
         ),
       ],
       backgroundColor: HaloColors.soft,
+      // Reversed, the way every chat client does it: the newest message sits at
+      // offset zero, so opening a conversation is already at the bottom and a
+      // new message grows the list away from the viewport. Chasing the bottom
+      // with a controller instead means the first frame scrolls before the
+      // history has loaded, and every new message jolts the position.
       body: ListView(
         controller: _scrollController,
+        reverse: true,
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+        padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
         children: [
-          if (_conversationNotInstalled)
-            const _SystemNotice('这个联系人还没有可执行的专家，暂时无法对话。')
-          else if (_dependencyLoadFailed)
-            const _SystemNotice('聊天存储暂不可用，请稍后重试'),
-          if (state.historyLoadFailed) const _SystemNotice('历史消息加载失败，可继续当前对话'),
-          for (final message in state.messages)
-            _ProjectedMessage(
-              message: message,
+          // Newest first in a reversed list: the generation placeholder sits
+          // below the reply that announced it, where the picture will appear.
+          for (final generation
+              in (controller?.activeGenerations ?? const []).reversed)
+            _GenerationPlaceholder(
+              key: ValueKey('generation-${generation.id}'),
               conversation: _conversation,
-              modelLabel: _modelLabel,
-              onLongPress: _showMessageActions,
+              prompt: generation.prompt,
+              isVideo: generation.isVideo,
             ),
+          // First child renders at the bottom in a reversed list, so the live
+          // reply sits below the newest message, where it does in the chat.
           if (state.status == SingleChatRunStatus.running)
             _AgentBubble(
               conversation: _conversation,
@@ -628,6 +640,18 @@ class _SingleChatPageState extends State<SingleChatPage> {
                     : null,
               ),
             ),
+          for (final message in state.messages.reversed)
+            _ProjectedMessage(
+              message: message,
+              conversation: _conversation,
+              modelLabel: _modelLabel,
+              onLongPress: _showMessageActions,
+            ),
+          if (state.historyLoadFailed) const _SystemNotice('历史消息加载失败，可继续当前对话'),
+          if (_conversationNotInstalled)
+            const _SystemNotice('这个联系人还没有可执行的专家，暂时无法对话。')
+          else if (_dependencyLoadFailed)
+            const _SystemNotice('聊天存储暂不可用，请稍后重试'),
         ],
       ),
       bottom: _Composer(
@@ -1068,6 +1092,54 @@ class _FileMessage extends StatelessWidget {
           ),
           const Divider(height: 18),
           Text(message.tertiaryText ?? '', style: HaloTextStyles.caption),
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown from the moment the provider accepts the task until the result
+/// arrives.
+///
+/// Carries the prompt the expert actually sent, so the wait is legible: the
+/// user can see what is being drawn instead of watching an unexplained spinner
+/// for what can be minutes.
+class _GenerationPlaceholder extends StatelessWidget {
+  const _GenerationPlaceholder({
+    required this.conversation,
+    required this.prompt,
+    required this.isVideo,
+    super.key,
+  });
+
+  final SingleChatConversationProjection conversation;
+  final String prompt;
+  final bool isVideo;
+
+  @override
+  Widget build(BuildContext context) {
+    return _AgentBubble(
+      conversation: conversation,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isVideo ? '正在生成视频' : '正在生成图片',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(prompt, style: HaloTextStyles.caption),
+          const SizedBox(height: 9),
+          Container(
+            width: 200,
+            height: isVideo ? 120 : 200,
+            decoration: BoxDecoration(
+              color: HaloColors.soft,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: const _ProgressMessage(),
+          ),
         ],
       ),
     );

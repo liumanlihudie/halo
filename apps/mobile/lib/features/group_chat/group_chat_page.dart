@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_history_repository.dart';
+import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
+import 'package:halo_mobile/features/group_chat/group_store.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/orchestration/orchestration_models.dart';
@@ -15,6 +19,8 @@ class GroupChatPage extends StatefulWidget {
     this.runPort,
     this.membersRepository = const PrototypeGroupMembersRepository(),
     this.historyRepository = const PrototypeGroupChatHistoryRepository(),
+    this.groupStore,
+    this.circlePublisher,
     super.key,
   });
 
@@ -22,6 +28,13 @@ class GroupChatPage extends StatefulWidget {
   final GroupChatRunPort? runPort;
   final GroupMembersRepository membersRepository;
   final GroupChatHistoryRepository historyRepository;
+
+  /// Supplies the real name of a created group. Without it every group would
+  /// open under the shipped group's title.
+  final GroupStore? groupStore;
+
+  /// Mirrors a finished summary into the circle.
+  final CirclePublisher? circlePublisher;
 
   @override
   State<GroupChatPage> createState() => _GroupChatPageState();
@@ -42,8 +55,38 @@ class _GroupChatPageState extends State<GroupChatPage> {
       conversationId: widget.groupId,
       membersRepository: widget.membersRepository,
       historyRepository: widget.historyRepository,
+      publishSummary: widget.circlePublisher == null
+          ? null
+          : ({
+              required runId,
+              required memberExpertIds,
+              required summary,
+            }) async {
+              await widget.circlePublisher!.publishGroupSummary(
+                groupId: widget.groupId,
+                groupName: _groupName,
+                runId: runId,
+                memberExpertIds: memberExpertIds,
+                summary: summary,
+              );
+            },
     )..addListener(_refresh);
     _controller.initialize();
+    unawaited(_loadGroupName());
+  }
+
+  /// Shipped groups keep their seeded title; a created one uses its own name.
+  String _groupName = 'iOS 产品小组';
+
+  Future<void> _loadGroupName() async {
+    final store = widget.groupStore;
+    if (store == null) return;
+    try {
+      final group = await store.loadGroup(widget.groupId);
+      if (group != null && mounted) setState(() => _groupName = group.name);
+    } catch (_) {
+      // Keeps the seeded title rather than showing an id.
+    }
   }
 
   @override
@@ -205,7 +248,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   @override
   Widget build(BuildContext context) {
     return HaloPageScaffold(
-      title: 'iOS 产品小组',
+      title: _groupName,
       titleBadge: '${_controller.members.length} AI',
       compactTitle: true,
       backgroundColor: HaloColors.soft,

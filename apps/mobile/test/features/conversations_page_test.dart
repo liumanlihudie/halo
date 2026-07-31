@@ -3,34 +3,42 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/features/conversations/conversations_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 
-/// The list must fill in on first open.
-///
-/// It once loaded only from didUpdateWidget, so the screen came up empty and
-/// stayed empty unless a dependency happened to change afterwards.
 void main() {
-  testWidgets('conversations appear without waiting for a rebuild', (
-    tester,
-  ) async {
+  testWidgets('conversations are listed on the first build', (tester) async {
+    // The regression this pins: loading was wired only to a dependency change,
+    // so the list came up empty until something happened to change, which on a
+    // cold start is never.
     await tester.pumpWidget(
-      MaterialApp(
-        home: ConversationsPage(
-          repository: InMemoryChatMessageRepository(
-            conversations: const {
-              'general-assistant': SingleChatConversationProjection(
-                conversationId: 'general-assistant',
-                expertId: 'halo-assistant',
-                title: 'Halo 助理',
-                agentName: 'Halo 助理',
-                modelLabel: '文字模型',
-                avatarLetter: '助',
-              ),
-            },
-          ),
-        ),
-      ),
+      MaterialApp(home: ConversationsPage(repository: _Repository())),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Halo 助理'), findsOneWidget);
+    expect(find.text('产品经理'), findsOneWidget);
   });
+
+  testWidgets('a conversation with no messages says so', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(home: ConversationsPage(repository: _Repository())),
+    );
+    await tester.pumpAndSettle();
+
+    // Never an invented last message for a conversation that has none.
+    expect(find.text('还没有消息'), findsWidgets);
+  });
+}
+
+class _Repository extends InMemoryChatMessageRepository {
+  _Repository()
+    : super(
+        conversations: const {
+          'product-manager-chat': SingleChatConversationProjection(
+            conversationId: 'product-manager-chat',
+            expertId: 'product-manager',
+            title: '产品经理',
+            agentName: '产品经理',
+            modelLabel: '已配置文字模型',
+            avatarLetter: '产',
+          ),
+        },
+      );
 }

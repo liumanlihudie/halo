@@ -141,6 +141,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('已配置'), findsOneWidget);
+      // The unsupported rows sit below the fold once the supported list grows,
+      // so bring one into view before asserting on its label.
+      await tester.scrollUntilVisible(find.text('OpenAI'), 200);
       expect(find.text('后续支持'), findsWidgets);
       expect(
         ModelProvidersPage.providers.where((provider) => !provider.$4),

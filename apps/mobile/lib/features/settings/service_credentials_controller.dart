@@ -19,7 +19,12 @@ enum KeyOnlyService {
   doubaoRealtimeAudio('doubao-realtime-audio', '豆包端到端音频', '实时语音通话'),
 
   /// Vidu, used by the video call.
-  vidu('vidu', 'Vidu 视频通话', '视频通话的画面生成');
+  vidu('vidu', 'Vidu 视频通话', '视频通话的画面生成'),
+
+  /// Tavily, used when an expert needs to look something up. Without it the
+  /// search tool is not offered at all, so no expert can claim to have
+  /// searched when nothing was searched.
+  webSearch('web-search', '联网搜索 (Tavily)', '专家查资料时的网页搜索');
 
   const KeyOnlyService(this.id, this.displayName, this.purpose);
 

@@ -584,6 +584,10 @@ final class ProviderSettingsController extends ChangeNotifier {
       enabled: draft.enabled,
       secretRef: secretRef,
     ),
+    'moonshot' => ProviderConfig.moonshot(
+      enabled: draft.enabled,
+      secretRef: secretRef,
+    ),
     _ => throw StateError('Provider is not supported'),
   };
 

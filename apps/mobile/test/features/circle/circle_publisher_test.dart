@@ -70,6 +70,55 @@ void main() {
     expect(await store.countPosts(), 0);
   });
 
+  test(
+    'a configuration failure is recorded where it can be found later',
+    () async {
+      expect(
+        await publisher.publishFailure(
+          canonicalExpertId: 'product-manager',
+          conversationId: 'product-manager-chat',
+          commandId: 'command-1',
+          reason: '这条消息没能发出：还没有配置可用的模型',
+          sourceLabel: '来自与产品经理的对话',
+        ),
+        CirclePublishResult.published,
+      );
+
+      final post = (await store.loadFeed()).single;
+      expect(post.contentType, CirclePostContent.status);
+      expect(post.body, contains('没能发出'));
+      expect(post.sourceId, 'product-manager-chat');
+    },
+  );
+
+  test('retrying the same failed command does not stack up posts', () async {
+    Future<CirclePublishResult> report() => publisher.publishFailure(
+      canonicalExpertId: 'product-manager',
+      conversationId: 'product-manager-chat',
+      commandId: 'command-1',
+      reason: '这条消息没能发出：模型服务额度不足',
+      sourceLabel: '来自与产品经理的对话',
+    );
+
+    expect(await report(), CirclePublishResult.published);
+    expect(await report(), CirclePublishResult.duplicate);
+    expect(await store.countPosts(), 1);
+  });
+
+  test('a failure post and an answer post from one command coexist', () async {
+    await publish(messageId: 'command-1:answer');
+    await publisher.publishFailure(
+      canonicalExpertId: 'product-manager',
+      conversationId: 'product-manager-chat',
+      commandId: 'command-1',
+      reason: '这条消息没能发出：模型服务拒绝了当前凭证',
+      sourceLabel: '来自与产品经理的对话',
+    );
+
+    // Different origin keys, because they are different events.
+    expect(await store.countPosts(), 2);
+  });
+
   test('different messages from one conversation are separate posts', () async {
     await publish(messageId: 'command-1:answer');
     await publish(messageId: 'command-2:answer', body: '第二条结论。');

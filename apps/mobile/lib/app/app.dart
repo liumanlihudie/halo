@@ -52,7 +52,17 @@ class _HaloAppState extends State<HaloApp> {
       swapBarrier: _waitForUiSwap,
     );
     _router = _createRouter();
-    unawaited(_kernelHost.initialize().catchError((Object _) {}));
+    unawaited(
+      _kernelHost.initialize().catchError((Object _) {}).whenComplete(() {
+        // The only moment scheduled work can happen: iOS runs nothing while
+        // the app is suspended, so "due" is resolved when it opens.
+        unawaited(
+          Future<void>.sync(
+            () => _kernelHost.current.dependencies.runDueNews?.call(),
+          ).catchError((Object _) {}),
+        );
+      }),
+    );
   }
 
   /// Built off the widget tree so a missing plugin or unwritable support

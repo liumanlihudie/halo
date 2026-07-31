@@ -70,11 +70,47 @@ class StartSingleAgentRunRequest {
   List<String> get memberExpertIds => [expertId];
 }
 
+/// One step of a generation, as the chat should show it.
+@immutable
+class GenerationProgress {
+  const GenerationProgress.submitted({
+    required this.id,
+    required this.prompt,
+    required this.isVideo,
+  }) : localPath = null,
+       failure = null;
+
+  const GenerationProgress.completed({
+    required this.id,
+    required this.prompt,
+    required this.isVideo,
+    required this.localPath,
+  }) : failure = null;
+
+  const GenerationProgress.failed({
+    required this.id,
+    required this.prompt,
+    required this.isVideo,
+    required this.failure,
+  }) : localPath = null;
+
+  /// Identifies one generation across its steps, so a placeholder is replaced
+  /// rather than accumulating beside its own result.
+  final String id;
+  final String prompt;
+  final bool isVideo;
+  final String? localPath;
+  final String? failure;
+
+  bool get isPending => localPath == null && failure == null;
+}
+
 class SingleAgentRunHandle {
   const SingleAgentRunHandle({
     required this.runId,
     required this.outcome,
     this.partialAnswers,
+    this.generationProgress,
   });
 
   final String runId;
@@ -84,6 +120,11 @@ class SingleAgentRunHandle {
   /// Null when the backing port has no streaming transport; existing ports
   /// and fakes are unaffected.
   final Stream<String>? partialAnswers;
+
+  /// Steps of any image or video the expert produces this turn, so the chat can
+  /// show the prompt and a placeholder while the provider works rather than
+  /// leaving the user in front of a blank wait.
+  final Stream<GenerationProgress>? generationProgress;
 }
 
 enum SingleAgentRunFailure {
@@ -265,6 +306,7 @@ class SingleAgentRunOutcome {
     this.evidenceReferences = const [],
     this.verifierToken,
     this.generatedAssetPaths = const [],
+    this.toolFailures = const [],
   }) : failure = SingleAgentRunFailure.none;
 
   const SingleAgentRunOutcome.failed({required this.failure})
@@ -273,7 +315,8 @@ class SingleAgentRunOutcome {
       uncertainty = '',
       evidenceReferences = const [],
       verifierToken = null,
-      generatedAssetPaths = const [];
+      generatedAssetPaths = const [],
+      toolFailures = const [];
 
   final String answer;
   final SingleAgentRunFailure failure;
@@ -285,6 +328,11 @@ class SingleAgentRunOutcome {
   /// Sandbox paths of anything the expert generated this turn. Rendered as
   /// their own messages so the picture is visible, not described.
   final List<String> generatedAssetPaths;
+
+  /// User-facing reasons a tool did not do what it was asked. Reported by the
+  /// app rather than left to the model, which will otherwise announce a
+  /// picture it never produced.
+  final List<String> toolFailures;
   bool get isCompleted => failure == SingleAgentRunFailure.none;
 }
 
@@ -363,6 +411,7 @@ class SingleChatController extends ChangeNotifier {
     required this.commandIdFactory,
     this.verifier = const RejectingVerifierReceiptRegistry(),
     this.speech,
+    this.reportFailure,
     SingleChatEpochClock? nowEpochMs,
   }) : _nowEpochMs = nowEpochMs ?? _controllerEpochMilliseconds,
        assert(expertId != '');
@@ -370,6 +419,14 @@ class SingleChatController extends ChangeNotifier {
   final String conversationId;
   final String expertId;
   final SingleChatPort service;
+
+  /// Records a failed turn somewhere durable. Absent in prototype wiring and
+  /// in tests, where a failure only has to reach the screen.
+  final Future<void> Function({
+    required String commandId,
+    required String reason,
+  })?
+  reportFailure;
   final ChatMessageRepository repository;
 
   /// Speech services for voice messages. Absent until the owner configures
@@ -618,6 +675,12 @@ class SingleChatController extends ChangeNotifier {
     return "${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}";
   }
 
+  /// Generations still in flight this turn, newest last. Rendered as the
+  /// prompt plus a placeholder until the provider returns something.
+  List<GenerationProgress> _activeGenerations = const [];
+  List<GenerationProgress> get activeGenerations => _activeGenerations;
+  StreamSubscription<GenerationProgress>? _generationSub;
+
   final List<String> _pendingImagePaths = [];
   List<String> _activeImagePaths = const [];
 
@@ -852,9 +915,13 @@ class SingleChatController extends ChangeNotifier {
       }
 
       final partialSubscription = _subscribeToPartialAnswers(handle, attempt);
+      _subscribeToGenerationProgress(handle, attempt);
 
       final outcome = await handle.outcome;
       _cancelPartialAnswers(partialSubscription);
+      unawaited(_generationSub?.cancel());
+      _generationSub = null;
+      _activeGenerations = const [];
       // The run is terminal from here on: the live preview never outlives it.
       _state = _state.copyWith(streamingAnswer: '');
       if (_disposed ||
@@ -982,6 +1049,23 @@ class SingleChatController extends ChangeNotifier {
             _state.status != SingleChatRunStatus.running) {
           return;
         }
+        // Whatever a tool failed to do is stated by the app, next to the
+        // reply. The model has already been seen claiming success it did not
+        // have, so its account is not what the user is shown.
+        for (final (index, reason) in outcome.toolFailures.indexed) {
+          try {
+            await repository.append(
+              conversationId,
+              ChatMessageProjection(
+                id: '$commandId:tool-failure:$index',
+                kind: ChatMessageKind.systemNotice,
+                text: reason,
+              ),
+            );
+          } catch (_) {
+            // The answer is committed; a missing note is the lesser loss.
+          }
+        }
         // Generated pictures land as their own messages: an expert that drew
         // something should show it, not describe it.
         final assets = <ChatMessageProjection>[];
@@ -1021,6 +1105,9 @@ class SingleChatController extends ChangeNotifier {
               outcome.failure == SingleAgentRunFailure.retryable ||
               outcome.failure == SingleAgentRunFailure.malformedOutput,
         );
+        // The user may already have put the phone down; the feed is where a
+        // failure is still findable later.
+        await _reportFailure(commandId, outcome.failure);
       }
       notifyListeners();
     } catch (_) {
@@ -1043,6 +1130,60 @@ class SingleChatController extends ChangeNotifier {
         notifyListeners();
       }
     }
+  }
+
+  /// Records a failed turn where the user can find it after the fact.
+  ///
+  /// Deliberately best-effort and never awaited by the caller's outcome: the
+  /// run already failed, and failing to write about the failure must not make
+  /// that worse.
+  Future<void> _reportFailure(
+    String commandId,
+    SingleAgentRunFailure failure,
+  ) async {
+    final report = reportFailure;
+    if (report == null) return;
+    final reason = switch (failure) {
+      SingleAgentRunFailure.notConfigured => '这条消息没能发出：还没有配置可用的模型',
+      SingleAgentRunFailure.authentication => '这条消息没能发出：模型服务拒绝了当前凭证',
+      SingleAgentRunFailure.quotaLimited => '这条消息没能发出：模型服务额度不足',
+      SingleAgentRunFailure.contentFiltered => '这条消息没能发出：内容被模型服务拒绝',
+      // Retryable and malformed output are ordinary hiccups that the retry
+      // button already covers; writing about them would fill the feed with
+      // noise the user resolved seconds later.
+      _ => null,
+    };
+    if (reason == null) return;
+    try {
+      await report(commandId: commandId, reason: reason);
+    } catch (_) {
+      // Nothing to escalate: the failure is already on screen.
+    }
+  }
+
+  /// Mirrors generation steps into [activeGenerations].
+  ///
+  /// The chat shows what is being made while it is being made; a completed or
+  /// failed step drops out of the list, because by then the real message (the
+  /// picture, or the app's own failure note) has taken its place.
+  void _subscribeToGenerationProgress(
+    SingleAgentRunHandle handle,
+    int attempt,
+  ) {
+    final steps = handle.generationProgress;
+    if (steps == null) return;
+    unawaited(_generationSub?.cancel());
+    _activeGenerations = const [];
+    _generationSub = steps.listen((step) {
+      if (_disposed || attempt != _attempt) return;
+      final next = [
+        for (final existing in _activeGenerations)
+          if (existing.id != step.id) existing,
+        if (step.isPending) step,
+      ];
+      _activeGenerations = List.unmodifiable(next);
+      notifyListeners();
+    }, onError: (Object _) {});
   }
 
   /// Mirrors streamed Answer snapshots into [SingleChatState.streamingAnswer].

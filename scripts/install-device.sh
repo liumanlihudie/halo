@@ -10,7 +10,14 @@
 set -euo pipefail
 
 DEVICE="${HALO_DEVICE:-00008110-0002504C3663801E}"
-KEYS="${HALO_DEV_KEYS:-$HOME/.halo-dev-keys.env}"
+KEYS="${HALO_DEV_KEYS:-}"
+if [[ -z "$KEYS" ]]; then
+  # An editor that insists on an extension should not cost an evening.
+  for candidate in "$HOME/.halo-dev-keys.env" "$HOME/.halo-dev-keys.env.md"; do
+    [[ -f "$candidate" ]] && KEYS="$candidate" && break
+  done
+  KEYS="${KEYS:-$HOME/.halo-dev-keys.env}"
+fi
 cd "$(dirname "$0")/../apps/mobile"
 
 defines=()

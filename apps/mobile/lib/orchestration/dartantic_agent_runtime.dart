@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:dartantic_interface/dartantic_interface.dart' as llm;
 import 'package:halo_mobile/app/dartantic_single_chat_port.dart';
 import 'package:halo_mobile/experts/expert_output_prompt.dart';
+import 'package:halo_mobile/app/web_search_tool.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/orchestration/agent_execution_policy.dart';
@@ -26,12 +27,18 @@ final class DartanticAgentRuntime
     required ExecutableExpertRegistry experts,
     required SqliteModelCallJournal journal,
     required AgentExecutionPolicy policy,
+    WebSearchBackend? webSearch,
   }) : _agents = agents,
        _experts = experts,
        _journal = journal,
-       _policy = policy;
+       _policy = policy,
+       _webSearch = webSearch;
 
   final ModelAgentFactory _agents;
+
+  /// Group members get the same lookup capability single chat has. Absent when
+  /// no search key is configured, so the tool is simply never declared.
+  final WebSearchBackend? _webSearch;
   final ExecutableExpertRegistry _experts;
   final SqliteModelCallJournal _journal;
   final AgentExecutionPolicy _policy;
@@ -81,7 +88,13 @@ final class DartanticAgentRuntime
     }
     try {
       await _journal.markDispatched(idempotencyKey);
-      final agent = await _agents.agentForModel(model);
+      final agent = await _agents.agentForModel(
+        model,
+        tools: [
+          if (_webSearch case final search?)
+            buildWebSearchTool(backend: search),
+        ],
+      );
       final answer = StringBuffer();
       await agent
           .sendStream(input, history: [llm.ChatMessage.system(systemPrompt)])

@@ -31,6 +31,8 @@ class _ConversationsPageState extends State<ConversationsPage> {
   @override
   void initState() {
     super.initState();
+    // Both, on first build. Loading only the groups left the single chats
+    // missing until some dependency happened to change.
     unawaited(_loadCreatedGroups());
     // Must load here too: without it the list is empty on first open and only
     // fills in if a dependency happens to change afterwards.

@@ -7,6 +7,7 @@ import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
+import 'package:halo_mobile/features/circle/circle_news_store.dart';
 import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
 import 'package:halo_mobile/features/group_chat/group_store.dart';
@@ -32,6 +33,8 @@ class AppDependencies {
     this.circlePublisher,
     this.groupStore,
     this.groupMembers,
+    this.newsStore,
+    this.runDueNews,
     this.allowEphemeralChatRepositoryForTesting = false,
   });
 
@@ -71,6 +74,13 @@ class AppDependencies {
 
   /// Members for both created and shipped groups.
   final GroupMembersRepository? groupMembers;
+
+  /// Per-expert news jobs. Absent when circle storage failed to open.
+  final CircleNewsStore? newsStore;
+
+  /// Runs whatever news jobs are due. Called once when the app opens, since
+  /// nothing runs while it is suspended.
+  final Future<void> Function()? runDueNews;
   final bool allowEphemeralChatRepositoryForTesting;
 }
 

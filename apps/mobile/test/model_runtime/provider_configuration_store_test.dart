@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
@@ -1304,107 +1303,27 @@ void main() {
     },
   );
 
-  test(
-    'declared modalities round-trip and drive purpose suitability',
-    () async {
-      final fixture = _DatabaseFixture.create();
-      final store = SqliteProviderConfigurationStore.open(fixture.path);
-      addTearDown(store.close);
-      final created = await store.replaceProviderConfiguration(
-        expectedRevision: null,
-        replacement: ProviderConfigurationReplacement(
-          config: ProviderConfig.toApis(
-            secretRef: SecretRef.parse(
-              'keychain://halo.provider/4f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6073',
-            ),
-          ),
-          modelCatalog: PersistedProviderModelCatalog(
-            providerId: 'toapis',
-            discoveredAt: DateTime.utc(2026, 7, 31),
-            models: [
-              ModelDescriptor(
-                ref: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
-                displayName: 'GPT-5 mini',
-                capabilities: const ModelCapabilities.text(),
-                declaredModalities: const {'chat_completions'},
-              ),
-              ModelDescriptor(
-                ref: ModelRef(providerId: 'toapis', modelId: 'seedream-4'),
-                displayName: 'Seedream 4',
-                capabilities: const ModelCapabilities(
-                  textGeneration: false,
-                  systemMessages: false,
-                  maxOutputTokens: 4096,
-                  supportsTemperature: false,
-                ),
-                declaredModalities: const {'images/generations'},
-              ),
-              ModelDescriptor(
-                ref: ModelRef(providerId: 'toapis', modelId: 'some-embedding'),
-                displayName: 'Some Embedding',
-                capabilities: const ModelCapabilities(
-                  textGeneration: false,
-                  systemMessages: false,
-                  maxOutputTokens: 4096,
-                  supportsTemperature: false,
-                ),
-                declaredModalities: const {'embeddings'},
-              ),
-            ],
-          ),
-        ),
-      );
-      await store.markProviderMutationRuntimePublished(created);
-      await store.finalizeProviderMutation(created);
+  test('Kimi is a first-class provider with a pinned identity', () async {
+    final fixture = _DatabaseFixture.create();
+    final store = SqliteProviderConfigurationStore.open(fixture.path);
+    addTearDown(store.close);
 
-      final catalog = await store.loadProviderModelCatalog('toapis');
-      final byId = {
-        for (final model in catalog!.models) model.ref.modelId: model,
-      };
-      expect(byId['seedream-4']!.declaredModalities, {'images/generations'});
-      expect(byId['gpt-5-mini']!.declaredModalities, {'chat_completions'});
+    final config = ProviderConfig.moonshot(
+      secretRef: SecretRef.parse(
+        'keychain://halo.provider/5f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6074',
+      ),
+    );
+    expect(config.providerId, 'moonshot');
+    // OpenAI-compatible, so it rides the existing chat and streaming paths
+    // rather than needing a protocol of its own.
+    expect(config.protocol, ProviderProtocol.openAICompatible);
+    expect(config.baseUri, ProviderConfig.moonshotCanonicalBaseUri);
 
-      // The picker must offer the image model and neither of the others.
-      expect(
-        ModelPurposeSuitability.allows(ModelPurpose.image, byId['seedream-4']!),
-        isTrue,
-      );
-      expect(
-        ModelPurposeSuitability.allows(ModelPurpose.image, byId['gpt-5-mini']!),
-        isFalse,
-      );
-      expect(
-        ModelPurposeSuitability.allows(
-          ModelPurpose.image,
-          byId['some-embedding']!,
-        ),
-        isFalse,
-      );
-      // Vision cannot be detected from a catalogue, so every text model is
-      // offered and the user names the one that actually reads images.
-      expect(
-        ModelPurposeSuitability.allows(
-          ModelPurpose.vision,
-          byId['gpt-5-mini']!,
-        ),
-        isTrue,
-      );
-      expect(
-        ModelPurposeSuitability.allows(
-          ModelPurpose.vision,
-          byId['seedream-4']!,
-        ),
-        isFalse,
-      );
-
-      final ref = ModelRef(providerId: 'toapis', modelId: 'seedream-4');
-      await store.setPurposeModel(ModelPurpose.image, ref);
-      expect(await store.loadPurposeModel(ModelPurpose.image), ref);
-      expect(await store.loadPurposeModel(ModelPurpose.video), isNull);
-      await store.setPurposeModel(ModelPurpose.image, null);
-      expect(await store.loadPurposeModel(ModelPurpose.image), isNull);
-    },
-  );
+    await store.upsert(config);
+    final reopened = (await store.loadEnabled()).single;
+    expect(reopened.providerId, 'moonshot');
+    expect(reopened.displayName, 'Kimi (Moonshot)');
+  });
 
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();
