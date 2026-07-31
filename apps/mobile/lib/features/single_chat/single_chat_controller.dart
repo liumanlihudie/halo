@@ -1043,15 +1043,16 @@ class SingleChatController extends ChangeNotifier {
           commitToken: commitToken,
           commit: commit,
         );
-        if (!terminalCommitted ||
-            _disposed ||
-            attempt != _attempt ||
-            _state.status != SingleChatRunStatus.running) {
+        if (!terminalCommitted) {
           return;
         }
         // Whatever a tool failed to do is stated by the app, next to the
         // reply. The model has already been seen claiming success it did not
         // have, so its account is not what the user is shown.
+        //
+        // Persisted before any staleness check: leaving the page must not
+        // erase the record of a failure — or a generated picture — that
+        // really happened. Only the on-screen state below needs the guards.
         final failureNotices = <ChatMessageProjection>[];
         for (final (index, reason) in outcome.toolFailures.indexed) {
           final notice = ChatMessageProjection(
@@ -1085,6 +1086,11 @@ class SingleChatController extends ChangeNotifier {
             // The answer is already committed; a missing picture is better
             // than losing the reply it came with.
           }
+        }
+        if (_disposed ||
+            attempt != _attempt ||
+            _state.status != SingleChatRunStatus.running) {
+          return;
         }
         _state = _state.copyWith(
           messages: commit.inserted

@@ -180,6 +180,13 @@ final class DartanticSingleChatPort implements SingleChatPort {
                       ? null
                       : request.imagePaths.last,
                   onGenerated: (asset) => generated.add(asset.localPath),
+                  // Without these two the placeholder never appears and a
+                  // failure is never recorded — the app then has nothing to
+                  // show but the model's own account of what happened.
+                  onProgress: (event) {
+                    if (!progress.isClosed) progress.add(event);
+                  },
+                  onFailed: toolFailures.add,
                 ),
         ],
       );

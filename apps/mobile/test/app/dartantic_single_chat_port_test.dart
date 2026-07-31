@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:dartantic_ai/dartantic_ai.dart' as dartantic;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/app/dartantic_single_chat_port.dart';
+import 'package:halo_mobile/app/generation_tools.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 
@@ -169,6 +170,115 @@ void main() {
 
     expect((await handle.outcome).failure, SingleAgentRunFailure.notConfigured);
   });
+
+  test('a failing generation tool is recorded by the app, not the model', () async {
+    // First request: the model calls generate_image. Second request (after
+    // the tool result): an honest text reply. The pin: the failure reaches
+    // toolFailures and the progress stream even though the reply succeeds —
+    // this wiring was once dropped, leaving zero record of real failures.
+    final toolServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => toolServer.close(force: true));
+    var calls = 0;
+    unawaited(() async {
+      await for (final request in toolServer) {
+        await utf8.decodeStream(request);
+        calls += 1;
+        request.response.headers.contentType = ContentType(
+          'text',
+          'event-stream',
+          charset: 'utf-8',
+        );
+        final chunks = calls == 1
+            ? [
+                {
+                  'index': 0,
+                  'delta': {
+                    'tool_calls': [
+                      {
+                        'index': 0,
+                        'id': 'call-1',
+                        'type': 'function',
+                        'function': {
+                          'name': 'generate_image',
+                          'arguments': '{"prompt":"一只猫"}',
+                        },
+                      },
+                    ],
+                  },
+                },
+                {'index': 0, 'delta': <String, Object?>{}, 'finish_reason': 'tool_calls'},
+              ]
+            : [
+                {
+                  'index': 0,
+                  'delta': {'content': '没有生成成功。'},
+                },
+              ];
+        for (final choice in chunks) {
+          request.response.add(
+            utf8.encode(
+              'data: ${jsonEncode({
+                'id': 'chatcmpl-$calls',
+                'object': 'chat.completion.chunk',
+                'created': 0,
+                'model': 'deepseek-chat',
+                'choices': [choice],
+              })}\n\n',
+            ),
+          );
+        }
+        request.response.add(utf8.encode('data: [DONE]\n\n'));
+        await request.response.close();
+      }
+    }());
+
+    final failingPort = DartanticSingleChatPort(
+      agents: _FakeAgents(toolServer.port),
+      experts: ExecutableExpertRegistry(
+        gateway: const ExpertOutputValidationGateway(),
+      ),
+      generation: const _FailingGeneration(),
+    );
+    addTearDown(failingPort.close);
+
+    final handle = await failingPort.startSingleAgentRun(
+      const StartSingleAgentRunRequest(
+        conversationId: 'conversation-1',
+        expertId: 'product-manager',
+        text: '画一只猫',
+        clientCommandId: 'command-generation',
+      ),
+    );
+    final progressEvents = <GenerationProgress>[];
+    final subscription = handle.generationProgress?.listen(progressEvents.add);
+    addTearDown(() async => subscription?.cancel());
+
+    final outcome = await handle.outcome;
+
+    expect(outcome.toolFailures, ['图片没有生成：上游没有接受任务']);
+    expect(
+      progressEvents.map((event) => event.failure),
+      contains('上游没有接受任务'),
+    );
+  });
+}
+
+final class _FailingGeneration implements GenerationService {
+  const _FailingGeneration();
+
+  @override
+  Future<GeneratedAsset> generateImage(
+    String prompt, {
+    String? referencePath,
+    void Function()? onSubmitted,
+  }) async => throw const GenerationUnavailable('上游没有接受任务');
+
+  @override
+  Future<GeneratedAsset> generateVideo(
+    String prompt, {
+    String? referencePath,
+    void Function()? onSubmitted,
+  }) async => throw const GenerationUnavailable('上游没有接受任务');
 }
 
 final class _FakeAgents implements SingleChatAgentFactory {
@@ -187,6 +297,9 @@ final class _FakeAgents implements SingleChatAgentFactory {
       baseUrl: Uri.parse('http://127.0.0.1:$port/v1'),
     ),
     chatModelName: 'deepseek-chat',
+    // Dropping these silently is exactly the wiring bug the generation test
+    // exists to catch — the fake must forward what the port declares.
+    tools: tools.isEmpty ? null : tools,
   );
 }
 
