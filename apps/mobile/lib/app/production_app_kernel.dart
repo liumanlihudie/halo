@@ -16,6 +16,7 @@ import 'package:halo_mobile/app/production_single_chat_speech.dart';
 import 'package:halo_mobile/app/production_vision_describer.dart';
 import 'package:halo_mobile/features/media/live_call_audio.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
+import 'package:halo_mobile/model_runtime/local_secret_store.dart';
 import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
 import 'package:halo_mobile/features/circle/circle_post_store.dart';
@@ -186,8 +187,12 @@ final class ProductionAppKernelFactory {
           : null;
       ServiceCredentialsController? serviceCredentials;
       if (credentialPersistence != null) {
+        final credentialStore = FallbackCredentialStore(
+          primary: _credentials,
+          directory: supportDirectory,
+        );
         serviceCredentials = ServiceCredentialsController(
-          credentials: _credentials,
+          credentials: credentialStore,
           persistence: credentialPersistence,
           // Shares the provider mutation FIFO: a credential write and a
           // provider write must not interleave on the same Keychain service.

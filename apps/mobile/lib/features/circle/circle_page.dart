@@ -147,9 +147,7 @@ class _PostCard extends StatelessWidget {
           children: [
             if (post.sourceId != null)
               ListTile(
-                leading: Icon(
-                  HaloIcon.requirePrototypeClass('ph ph-link'),
-                ),
+                leading: Icon(HaloIcon.requirePrototypeClass('ph ph-link')),
                 title: const Text('查看来源'),
                 onTap: () => Navigator.of(context).pop('source'),
               ),
