@@ -43,7 +43,9 @@ void main() {
     final composer = find.byType(TextField).last;
     await tester.enterText(composer, '你好，请做个自我介绍');
     await tester.pump();
-    await tester.tap(find.bySemanticsLabel('发送'));
+    // Enter sends: the send button was removed, and a test still reaching for
+    // it fails for a reason that has nothing to do with the product.
+    await tester.testTextInput.receiveAction(TextInputAction.send);
     await settle(80);
 
     // ignore: avoid_print
