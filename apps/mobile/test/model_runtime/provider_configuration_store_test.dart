@@ -1428,6 +1428,39 @@ void main() {
     expect(reopened.displayName, 'Kimi (Moonshot)');
   });
 
+  test('a provider that declares nothing still offers its models', () {
+    final undeclared = ModelDescriptor(
+      ref: ModelRef(providerId: 'toapis', modelId: 'seedream-4'),
+      displayName: 'Seedream 4',
+      capabilities: const ModelCapabilities.text(),
+    );
+
+    // Filtering on an absent declaration is how a picker ends up empty while
+    // the user is looking at a provider full of image models.
+    expect(
+      ModelPurposeSuitability.allows(
+        ModelPurpose.image,
+        undeclared,
+        providerDeclaresModalities: false,
+      ),
+      isTrue,
+    );
+    // Once the provider does declare, the filter applies again.
+    expect(
+      ModelPurposeSuitability.allows(ModelPurpose.image, undeclared),
+      isFalse,
+    );
+    // Vision is never widened: it is the user's explicit choice either way.
+    expect(
+      ModelPurposeSuitability.allows(
+        ModelPurpose.vision,
+        undeclared,
+        providerDeclaresModalities: false,
+      ),
+      isTrue,
+    );
+  });
+
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();
     final raw = sqlite3.open(fixture.path);

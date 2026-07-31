@@ -54,8 +54,21 @@ abstract final class ModelPurposeSuitability {
   };
 
   /// True when [model] may be offered for [purpose].
-  static bool allows(ModelPurpose purpose, ModelDescriptor model) {
+  ///
+  /// [providerDeclaresModalities] is false when the provider's catalogue says
+  /// nothing about *any* model's kind. Filtering on an absent declaration
+  /// would leave the picker empty while the user is looking straight at a list
+  /// of image models, so in that case everything is offered and the picker
+  /// says why — the user knows their own models, and this code does not.
+  static bool allows(
+    ModelPurpose purpose,
+    ModelDescriptor model, {
+    bool providerDeclaresModalities = true,
+  }) {
     final declared = model.declaredModalities;
+    if (!providerDeclaresModalities && purpose != ModelPurpose.vision) {
+      return true;
+    }
     return switch (purpose) {
       ModelPurpose.image => declared.any(_imageTypes.contains),
       ModelPurpose.video => declared.any(_videoTypes.contains),
@@ -69,8 +82,12 @@ abstract final class ModelPurposeSuitability {
 
   /// What to tell the user when nothing qualifies.
   static String emptyReason(ModelPurpose purpose) => switch (purpose) {
-    ModelPurpose.image => '已配置的服务里没有声明图片生成能力的模型',
-    ModelPurpose.video => '已配置的服务里没有声明视频生成能力的模型',
+    ModelPurpose.image => '没有可选的图片模型，试试在服务详情里刷新模型目录',
+    ModelPurpose.video => '没有可选的视频模型，试试在服务详情里刷新模型目录',
     ModelPurpose.vision => '还没有可用的文字模型',
   };
+
+  /// Shown above the picker when the provider declared nothing, so a list that
+  /// includes obviously-wrong models reads as honest rather than broken.
+  static const undeclaredNotice = '该服务未声明模型类型，这里列出全部模型，请自行选择';
 }
