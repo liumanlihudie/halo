@@ -275,6 +275,7 @@ final class _FailingGeneration implements GenerationService {
     String prompt, {
     String? referencePath,
     void Function()? onSubmitted,
+    String? conversationId,
   }) async => throw const GenerationUnavailable('上游没有接受任务');
 
   @override
@@ -282,6 +283,7 @@ final class _FailingGeneration implements GenerationService {
     String prompt, {
     String? referencePath,
     void Function()? onSubmitted,
+    String? conversationId,
   }) async => throw const GenerationUnavailable('上游没有接受任务');
 }
 

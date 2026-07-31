@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 // ignore_for_file: prefer_initializing_formals
@@ -10,8 +11,10 @@ import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_persistence.dart';
+import 'package:halo_mobile/app/generation_resumer.dart';
 import 'package:halo_mobile/app/generation_tools.dart';
 import 'package:halo_mobile/app/generation_transport.dart';
+import 'package:halo_mobile/app/pending_generation_store.dart';
 import 'package:halo_mobile/app/production_single_chat_speech.dart';
 import 'package:halo_mobile/app/production_vision_describer.dart';
 import 'package:halo_mobile/app/web_search_tool.dart';
@@ -29,6 +32,8 @@ import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/drift_chat_message_repository.dart';
+import 'package:halo_mobile/features/single_chat/single_chat_controller.dart'
+    show ActiveGenerationRegistry;
 import 'package:halo_mobile/orchestration/sqlite_model_call_journal.dart';
 import 'package:halo_mobile/orchestration/wiring/orchestration_kernel_factory.dart';
 import 'package:halo_mobile/model_runtime/cancellation_token.dart';
@@ -164,22 +169,30 @@ final class ProductionAppKernelFactory {
                 endpointPolicy: _searchEndpointPolicy,
               ),
             );
+      final pendingGenerations = PendingGenerationStore(
+        File(
+          '${supportDirectory.path}${Platform.pathSeparator}'
+          'pending-generations.json',
+        ),
+      );
+      final generationService = settingsStore is PurposeModelBindingStore
+          ? ProductionGenerationService(
+              store: settingsStore,
+              bindings: settingsStore as PurposeModelBindingStore,
+              secretResolver: KeychainSecretResolver(store: _credentials),
+              transport: GenerationTransport(endpointPolicy: _endpointPolicy),
+              outputDirectory: Directory(
+                '${supportDirectory.path}${Platform.pathSeparator}generated',
+              ),
+              pendingStore: pendingGenerations,
+            )
+          : null;
       singleChatPort = DartanticSingleChatPort(
         agents: agentFactory,
         experts: ExecutableExpertRegistry(
           gateway: const ExpertOutputValidationGateway(),
         ),
-        generation: settingsStore is PurposeModelBindingStore
-            ? ProductionGenerationService(
-                store: settingsStore,
-                bindings: settingsStore as PurposeModelBindingStore,
-                secretResolver: KeychainSecretResolver(store: _credentials),
-                transport: GenerationTransport(endpointPolicy: _endpointPolicy),
-                outputDirectory: Directory(
-                  '${supportDirectory.path}${Platform.pathSeparator}generated',
-                ),
-              )
-            : null,
+        generation: generationService,
         webSearch: webSearch,
         vision: settingsStore is PurposeModelBindingStore
             ? ProductionVisionDescriber(
@@ -288,6 +301,18 @@ final class ProductionAppKernelFactory {
                 '${supportDirectory.path}${Platform.pathSeparator}voice',
               ),
             );
+      // Whatever an earlier process left mid-generation is collected now:
+      // the provider kept working, only the client forgot it had asked.
+      if (generationService != null) {
+        unawaited(
+          resumePendingGenerations(
+            store: pendingGenerations,
+            resume: generationService.resumePending,
+            repository: chatRepository,
+            registry: ActiveGenerationRegistry.shared,
+          ),
+        );
+      }
       return _ProductionAppKernel(
         dependencies: AppDependencies(
           singleChatPort: singleChatPort,

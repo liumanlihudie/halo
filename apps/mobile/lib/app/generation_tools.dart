@@ -9,6 +9,7 @@ import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
 import 'package:halo_mobile/model_runtime/secret_ref.dart';
 import 'package:halo_mobile/app/generation_transport.dart';
+import 'package:halo_mobile/app/pending_generation_store.dart';
 
 /// What a finished generation produced.
 class GeneratedAsset {
@@ -31,11 +32,13 @@ abstract interface class GenerationService {
     String prompt, {
     String? referencePath,
     void Function()? onSubmitted,
+    String? conversationId,
   });
   Future<GeneratedAsset> generateVideo(
     String prompt, {
     String? referencePath,
     void Function()? onSubmitted,
+    String? conversationId,
   });
 }
 
@@ -60,6 +63,7 @@ final class ProductionGenerationService implements GenerationService {
     required SecretResolver secretResolver,
     required GenerationTransport transport,
     required Directory outputDirectory,
+    PendingGenerationStore? pendingStore,
     DateTime Function()? now,
     Future<void> Function(Duration)? sleep,
   }) : _store = store,
@@ -67,6 +71,7 @@ final class ProductionGenerationService implements GenerationService {
        _secretResolver = secretResolver,
        _transport = transport,
        _outputDirectory = outputDirectory,
+       _pendingStore = pendingStore,
        _now = now ?? DateTime.now,
        _sleep = sleep ?? Future<void>.delayed;
 
@@ -81,6 +86,7 @@ final class ProductionGenerationService implements GenerationService {
   final SecretResolver _secretResolver;
   final GenerationTransport _transport;
   final Directory _outputDirectory;
+  final PendingGenerationStore? _pendingStore;
   final DateTime Function() _now;
   final Future<void> Function(Duration) _sleep;
 
@@ -89,20 +95,35 @@ final class ProductionGenerationService implements GenerationService {
     String prompt, {
     String? referencePath,
     void Function()? onSubmitted,
-  }) => _generate(ModelPurpose.image, prompt, referencePath, onSubmitted);
+    String? conversationId,
+  }) => _generate(
+    ModelPurpose.image,
+    prompt,
+    referencePath,
+    onSubmitted,
+    conversationId,
+  );
 
   @override
   Future<GeneratedAsset> generateVideo(
     String prompt, {
     String? referencePath,
     void Function()? onSubmitted,
-  }) => _generate(ModelPurpose.video, prompt, referencePath, onSubmitted);
+    String? conversationId,
+  }) => _generate(
+    ModelPurpose.video,
+    prompt,
+    referencePath,
+    onSubmitted,
+    conversationId,
+  );
 
   Future<GeneratedAsset> _generate(
     ModelPurpose purpose,
     String prompt,
     String? referencePath, [
     void Function()? onSubmitted,
+    String? conversationId,
   ]) async {
     final trimmed = prompt.trim();
     if (trimmed.isEmpty) {
@@ -143,25 +164,117 @@ final class ProductionGenerationService implements GenerationService {
       }
       // ignore: avoid_print
       print('halo.tools task accepted purpose=${purpose.name}');
+      // The accepted task goes into the durable ledger before any waiting:
+      // the provider generates whether or not this process survives, and a
+      // killed app must remember on the next boot that it asked.
+      if (conversationId != null) {
+        try {
+          await _pendingStore?.add(
+            PendingGenerationRecord(
+              taskId: taskId,
+              isVideo: purpose == ModelPurpose.video,
+              prompt: trimmed,
+              conversationId: conversationId,
+              providerId: model.providerId,
+              acceptedAtEpochMs: _now().toUtc().millisecondsSinceEpoch,
+            ),
+          );
+        } catch (_) {
+          // The ledger is a safety net; failing to write it must not fail
+          // the generation it protects.
+        }
+      }
       // Accepted and queued: from here there is genuinely something to wait
       // for, which is when a placeholder stops being a guess.
       onSubmitted?.call();
-      final resultUrl = await _awaitResult(
+      return await _deliver(
         baseUri: config.baseUri,
         purpose: purpose,
         headers: headers,
         taskId: taskId,
+        prompt: trimmed,
       );
-      final stem = 'gen-${_now().toUtc().microsecondsSinceEpoch}';
-      // Host only — never the full URL, whose query can carry a signature.
-      // ignore: avoid_print
-      print('halo.tools result host=${Uri.parse(resultUrl).host}');
-      final path = await _transport.download(
-        Uri.parse(resultUrl),
-        _outputDirectory,
-        stem,
+    } on GenerationTransportException catch (error) {
+      throw GenerationUnavailable(error.safeMessage);
+    }
+  }
+
+  /// Waits out [taskId] and downloads its result, settling the ledger.
+  ///
+  /// A timeout keeps the record — the task may still finish upstream and a
+  /// later boot can collect it. Success and definitive failure remove it.
+  Future<GeneratedAsset> _deliver({
+    required Uri baseUri,
+    required ModelPurpose purpose,
+    required Map<String, String> headers,
+    required String taskId,
+    required String prompt,
+  }) async {
+    final String resultUrl;
+    try {
+      resultUrl = await _awaitResult(
+        baseUri: baseUri,
+        purpose: purpose,
+        headers: headers,
+        taskId: taskId,
       );
-      return GeneratedAsset(localPath: path, prompt: trimmed);
+    } on GenerationUnavailable catch (error) {
+      if (error.safeMessage != '生成超时，没有等到结果') {
+        await _settleLedger(taskId);
+      }
+      rethrow;
+    }
+    final stem = 'gen-${_now().toUtc().microsecondsSinceEpoch}';
+    // Host only — never the full URL, whose query can carry a signature.
+    // ignore: avoid_print
+    print('halo.tools result host=${Uri.parse(resultUrl).host}');
+    final path = await _transport.download(
+      Uri.parse(resultUrl),
+      _outputDirectory,
+      stem,
+    );
+    await _settleLedger(taskId);
+    return GeneratedAsset(localPath: path, prompt: prompt);
+  }
+
+  Future<void> _settleLedger(String taskId) async {
+    try {
+      await _pendingStore?.remove(taskId);
+    } catch (_) {
+      // A record that outlives its delivery costs one redundant poll later.
+    }
+  }
+
+  /// Picks up a generation an earlier process left in the ledger.
+  Future<GeneratedAsset> resumePending(PendingGenerationRecord record) async {
+    const staleAfter = Duration(hours: 2);
+    final acceptedAt = DateTime.fromMillisecondsSinceEpoch(
+      record.acceptedAtEpochMs,
+      isUtc: true,
+    );
+    if (_now().toUtc().difference(acceptedAt) > staleAfter) {
+      await _settleLedger(record.taskId);
+      throw const GenerationUnavailable('任务已过期，无法继续等待');
+    }
+    final config = await _configFor(record.providerId);
+    if (config == null) {
+      await _settleLedger(record.taskId);
+      throw const GenerationUnavailable('生成所属的服务已不可用');
+    }
+    final headers = <String, String>{};
+    final ref = config.secretRef;
+    final credential = ref == null ? null : await _secretResolver.resolve(ref);
+    if (credential != null) {
+      headers['authorization'] = 'Bearer ${credential.value}';
+    }
+    try {
+      return await _deliver(
+        baseUri: config.baseUri,
+        purpose: record.isVideo ? ModelPurpose.video : ModelPurpose.image,
+        headers: headers,
+        taskId: record.taskId,
+        prompt: record.prompt,
+      );
     } on GenerationTransportException catch (error) {
       throw GenerationUnavailable(error.safeMessage);
     }
@@ -217,11 +330,9 @@ final class ProductionGenerationService implements GenerationService {
       wait = pollInterval;
       final status = task['status'];
       if (status == 'failed') {
-        final error = task['error'];
-        final message = error is Map<String, Object?> ? error['message'] : null;
-        throw GenerationUnavailable(
-          message is String && message.isNotEmpty ? message : '生成失败',
-        );
+        // The provider's own message is never surfaced: upstream error text
+        // can echo the request, which carries the credential header.
+        throw const GenerationUnavailable('模型服务报告生成失败');
       }
       if (status != 'completed') continue;
       final result = task['result'];
@@ -267,6 +378,9 @@ final class ProductionGenerationService implements GenerationService {
 /// putting the file itself in the transcript would blow the context window.
 List<llm.Tool> buildGenerationTools({
   required GenerationService service,
+
+  /// Where a result recovered after process death should be delivered.
+  String? conversationId,
   required void Function(GeneratedAsset asset) onGenerated,
 
   /// Reports each step so the chat can show the prompt, then a placeholder,
@@ -308,6 +422,7 @@ List<llm.Tool> buildGenerationTools({
         final asset = await service.generateImage(
           prompt,
           referencePath: referencePath,
+          conversationId: conversationId,
           onSubmitted: () => onProgress?.call(
             GenerationProgress.submitted(
               id: id,
@@ -381,6 +496,7 @@ List<llm.Tool> buildGenerationTools({
         final asset = await service.generateVideo(
           prompt,
           referencePath: referencePath,
+          conversationId: conversationId,
           onSubmitted: () => onProgress?.call(
             GenerationProgress.submitted(id: id, prompt: prompt, isVideo: true),
           ),

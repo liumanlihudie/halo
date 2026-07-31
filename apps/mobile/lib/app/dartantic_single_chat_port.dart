@@ -174,6 +174,7 @@ final class DartanticSingleChatPort implements SingleChatPort {
               ? const <llm.Tool>[]
               : buildGenerationTools(
                   service: generation,
+                  conversationId: request.conversationId,
                   // The most recent attachment doubles as the reference image,
                   // so "把这张改成赛博朋克风" works without a second picker.
                   referencePath: request.imagePaths.isEmpty
