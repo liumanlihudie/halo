@@ -84,7 +84,9 @@ void main() {
 
     await call.start(systemRole: '你是产品经理。', botName: '产品经理');
 
-    expect(call.status, VoiceCallStatus.listening);
+    // The expert opens the call speaking its greeting, subtitle included.
+    expect(call.status, VoiceCallStatus.speaking);
+    expect(call.reply, contains('产品经理'));
     microphone.emit(Uint8List.fromList([1, 2]));
     await Future<void>.delayed(const Duration(milliseconds: 80));
     // Handshake, StartSession, the greeting the expert opens with, then the

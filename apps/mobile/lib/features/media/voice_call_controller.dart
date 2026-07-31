@@ -143,8 +143,12 @@ final class VoiceCallController extends ChangeNotifier {
     await ringback?.call(false);
     _connectedAt = DateTime.now();
     _set(VoiceCallStatus.listening);
-    // The expert speaks first, the way answering a call does.
-    dialog.sayHello('你好，我是$botName，有什么可以帮你的？');
+    // The expert speaks first, the way answering a call does. The line shows
+    // as a subtitle too: the greeting is speech, and speech here has text.
+    final greeting = '你好，我是$botName，有什么可以帮你的？';
+    dialog.sayHello(greeting);
+    _reply = greeting;
+    _set(VoiceCallStatus.speaking);
   }
 
   void _onEvent(RealtimeDialogEvent event) {
