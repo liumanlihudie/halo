@@ -126,6 +126,11 @@ final class ProductionProviderInspectionTransport
             capabilityHints: textCapable
                 ? _assumedCapabilityHints
                 : _nonTextCapabilityHints,
+            // Carried through verbatim rather than reduced to flags here: the
+            // picker for image, video and vision models needs to know *which*
+            // non-text kind a model is, and classifying at read time means a
+            // better classifier later needs no catalogue refresh.
+            declaredModalities: declared ?? const {},
           ),
         );
       }

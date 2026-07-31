@@ -1085,64 +1085,69 @@ void main() {
     expect(valid.displayName, '模型服务 🚀');
   });
 
-  test('a v5 install gains the v6 tables without losing anything', () async {
-    final fixture = _DatabaseFixture.create();
-    // Build a real v5 database through the shipped code path, then rewind the
-    // version marker so reopening exercises the v5 -> v6 upgrade.
-    final before = SqliteProviderConfigurationStore.open(fixture.path);
-    await before.upsert(
-      ProviderConfig.deepSeek(
-        enabled: true,
-        secretRef: SecretRef.parse(
-          'keychain://halo.provider/2f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6071',
+  test(
+    'an older install gains the new tables without losing anything',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      // Build a real v5 database through the shipped code path, then rewind the
+      // version marker so reopening exercises the v5 -> v6 upgrade.
+      final before = SqliteProviderConfigurationStore.open(fixture.path);
+      await before.upsert(
+        ProviderConfig.deepSeek(
+          enabled: true,
+          secretRef: SecretRef.parse(
+            'keychain://halo.provider/2f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6071',
+          ),
         ),
-      ),
-    );
-    await before.setGlobalDefaultModel(
-      ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
-    );
-    await before.setAgentModelOverride(
-      'product-manager',
-      ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
-    );
-    await before.close();
+      );
+      await before.setGlobalDefaultModel(
+        ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+      );
+      await before.setAgentModelOverride(
+        'product-manager',
+        ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+      );
+      await before.close();
 
-    final raw = sqlite3.open(fixture.path);
-    raw.execute('DROP TABLE purpose_model_bindings');
-    raw.execute('DROP TABLE service_credentials');
-    raw.execute('PRAGMA user_version = 5');
-    raw.close();
+      final raw = sqlite3.open(fixture.path);
+      raw.execute('DROP TABLE provider_model_modalities');
+      raw.execute('DROP TABLE purpose_model_bindings');
+      raw.execute('DROP TABLE service_credentials');
+      raw.execute('PRAGMA user_version = 5');
+      raw.close();
 
-    final upgraded = SqliteProviderConfigurationStore.open(fixture.path);
-    addTearDown(upgraded.close);
+      final upgraded = SqliteProviderConfigurationStore.open(fixture.path);
+      addTearDown(upgraded.close);
 
-    // The upgrade is additive: everything the install already had survives.
-    expect(
-      await upgraded.loadGlobalDefaultModel(),
-      ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
-    );
-    expect(
-      (await upgraded.loadAgentModelOverrides())['product-manager'],
-      ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
-    );
-    expect((await upgraded.loadEnabled()).single.providerId, 'deepseek');
+      // The upgrade is additive: everything the install already had survives.
+      expect(
+        await upgraded.loadGlobalDefaultModel(),
+        ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+      );
+      expect(
+        (await upgraded.loadAgentModelOverrides())['product-manager'],
+        ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+      );
+      expect((await upgraded.loadEnabled()).single.providerId, 'deepseek');
 
-    final reopened = sqlite3.open(fixture.path);
-    expect(
-      reopened.select('PRAGMA user_version').single.values.first,
-      SqliteProviderConfigurationStore.schemaVersion,
-    );
-    expect(
-      reopened
-          .select(
-            "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name IN ('purpose_model_bindings', 'service_credentials')",
-          )
-          .length,
-      2,
-    );
-    reopened.close();
-  });
+      final reopened = sqlite3.open(fixture.path);
+      expect(
+        reopened.select('PRAGMA user_version').single.values.first,
+        SqliteProviderConfigurationStore.schemaVersion,
+      );
+      expect(
+        reopened
+            .select(
+              "SELECT name FROM sqlite_master WHERE type = 'table' "
+              "AND name IN ('purpose_model_bindings', 'service_credentials', "
+              "'provider_model_modalities')",
+            )
+            .length,
+        3,
+      );
+      reopened.close();
+    },
+  );
 
   test(
     'service credentials record a locator and displace the old one',
@@ -1239,6 +1244,64 @@ void main() {
     expect(records.single.serviceId, 'vidu');
     expect(records.single.configuredAt.isUtc, isTrue);
   });
+
+  test(
+    'a v6 install keeps its purpose bindings when vision is added',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final before = SqliteProviderConfigurationStore.open(fixture.path);
+      await before.upsert(
+        ProviderConfig.deepSeek(
+          enabled: true,
+          secretRef: SecretRef.parse(
+            'keychain://halo.provider/3f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6072',
+          ),
+        ),
+      );
+      await before.close();
+
+      // Rewind to a v6 shape: no modality table, and a purpose CHECK that
+      // predates vision.
+      final raw = sqlite3.open(fixture.path);
+      raw.execute('DROP TABLE provider_model_modalities');
+      raw.execute('DROP TABLE purpose_model_bindings');
+      raw.execute("""
+      CREATE TABLE purpose_model_bindings (
+        purpose TEXT PRIMARY KEY CHECK (purpose IN ('image', 'video')),
+        provider_id TEXT NOT NULL
+          REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+        model_id TEXT NOT NULL CHECK (length(model_id) > 0)
+      ) STRICT
+    """);
+      raw.execute(
+        'INSERT INTO purpose_model_bindings (purpose, provider_id, model_id) '
+        "VALUES ('image', 'deepseek', 'some-image-model')",
+      );
+      raw.execute('PRAGMA user_version = 6');
+      raw.close();
+
+      final upgraded = SqliteProviderConfigurationStore.open(fixture.path);
+      addTearDown(upgraded.close);
+
+      final reopened = sqlite3.open(fixture.path);
+      // The chosen image default survived the table rebuild.
+      final rows = reopened.select(
+        'SELECT purpose, model_id FROM purpose_model_bindings',
+      );
+      expect(rows.single['purpose'], 'image');
+      expect(rows.single['model_id'], 'some-image-model');
+      // And vision is now an accepted purpose.
+      reopened.execute(
+        'INSERT INTO purpose_model_bindings (purpose, provider_id, model_id) '
+        "VALUES ('vision', 'deepseek', 'some-vision-model')",
+      );
+      expect(
+        reopened.select('PRAGMA user_version').single.values.first,
+        SqliteProviderConfigurationStore.schemaVersion,
+      );
+      reopened.close();
+    },
+  );
 
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();
