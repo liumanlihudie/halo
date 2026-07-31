@@ -10,12 +10,21 @@ class UpstreamModelMetadata {
     required this.modelId,
     required this.displayName,
     Map<String, Object?> capabilityHints = const {},
-  }) : capabilityHints = Map.unmodifiable(capabilityHints);
+    Set<String> declaredModalities = const {},
+  }) : capabilityHints = Map.unmodifiable(capabilityHints),
+       declaredModalities = Set.unmodifiable(
+         declaredModalities.map((type) => type.toLowerCase()),
+       );
 
   final String providerId;
   final String modelId;
   final String displayName;
   final Map<String, Object?> capabilityHints;
+
+  /// Endpoint types the provider declared, lowercased and otherwise verbatim.
+  /// Empty when the provider declared nothing — which is not the same as "text
+  /// only", and must not be read as such.
+  final Set<String> declaredModalities;
 }
 
 @immutable

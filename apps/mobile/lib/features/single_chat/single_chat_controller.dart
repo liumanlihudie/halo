@@ -51,6 +51,7 @@ class StartSingleAgentRunRequest {
     required this.text,
     required this.clientCommandId,
     this.history = const [],
+    this.imagePaths = const [],
   });
 
   final String conversationId;
@@ -61,6 +62,10 @@ class StartSingleAgentRunRequest {
   /// Earlier turns, oldest first, so the expert can actually follow the
   /// conversation. Without it every message is answered in isolation.
   final List<SingleChatHistoryTurn> history;
+
+  /// Images attached to this message, as sandbox paths. Empty for a plain
+  /// text turn.
+  final List<String> imagePaths;
   SingleAgentRunMode get mode => SingleAgentRunMode.mentioned;
   List<String> get memberExpertIds => [expertId];
 }
@@ -259,6 +264,7 @@ class SingleAgentRunOutcome {
     this.uncertainty = '未提供不确定性说明',
     this.evidenceReferences = const [],
     this.verifierToken,
+    this.generatedAssetPaths = const [],
   }) : failure = SingleAgentRunFailure.none;
 
   const SingleAgentRunOutcome.failed({required this.failure})
@@ -266,7 +272,8 @@ class SingleAgentRunOutcome {
       sourceType = ChatMessageSourceType.modelOutput,
       uncertainty = '',
       evidenceReferences = const [],
-      verifierToken = null;
+      verifierToken = null,
+      generatedAssetPaths = const [];
 
   final String answer;
   final SingleAgentRunFailure failure;
@@ -274,6 +281,10 @@ class SingleAgentRunOutcome {
   final String uncertainty;
   final List<String> evidenceReferences;
   final SingleChatVerifierToken? verifierToken;
+
+  /// Sandbox paths of anything the expert generated this turn. Rendered as
+  /// their own messages so the picture is visible, not described.
+  final List<String> generatedAssetPaths;
   bool get isCompleted => failure == SingleAgentRunFailure.none;
 }
 
@@ -607,6 +618,19 @@ class SingleChatController extends ChangeNotifier {
     return "${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}";
   }
 
+  final List<String> _pendingImagePaths = [];
+  List<String> _activeImagePaths = const [];
+
+  /// Attaches [path] to the next message the user sends.
+  ///
+  /// Riding along with the next send rather than firing its own run: the user
+  /// almost always has something to ask about the picture, and a run per
+  /// attachment would spend money before they have said anything.
+  void attachPendingImage(String path) {
+    if (_disposed || path.isEmpty) return;
+    _pendingImagePaths.add(path);
+  }
+
   Future<void> submit(String text) {
     final normalized = text.trim();
     if (normalized.isEmpty || _disposed || _outboxReconciliationBlocked) {
@@ -659,6 +683,10 @@ class SingleChatController extends ChangeNotifier {
     required int attempt,
     required String normalized,
   }) async {
+    // Moved to the turn here, so a retry of the same command re-sends the same
+    // images and an attachment made later cannot join a run already in flight.
+    _activeImagePaths = List.unmodifiable(_pendingImagePaths);
+    _pendingImagePaths.clear();
     try {
       final command = repository.commandOutbox.reserve(
         conversationId: conversationId,
@@ -804,6 +832,7 @@ class SingleChatController extends ChangeNotifier {
           text: text,
           clientCommandId: commandId,
           history: _historyForModel(excludingCommandId: commandId),
+          imagePaths: _activeImagePaths,
         ),
       );
       _activeHandle = handleFuture;
@@ -953,6 +982,24 @@ class SingleChatController extends ChangeNotifier {
             _state.status != SingleChatRunStatus.running) {
           return;
         }
+        // Generated pictures land as their own messages: an expert that drew
+        // something should show it, not describe it.
+        final assets = <ChatMessageProjection>[];
+        for (final (index, path) in outcome.generatedAssetPaths.indexed) {
+          final asset = ChatMessageProjection(
+            id: '$commandId:asset:$index',
+            kind: ChatMessageKind.agentImage,
+            imageUrl: path,
+            text: '',
+          );
+          try {
+            await repository.append(conversationId, asset);
+            assets.add(asset);
+          } catch (_) {
+            // The answer is already committed; a missing picture is better
+            // than losing the reply it came with.
+          }
+        }
         _state = _state.copyWith(
           messages: commit.inserted
               ? [
@@ -960,8 +1007,9 @@ class SingleChatController extends ChangeNotifier {
                     (message) => message.id != answer.id,
                   ),
                   answer,
+                  ...assets,
                 ]
-              : _state.messages,
+              : [..._state.messages, ...assets],
           status: SingleChatRunStatus.completed,
           canRetry: false,
         );

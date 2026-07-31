@@ -281,10 +281,8 @@ class _SingleChatPageState extends State<SingleChatPage> {
     });
   }
 
-  /// Picks an attachment and appends it to the durable conversation.
-  ///
-  /// Stored locally only: the text-only P0 runtime does not receive it, and
-  /// nothing here pretends otherwise.
+  /// Picks an attachment, appends it to the durable conversation, and — for an
+  /// image — hands it to the controller so the next message carries it.
   Future<void> _attach(
     Future<ChatAttachment?> Function() pick,
     ChatMessageKind kind,
@@ -310,6 +308,9 @@ class _SingleChatPageState extends State<SingleChatPage> {
                 secondaryText: _formatAttachmentBytes(attachment.byteSize),
               ),
       );
+      if (kind == ChatMessageKind.userImage) {
+        controller.attachPendingImage(attachment.storedPath);
+      }
       await controller.initialize();
       _scrollToBottomSoon();
     } on ChatAttachmentException catch (error) {
@@ -663,6 +664,12 @@ class _ProjectedMessage extends StatelessWidget {
         child: _FileMessage(message),
       ),
       ChatMessageKind.userImage => _MineImageMessage(message.imageUrl),
+      // Shown as the expert's own bubble: it drew this, so it belongs on that
+      // side of the conversation.
+      ChatMessageKind.agentImage => _AgentBubble(
+        conversation: conversation,
+        child: _GeneratedImageMessage(message.imageUrl),
+      ),
       ChatMessageKind.quote => _AgentBubble(
         conversation: conversation,
         child: _QuoteMessage(message),
@@ -1024,6 +1031,32 @@ class _FileMessage extends StatelessWidget {
           const Divider(height: 18),
           Text(message.tertiaryText ?? '', style: HaloTextStyles.caption),
         ],
+      ),
+    );
+  }
+}
+
+class _GeneratedImageMessage extends StatelessWidget {
+  const _GeneratedImageMessage(this.path);
+
+  final String? path;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = path;
+    if (source == null || source.isEmpty) {
+      return const Text('图片已生成，但文件不可用', style: HaloTextStyles.caption);
+    }
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.file(
+        File(source),
+        width: 220,
+        fit: BoxFit.cover,
+        // The file lives in the sandbox and can be cleared; a broken image is
+        // better than a crash in the middle of a conversation.
+        errorBuilder: (context, _, _) =>
+            const Text('图片已不在本机', style: HaloTextStyles.caption),
       ),
     );
   }

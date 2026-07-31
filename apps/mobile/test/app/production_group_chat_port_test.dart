@@ -168,7 +168,10 @@ final class _CapturingAgents implements ModelAgentFactory {
   ModelRef? lastModel;
 
   @override
-  Future<dartantic.Agent> agentForModel(ModelRef model) async {
+  Future<dartantic.Agent> agentForModel(
+    ModelRef model, {
+    List<dartantic.Tool> tools = const [],
+  }) async {
     lastModel = model;
     return dartantic.Agent.forProvider(
       dartantic.OpenAIProvider(

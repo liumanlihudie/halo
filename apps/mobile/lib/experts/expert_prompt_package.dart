@@ -1433,6 +1433,21 @@ class ExecutableExpertRegistry {
     return _installedIdentityByProfileId[normalized];
   }
 
+  /// Reverse of [installedIdentityForProfileId].
+  ///
+  /// Group membership and circle posts store the canonical id, while the
+  /// profile route takes the profile id. Returns null for an expert that is not
+  /// installed, so a caller can leave its avatar untappable rather than
+  /// navigating to a page that does not exist.
+  InstalledExpertIdentity? installedIdentityForCanonicalId(
+    String canonicalExpertId,
+  ) {
+    for (final identity in installedExpertIdentities) {
+      if (identity.canonicalExpertId == canonicalExpertId) return identity;
+    }
+    return null;
+  }
+
   ExecutableExpert? singleChatById(String canonicalExpertId) =>
       _singleChatIds.contains(canonicalExpertId)
       ? _executableById[canonicalExpertId]

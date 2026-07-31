@@ -12,6 +12,11 @@ enum ChatMessageKind {
   progress,
   file,
   userImage,
+
+  /// A picture the expert produced with the generation tool. Stored in the
+  /// sandbox at [ChatMessageProjection.imageUrl], like a user's own image, so
+  /// existing rendering and export need no special case.
+  agentImage,
   quote,
 
   /// A voice message from either side. The audio lives in the sandbox at

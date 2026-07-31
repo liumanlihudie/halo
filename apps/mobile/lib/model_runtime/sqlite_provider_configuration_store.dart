@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
+import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
@@ -12,7 +13,8 @@ final class SqliteProviderConfigurationStore
     implements
         ProviderConfigurationStore,
         ProviderModelCatalogStore,
-        ServiceCredentialPersistence {
+        ServiceCredentialPersistence,
+        PurposeModelBindingStore {
   SqliteProviderConfigurationStore._(this._database) {
     _initialize();
   }
@@ -31,7 +33,7 @@ final class SqliteProviderConfigurationStore
     }
   }
 
-  static const schemaVersion = 6;
+  static const schemaVersion = 7;
   static const _providerConfigsSql = '''
       CREATE TABLE provider_configs (
         provider_id TEXT PRIMARY KEY,
@@ -191,10 +193,30 @@ final class SqliteProviderConfigurationStore
   /// would put the shipped text binding at risk for no gain.
   static const _purposeModelBindingsSql = '''
       CREATE TABLE purpose_model_bindings (
-        purpose TEXT PRIMARY KEY CHECK (purpose IN ('image', 'video')),
+        purpose TEXT PRIMARY KEY
+          CHECK (purpose IN ('image', 'video', 'vision')),
         provider_id TEXT NOT NULL
           REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
         model_id TEXT NOT NULL CHECK (length(model_id) > 0)
+      ) STRICT
+    ''';
+
+  /// Endpoint types a provider declared for a model, one row per type.
+  ///
+  /// A satellite table rather than a column on `provider_models`: that table is
+  /// on the working catalogue path with eight query sites and a validator that
+  /// asserts constraint behaviour positionally, and nothing here needs to be
+  /// read in the same statement. Rows are stored verbatim so classification
+  /// stays in Dart, where improving it needs no catalogue refresh.
+  static const _providerModelModalitiesSql = '''
+      CREATE TABLE provider_model_modalities (
+        provider_id TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        modality TEXT NOT NULL
+          CHECK (length(modality) > 0 AND modality NOT GLOB '*[^a-z0-9_/-]*'),
+        PRIMARY KEY (provider_id, model_id, modality),
+        FOREIGN KEY (provider_id, model_id)
+          REFERENCES provider_models(provider_id, model_id) ON DELETE CASCADE
       ) STRICT
     ''';
 
@@ -238,6 +260,7 @@ final class SqliteProviderConfigurationStore
         _migrateV3ToV4();
         _migrateV4ToV5();
         _migrateV5ToV6();
+        _migrateV6ToV7();
         _database.execute('PRAGMA user_version = $schemaVersion');
       } else if (version == 4) {
         if (_isExactPreMetadataV4Schema()) {
@@ -245,9 +268,14 @@ final class SqliteProviderConfigurationStore
         }
         _migrateV4ToV5();
         _migrateV5ToV6();
+        _migrateV6ToV7();
         _database.execute('PRAGMA user_version = $schemaVersion');
       } else if (version == 5) {
         _migrateV5ToV6();
+        _migrateV6ToV7();
+        _database.execute('PRAGMA user_version = $schemaVersion');
+      } else if (version == 6) {
+        _migrateV6ToV7();
         _database.execute('PRAGMA user_version = $schemaVersion');
       } else if (version != schemaVersion) {
         if (version == 1 || version == 2) {
@@ -285,6 +313,7 @@ final class SqliteProviderConfigurationStore
     _database.execute(_mutationLeasesSql);
     _database.execute(_purposeModelBindingsSql);
     _database.execute(_serviceCredentialsSql);
+    _database.execute(_providerModelModalitiesSql);
   }
 
   void _migrateV3ToV4() {
@@ -347,6 +376,22 @@ final class SqliteProviderConfigurationStore
   void _migrateV5ToV6() {
     _database.execute(_purposeModelBindingsSql);
     _database.execute(_serviceCredentialsSql);
+  }
+
+  /// Adds the modality satellite table and widens the purpose binding CHECK to
+  /// admit `vision`. The binding table is rebuilt because SQLite cannot alter a
+  /// CHECK in place; its rows are copied, so a default already chosen survives.
+  void _migrateV6ToV7() {
+    _database.execute(_providerModelModalitiesSql);
+    _database.execute(
+      'ALTER TABLE purpose_model_bindings RENAME TO purpose_model_bindings_v6',
+    );
+    _database.execute(_purposeModelBindingsSql);
+    _database.execute('''
+      INSERT INTO purpose_model_bindings (purpose, provider_id, model_id)
+      SELECT purpose, provider_id, model_id FROM purpose_model_bindings_v6
+    ''');
+    _database.execute('DROP TABLE purpose_model_bindings_v6');
   }
 
   bool _isExactPreMetadataV4Schema() {
@@ -490,6 +535,7 @@ final class SqliteProviderConfigurationStore
       'provider_configuration_mutations',
       'purpose_model_bindings',
       'service_credentials',
+      'provider_model_modalities',
     };
     final objects = _database.select('''
       SELECT type, name FROM sqlite_master
@@ -547,6 +593,11 @@ final class SqliteProviderConfigurationStore
         ('purpose', 'TEXT', 1, 1),
         ('provider_id', 'TEXT', 1, 0),
         ('model_id', 'TEXT', 1, 0),
+      ],
+      'provider_model_modalities': [
+        ('provider_id', 'TEXT', 1, 1),
+        ('model_id', 'TEXT', 1, 2),
+        ('modality', 'TEXT', 1, 3),
       ],
       'service_credentials': [
         ('service_id', 'TEXT', 1, 1),
@@ -646,6 +697,7 @@ final class SqliteProviderConfigurationStore
       'provider_models': ['pk'],
       'purpose_model_bindings': ['pk'],
       'service_credentials': ['pk'],
+      'provider_model_modalities': ['pk'],
       'credential_bindings': ['c', 'pk'],
       'provider_removal_leases': ['pk', 'u', 'u'],
       'provider_configuration_mutations': ['pk', 'u', 'u'],
@@ -671,6 +723,7 @@ final class SqliteProviderConfigurationStore
       'provider_models': {'provider_id,model_id'},
       'purpose_model_bindings': {'purpose'},
       'service_credentials': {'service_id'},
+      'provider_model_modalities': {'provider_id,model_id,modality'},
       'credential_bindings': {'secret_ref', 'provider_id,credential_slot'},
       'provider_removal_leases': {'lease_id', 'operation_id', 'provider_id'},
       'provider_configuration_mutations': {
@@ -1168,6 +1221,17 @@ final class SqliteProviderConfigurationStore
       )) {
         throw const FormatException();
       }
+      final modalityRows = _database.select(
+        'SELECT model_id, modality FROM provider_model_modalities '
+        'WHERE provider_id = ?',
+        [providerId],
+      );
+      final modalities = <String, Set<String>>{};
+      for (final row in modalityRows) {
+        modalities
+            .putIfAbsent(row['model_id']! as String, () => <String>{})
+            .add(row['modality']! as String);
+      }
       return PersistedProviderModelCatalog(
         providerId: providerId,
         models: [
@@ -1186,6 +1250,8 @@ final class SqliteProviderConfigurationStore
                   row['supports_temperature'],
                 ),
               ),
+              declaredModalities:
+                  modalities[row['model_id']! as String] ?? const {},
             ),
         ],
         discoveredAt: DateTime.fromMillisecondsSinceEpoch(
@@ -2263,6 +2329,68 @@ final class SqliteProviderConfigurationStore
   /// here keeps the direction of travel single: this store never touches key
   /// material, it only records where the material lives.
   @override
+  Future<ModelRef?> loadPurposeModel(ModelPurpose purpose) => Future.sync(() {
+    _requireOpen();
+    final rows = _database.select(
+      'SELECT provider_id, model_id FROM purpose_model_bindings '
+      'WHERE purpose = ?',
+      [purpose.storageId],
+    );
+    if (rows.isEmpty) return null;
+    return ModelRef(
+      providerId: rows.single['provider_id']! as String,
+      modelId: rows.single['model_id']! as String,
+    );
+  });
+
+  @override
+  Future<void> setPurposeModel(ModelPurpose purpose, ModelRef? model) =>
+      Future.sync(() {
+        _requireOpen();
+        _database.execute('BEGIN IMMEDIATE');
+        try {
+          _database.execute(
+            'DELETE FROM purpose_model_bindings WHERE purpose = ?',
+            [purpose.storageId],
+          );
+          if (model != null) {
+            _database.execute(
+              'INSERT INTO purpose_model_bindings '
+              '(purpose, provider_id, model_id) VALUES (?, ?, ?)',
+              [purpose.storageId, model.providerId, model.modelId],
+            );
+          }
+          _database.execute('COMMIT');
+        } catch (_) {
+          _database.execute('ROLLBACK');
+          rethrow;
+        }
+      });
+
+  /// Declared endpoint types per model for [providerId], keyed by model id.
+  @override
+  Future<Map<String, Set<String>>> loadProviderModelModalities(
+    String providerId,
+  ) => Future.sync(() {
+    _requireOpen();
+    final rows = _database.select(
+      'SELECT model_id, modality FROM provider_model_modalities '
+      'WHERE provider_id = ? ORDER BY model_id, modality',
+      [providerId],
+    );
+    final grouped = <String, Set<String>>{};
+    for (final row in rows) {
+      grouped
+          .putIfAbsent(row['model_id']! as String, () => <String>{})
+          .add(row['modality']! as String);
+    }
+    return Map.unmodifiable({
+      for (final entry in grouped.entries)
+        entry.key: Set<String>.unmodifiable(entry.value),
+    });
+  });
+
+  @override
   Future<SecretRef?> putServiceCredential(
     String serviceId,
     SecretRef secretRef, {
@@ -2757,6 +2885,13 @@ final class SqliteProviderConfigurationStore
             catalog.discoveredAt.millisecondsSinceEpoch,
           ],
         );
+        for (final modality in (model.declaredModalities.toList()..sort())) {
+          _database.execute(
+            'INSERT INTO provider_model_modalities '
+            '(provider_id, model_id, modality) VALUES (?, ?, ?)',
+            [providerId, model.ref.modelId, modality],
+          );
+        }
       }
     }
     _database.execute(

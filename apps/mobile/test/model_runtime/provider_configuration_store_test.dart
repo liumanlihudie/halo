@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
@@ -1085,64 +1086,69 @@ void main() {
     expect(valid.displayName, '模型服务 🚀');
   });
 
-  test('a v5 install gains the v6 tables without losing anything', () async {
-    final fixture = _DatabaseFixture.create();
-    // Build a real v5 database through the shipped code path, then rewind the
-    // version marker so reopening exercises the v5 -> v6 upgrade.
-    final before = SqliteProviderConfigurationStore.open(fixture.path);
-    await before.upsert(
-      ProviderConfig.deepSeek(
-        enabled: true,
-        secretRef: SecretRef.parse(
-          'keychain://halo.provider/2f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6071',
+  test(
+    'an older install gains the new tables without losing anything',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      // Build a real v5 database through the shipped code path, then rewind the
+      // version marker so reopening exercises the v5 -> v6 upgrade.
+      final before = SqliteProviderConfigurationStore.open(fixture.path);
+      await before.upsert(
+        ProviderConfig.deepSeek(
+          enabled: true,
+          secretRef: SecretRef.parse(
+            'keychain://halo.provider/2f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6071',
+          ),
         ),
-      ),
-    );
-    await before.setGlobalDefaultModel(
-      ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
-    );
-    await before.setAgentModelOverride(
-      'product-manager',
-      ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
-    );
-    await before.close();
+      );
+      await before.setGlobalDefaultModel(
+        ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+      );
+      await before.setAgentModelOverride(
+        'product-manager',
+        ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+      );
+      await before.close();
 
-    final raw = sqlite3.open(fixture.path);
-    raw.execute('DROP TABLE purpose_model_bindings');
-    raw.execute('DROP TABLE service_credentials');
-    raw.execute('PRAGMA user_version = 5');
-    raw.close();
+      final raw = sqlite3.open(fixture.path);
+      raw.execute('DROP TABLE provider_model_modalities');
+      raw.execute('DROP TABLE purpose_model_bindings');
+      raw.execute('DROP TABLE service_credentials');
+      raw.execute('PRAGMA user_version = 5');
+      raw.close();
 
-    final upgraded = SqliteProviderConfigurationStore.open(fixture.path);
-    addTearDown(upgraded.close);
+      final upgraded = SqliteProviderConfigurationStore.open(fixture.path);
+      addTearDown(upgraded.close);
 
-    // The upgrade is additive: everything the install already had survives.
-    expect(
-      await upgraded.loadGlobalDefaultModel(),
-      ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
-    );
-    expect(
-      (await upgraded.loadAgentModelOverrides())['product-manager'],
-      ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
-    );
-    expect((await upgraded.loadEnabled()).single.providerId, 'deepseek');
+      // The upgrade is additive: everything the install already had survives.
+      expect(
+        await upgraded.loadGlobalDefaultModel(),
+        ModelRef(providerId: 'deepseek', modelId: 'deepseek-chat'),
+      );
+      expect(
+        (await upgraded.loadAgentModelOverrides())['product-manager'],
+        ModelRef(providerId: 'deepseek', modelId: 'deepseek-reasoner'),
+      );
+      expect((await upgraded.loadEnabled()).single.providerId, 'deepseek');
 
-    final reopened = sqlite3.open(fixture.path);
-    expect(
-      reopened.select('PRAGMA user_version').single.values.first,
-      SqliteProviderConfigurationStore.schemaVersion,
-    );
-    expect(
-      reopened
-          .select(
-            "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name IN ('purpose_model_bindings', 'service_credentials')",
-          )
-          .length,
-      2,
-    );
-    reopened.close();
-  });
+      final reopened = sqlite3.open(fixture.path);
+      expect(
+        reopened.select('PRAGMA user_version').single.values.first,
+        SqliteProviderConfigurationStore.schemaVersion,
+      );
+      expect(
+        reopened
+            .select(
+              "SELECT name FROM sqlite_master WHERE type = 'table' "
+              "AND name IN ('purpose_model_bindings', 'service_credentials', "
+              "'provider_model_modalities')",
+            )
+            .length,
+        3,
+      );
+      reopened.close();
+    },
+  );
 
   test(
     'service credentials record a locator and displace the old one',
@@ -1239,6 +1245,166 @@ void main() {
     expect(records.single.serviceId, 'vidu');
     expect(records.single.configuredAt.isUtc, isTrue);
   });
+
+  test(
+    'a v6 install keeps its purpose bindings when vision is added',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final before = SqliteProviderConfigurationStore.open(fixture.path);
+      await before.upsert(
+        ProviderConfig.deepSeek(
+          enabled: true,
+          secretRef: SecretRef.parse(
+            'keychain://halo.provider/3f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6072',
+          ),
+        ),
+      );
+      await before.close();
+
+      // Rewind to a v6 shape: no modality table, and a purpose CHECK that
+      // predates vision.
+      final raw = sqlite3.open(fixture.path);
+      raw.execute('DROP TABLE provider_model_modalities');
+      raw.execute('DROP TABLE purpose_model_bindings');
+      raw.execute("""
+      CREATE TABLE purpose_model_bindings (
+        purpose TEXT PRIMARY KEY CHECK (purpose IN ('image', 'video')),
+        provider_id TEXT NOT NULL
+          REFERENCES provider_configs(provider_id) ON DELETE CASCADE,
+        model_id TEXT NOT NULL CHECK (length(model_id) > 0)
+      ) STRICT
+    """);
+      raw.execute(
+        'INSERT INTO purpose_model_bindings (purpose, provider_id, model_id) '
+        "VALUES ('image', 'deepseek', 'some-image-model')",
+      );
+      raw.execute('PRAGMA user_version = 6');
+      raw.close();
+
+      final upgraded = SqliteProviderConfigurationStore.open(fixture.path);
+      addTearDown(upgraded.close);
+
+      final reopened = sqlite3.open(fixture.path);
+      // The chosen image default survived the table rebuild.
+      final rows = reopened.select(
+        'SELECT purpose, model_id FROM purpose_model_bindings',
+      );
+      expect(rows.single['purpose'], 'image');
+      expect(rows.single['model_id'], 'some-image-model');
+      // And vision is now an accepted purpose.
+      reopened.execute(
+        'INSERT INTO purpose_model_bindings (purpose, provider_id, model_id) '
+        "VALUES ('vision', 'deepseek', 'some-vision-model')",
+      );
+      expect(
+        reopened.select('PRAGMA user_version').single.values.first,
+        SqliteProviderConfigurationStore.schemaVersion,
+      );
+      reopened.close();
+    },
+  );
+
+  test(
+    'declared modalities round-trip and drive purpose suitability',
+    () async {
+      final fixture = _DatabaseFixture.create();
+      final store = SqliteProviderConfigurationStore.open(fixture.path);
+      addTearDown(store.close);
+      final created = await store.replaceProviderConfiguration(
+        expectedRevision: null,
+        replacement: ProviderConfigurationReplacement(
+          config: ProviderConfig.toApis(
+            secretRef: SecretRef.parse(
+              'keychain://halo.provider/4f3a4b5c-6d7e-4f80-9a1b-2c3d4e5f6073',
+            ),
+          ),
+          modelCatalog: PersistedProviderModelCatalog(
+            providerId: 'toapis',
+            discoveredAt: DateTime.utc(2026, 7, 31),
+            models: [
+              ModelDescriptor(
+                ref: ModelRef(providerId: 'toapis', modelId: 'gpt-5-mini'),
+                displayName: 'GPT-5 mini',
+                capabilities: const ModelCapabilities.text(),
+                declaredModalities: const {'chat_completions'},
+              ),
+              ModelDescriptor(
+                ref: ModelRef(providerId: 'toapis', modelId: 'seedream-4'),
+                displayName: 'Seedream 4',
+                capabilities: const ModelCapabilities(
+                  textGeneration: false,
+                  systemMessages: false,
+                  maxOutputTokens: 4096,
+                  supportsTemperature: false,
+                ),
+                declaredModalities: const {'images/generations'},
+              ),
+              ModelDescriptor(
+                ref: ModelRef(providerId: 'toapis', modelId: 'some-embedding'),
+                displayName: 'Some Embedding',
+                capabilities: const ModelCapabilities(
+                  textGeneration: false,
+                  systemMessages: false,
+                  maxOutputTokens: 4096,
+                  supportsTemperature: false,
+                ),
+                declaredModalities: const {'embeddings'},
+              ),
+            ],
+          ),
+        ),
+      );
+      await store.markProviderMutationRuntimePublished(created);
+      await store.finalizeProviderMutation(created);
+
+      final catalog = await store.loadProviderModelCatalog('toapis');
+      final byId = {
+        for (final model in catalog!.models) model.ref.modelId: model,
+      };
+      expect(byId['seedream-4']!.declaredModalities, {'images/generations'});
+      expect(byId['gpt-5-mini']!.declaredModalities, {'chat_completions'});
+
+      // The picker must offer the image model and neither of the others.
+      expect(
+        ModelPurposeSuitability.allows(ModelPurpose.image, byId['seedream-4']!),
+        isTrue,
+      );
+      expect(
+        ModelPurposeSuitability.allows(ModelPurpose.image, byId['gpt-5-mini']!),
+        isFalse,
+      );
+      expect(
+        ModelPurposeSuitability.allows(
+          ModelPurpose.image,
+          byId['some-embedding']!,
+        ),
+        isFalse,
+      );
+      // Vision cannot be detected from a catalogue, so every text model is
+      // offered and the user names the one that actually reads images.
+      expect(
+        ModelPurposeSuitability.allows(
+          ModelPurpose.vision,
+          byId['gpt-5-mini']!,
+        ),
+        isTrue,
+      );
+      expect(
+        ModelPurposeSuitability.allows(
+          ModelPurpose.vision,
+          byId['seedream-4']!,
+        ),
+        isFalse,
+      );
+
+      final ref = ModelRef(providerId: 'toapis', modelId: 'seedream-4');
+      await store.setPurposeModel(ModelPurpose.image, ref);
+      expect(await store.loadPurposeModel(ModelPurpose.image), ref);
+      expect(await store.loadPurposeModel(ModelPurpose.video), isNull);
+      await store.setPurposeModel(ModelPurpose.image, null);
+      expect(await store.loadPurposeModel(ModelPurpose.image), isNull);
+    },
+  );
 
   test('rejects a future schema without changing its version', () {
     final fixture = _DatabaseFixture.create();

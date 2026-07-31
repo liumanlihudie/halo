@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
+import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
@@ -29,6 +30,17 @@ abstract interface class ModelRoutingPersistence {
   Future<void> setExpertOverride(String expertId, ModelRef? model);
 }
 
+/// Bindings for jobs other than chat.
+///
+/// A separate interface, like the rollback one below, so the existing fakes
+/// that implement [ModelRoutingPersistence] keep compiling and a persistence
+/// without these simply offers no purpose rows.
+abstract interface class PurposeModelRoutingPersistence {
+  Future<List<AvailableModelOption>> loadModelsForPurpose(ModelPurpose purpose);
+  Future<ModelRef?> loadPurposeModel(ModelPurpose purpose);
+  Future<void> setPurposeModel(ModelPurpose purpose, ModelRef? model);
+}
+
 /// Internal recovery capability kept separate so normal global selection can
 /// only persist a concrete model.
 abstract interface class ModelRoutingRollbackPersistence {
@@ -36,7 +48,10 @@ abstract interface class ModelRoutingRollbackPersistence {
 }
 
 final class SqliteModelRoutingPersistence
-    implements ModelRoutingPersistence, ModelRoutingRollbackPersistence {
+    implements
+        ModelRoutingPersistence,
+        ModelRoutingRollbackPersistence,
+        PurposeModelRoutingPersistence {
   const SqliteModelRoutingPersistence(this._store);
 
   final ProviderConfigurationStore _store;
@@ -74,6 +89,57 @@ final class SqliteModelRoutingPersistence
       }
     }
     return List.unmodifiable(options);
+  }
+
+  @override
+  Future<List<AvailableModelOption>> loadModelsForPurpose(
+    ModelPurpose purpose,
+  ) async {
+    final catalogStore = _store is ProviderModelCatalogStore
+        ? _store as ProviderModelCatalogStore
+        : null;
+    if (catalogStore == null) {
+      throw StateError('Provider model catalog persistence is unavailable');
+    }
+    final options = <AvailableModelOption>[];
+    for (final provider in await _store.loadEnabled()) {
+      final catalog = await catalogStore.loadProviderModelCatalog(
+        provider.providerId,
+      );
+      if (catalog == null) continue;
+      for (final model in catalog.models) {
+        if (!ModelPurposeSuitability.allows(purpose, model)) continue;
+        options.add(
+          AvailableModelOption(
+            ref: model.ref,
+            providerName: provider.displayName,
+            modelName: model.displayName,
+          ),
+        );
+      }
+    }
+    return List.unmodifiable(options);
+  }
+
+  @override
+  Future<ModelRef?> loadPurposeModel(ModelPurpose purpose) {
+    final bindings = _store;
+    if (bindings is PurposeModelBindingStore) {
+      return (bindings as PurposeModelBindingStore).loadPurposeModel(purpose);
+    }
+    throw StateError('Purpose model bindings are unavailable');
+  }
+
+  @override
+  Future<void> setPurposeModel(ModelPurpose purpose, ModelRef? model) {
+    final bindings = _store;
+    if (bindings is PurposeModelBindingStore) {
+      return (bindings as PurposeModelBindingStore).setPurposeModel(
+        purpose,
+        model,
+      );
+    }
+    throw StateError('Purpose model bindings are unavailable');
   }
 
   @override
@@ -139,6 +205,57 @@ final class ModelRoutingController extends ChangeNotifier {
 
   ModelRef? _globalDefault;
   ModelRef? get globalDefault => _globalDefault;
+
+  final Map<ModelPurpose, ModelRef?> _purposeModels = {};
+
+  /// The model bound to [purpose], or null when none is chosen. Purposes have
+  /// no fallback to the text default on purpose: an image model and a chat
+  /// model are not interchangeable, so guessing one would fail confusingly.
+  ModelRef? purposeModel(ModelPurpose purpose) => _purposeModels[purpose];
+
+  /// Models eligible for [purpose], loaded on demand because the filter reads
+  /// every enabled provider's catalogue.
+  Future<List<AvailableModelOption>> modelsForPurpose(
+    ModelPurpose purpose,
+  ) async {
+    final purposes = _persistence;
+    if (purposes is! PurposeModelRoutingPersistence) return const [];
+    try {
+      return await (purposes as PurposeModelRoutingPersistence)
+          .loadModelsForPurpose(purpose);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> loadPurposeModels() async {
+    final purposes = _persistence;
+    if (purposes is! PurposeModelRoutingPersistence) return;
+    for (final purpose in ModelPurpose.values) {
+      try {
+        _purposeModels[purpose] =
+            await (purposes as PurposeModelRoutingPersistence).loadPurposeModel(
+              purpose,
+            );
+      } catch (_) {
+        _purposeModels[purpose] = null;
+      }
+    }
+    notifyListeners();
+  }
+
+  Future<void> setPurposeModel(ModelPurpose purpose, ModelRef? model) async {
+    final purposes = _persistence;
+    if (purposes is! PurposeModelRoutingPersistence) {
+      throw const ModelRoutingException('模型绑定当前不可用');
+    }
+    await (purposes as PurposeModelRoutingPersistence).setPurposeModel(
+      purpose,
+      model,
+    );
+    _purposeModels[purpose] = model;
+    notifyListeners();
+  }
 
   final Map<String, ModelRef?> _expertOverrides = {};
   Future<void> _mutationTail = Future<void>.value();
