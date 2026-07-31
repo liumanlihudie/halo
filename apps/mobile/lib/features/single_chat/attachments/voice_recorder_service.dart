@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
@@ -47,11 +48,23 @@ final class PluginVoiceRecorderBackend implements VoiceRecorderBackend {
   @override
   Future<bool> hasPermission() => _recorder.hasPermission();
 
+  static const _audio = MethodChannel('halo.speech/on_device');
+
   @override
-  Future<void> start(String path) => _recorder.start(
-    const RecordConfig(encoder: AudioEncoder.aacLc),
-    path: path,
-  );
+  Future<void> start(String path) async {
+    // A finished call can leave the audio session in a state this recorder
+    // cannot open; reclaiming it first is what makes the next voice message
+    // work without restarting the app.
+    try {
+      await _audio.invokeMethod<bool>('prepareRecording');
+    } catch (_) {
+      // The recorder may still succeed on its own.
+    }
+    return _recorder.start(
+      const RecordConfig(encoder: AudioEncoder.aacLc),
+      path: path,
+    );
+  }
 
   @override
   Future<void> stop() => _recorder.stop();

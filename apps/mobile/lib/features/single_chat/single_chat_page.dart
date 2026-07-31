@@ -335,6 +335,7 @@ class _SingleChatPageState extends State<SingleChatPage> {
       onPickFile: () =>
           _attach(_attachmentService.pickFile, ChatMessageKind.file),
       expertId: _conversation.expertId,
+      onReturnFromCall: () => unawaited(_reloadHistory()),
     );
   }
 
@@ -496,6 +497,13 @@ class _SingleChatPageState extends State<SingleChatPage> {
   void _notify(String message) => ScaffoldMessenger.of(
     context,
   ).showSnackBar(SnackBar(content: Text(message)));
+
+  /// Reloads the stored conversation, so rows written while another screen was
+  /// in front — a call record, for one — appear on return.
+  Future<void> _reloadHistory() async {
+    await _chatController?.initialize();
+    if (mounted) setState(() {});
+  }
 
   void _send() {
     final text = _textController.text;
@@ -1346,6 +1354,7 @@ void _showAttachmentSheetFor(
   required Future<void> Function() onPickImage,
   required Future<void> Function() onPickFile,
   required String expertId,
+  required VoidCallback onReturnFromCall,
 }) {
   const abilities = <(String, String)>[
     ('ph ph-phone', '端到端语音通话'),
@@ -1417,7 +1426,14 @@ void _showAttachmentSheetFor(
                         Navigator.of(sheetContext).pop();
                         switch (ability.$2) {
                           case '端到端语音通话':
-                            unawaited(context.push('/call/voice/$expertId'));
+                            // Returning from a call must show the row it left
+                            // behind, so the conversation reloads on the way
+                            // back rather than looking as if nothing happened.
+                            unawaited(
+                              context.push('/call/voice/$expertId').then((_) {
+                                onReturnFromCall();
+                              }),
+                            );
                           case '拍照':
                             unawaited(onTakePhoto());
                           case '图片':

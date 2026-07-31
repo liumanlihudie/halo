@@ -121,6 +121,11 @@ final class CallAudioOutput {
     stopRingback()
     node.stop()
     engine.stop()
+    // Voice processing holds the input hardware; leaving it on keeps the
+    // microphone busy after the call has ended.
+    try? engine.inputNode.setVoiceProcessingEnabled(false)
+    try? engine.outputNode.setVoiceProcessingEnabled(false)
+    engine.reset()
     format = nil
   }
 }
@@ -179,6 +184,17 @@ final class OnDeviceSpeechRecognizer: NSObject {
     case "stopRingback":
       output.stopRingback()
       result(true)
+    case "prepareRecording":
+      // Voice messages record through their own recorder, which needs the
+      // session back in a plain record category after a call has held it.
+      do {
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+        try session.setActive(true)
+        result(true)
+      } catch {
+        result(FlutterError(code: "audio_session_busy", message: nil, details: nil))
+      }
     case "playPcm":
       // Continuous playback:每块 PCM 直接排进播放队列，而不是每几百毫秒起一个
       // 新播放器——后者会打断上一段，正是通话断续的原因。
@@ -191,6 +207,19 @@ final class OnDeviceSpeechRecognizer: NSObject {
       result(true)
     case "stopPcm":
       output.stop()
+      // Hand the audio session back. A call leaves it active in playAndRecord
+      // with voice processing, and the next recorder — a voice message — then
+      // cannot start at all.
+      UIDevice.current.isProximityMonitoringEnabled = false
+      NotificationCenter.default.removeObserver(
+        self,
+        name: UIDevice.proximityStateDidChangeNotification,
+        object: nil
+      )
+      try? AVAudioSession.sharedInstance().setActive(
+        false,
+        options: .notifyOthersOnDeactivation
+      )
       result(true)
     case "setProximityRouting":
       // Holding the phone to your ear should switch to the earpiece the way a
