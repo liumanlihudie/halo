@@ -167,6 +167,18 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          const HaloSectionLabel('圈层'),
+          HaloSettingsGroup(
+            children: [
+              HaloSettingsRow(
+                label: '资讯中心',
+                detail: '让专家定期发领域资讯到圈层',
+                prototypeIconClass: 'ph ph-globe',
+                onTap: () => context.push('/settings/news'),
+                trailing: const _Chevron(),
+              ),
+            ],
+          ),
           const HaloSectionLabel('语音与通话'),
           HaloSettingsGroup(
             children: [

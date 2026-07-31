@@ -20,6 +20,8 @@ import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:halo_mobile/model_runtime/local_secret_store.dart';
 import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
+import 'package:halo_mobile/features/circle/circle_news_runner.dart';
+import 'package:halo_mobile/features/circle/circle_news_store.dart';
 import 'package:halo_mobile/features/circle/circle_post_store.dart';
 import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/group_chat/group_store.dart';
@@ -188,6 +190,7 @@ final class ProductionAppKernelFactory {
               )
             : null,
       );
+      SqliteCircleNewsStore? newsStore;
       SqliteGroupStore? groupStore;
       SqliteCirclePostStore? circleStore;
       CircleController? circleController;
@@ -199,6 +202,9 @@ final class ProductionAppKernelFactory {
           ).path,
         );
         circleController = CircleController(store: circleStore);
+        newsStore = SqliteCircleNewsStore.open(
+          '${supportDirectory.path}${Platform.pathSeparator}halo_circle.sqlite',
+        );
         // Same file as the circle: both are small tables of things the user
         // assembled, and one fewer database is one fewer thing to migrate.
         groupStore = SqliteGroupStore.open(
@@ -210,6 +216,7 @@ final class ProductionAppKernelFactory {
         circleStore = null;
         circleController = null;
         groupStore = null;
+        newsStore = null;
       }
       ServiceCredentialsController? serviceCredentials;
       if (credentialPersistence != null) {
@@ -305,6 +312,32 @@ final class ProductionAppKernelFactory {
           circlePublisher: circleStore == null
               ? null
               : CirclePublisher(store: circleStore),
+          newsStore: newsStore,
+          runDueNews:
+              (newsStore == null || circleStore == null || webSearch == null)
+              ? null
+              : () async {
+                  // Only when the app is open, because nothing runs while it
+                  // is suspended. Failures stay quiet: a missed digest must
+                  // not interrupt whatever the user opened the app to do.
+                  try {
+                    await CircleNewsRunner(
+                      news: newsStore!,
+                      circle: circleStore!,
+                      search: webSearch,
+                      curator: ({required expertId, required prompt}) async {
+                        final agent = await agentFactory.agentFor(expertId);
+                        final buffer = StringBuffer();
+                        await agent
+                            .sendStream(prompt)
+                            .forEach((chunk) => buffer.write(chunk.output));
+                        return buffer.toString();
+                      },
+                    ).runDueJobs();
+                  } catch (_) {
+                    // Nothing to report: the feed simply has no new entry.
+                  }
+                },
           groupStore: groupStore,
           groupMembers: groupStore == null
               ? null

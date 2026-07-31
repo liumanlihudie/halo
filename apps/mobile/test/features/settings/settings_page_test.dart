@@ -33,7 +33,9 @@ void main() {
     AppVersionLoader? versionLoader,
     AppLockController? appLock,
   }) async {
-    tester.view.physicalSize = const Size(430, 1800);
+    // The page grew a section; the surface has to hold all of it or rows fall
+    // below the fold and read as missing.
+    tester.view.physicalSize = const Size(430, 2400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
@@ -88,6 +90,9 @@ void main() {
       ),
     );
 
+    // The list virtualises, so the row has to be brought into view before it
+    // exists to be found.
+    await tester.scrollUntilVisible(find.text('1.4.2 (37)'), 300);
     // Never a literal: a hardcoded version silently goes stale on every bump.
     expect(find.text('1.4.2 (37)'), findsOneWidget);
   });
@@ -95,6 +100,7 @@ void main() {
   testWidgets('a failing version read stays honest', (tester) async {
     await pumpPage(tester, versionLoader: () async => throw StateError('no'));
 
+    await tester.scrollUntilVisible(find.text('读取中'), 300);
     expect(find.text('读取中'), findsOneWidget);
   });
 
@@ -178,6 +184,7 @@ void main() {
     // the per-service page reads that from storage.
     expect(find.text('语音与通话 Key'), findsOneWidget);
     expect(find.textContaining('已配置', findRichText: true), findsNothing);
+    await tester.scrollUntilVisible(find.text('开源准备中，尚未发布'), 300);
     expect(find.text('规划中'), findsWidgets);
     expect(find.text('开源准备中，尚未发布'), findsOneWidget);
   });

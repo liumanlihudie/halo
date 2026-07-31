@@ -4,6 +4,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:halo_mobile/app/app_kernel.dart';
 import 'package:halo_mobile/app/app_shell.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/circle/circle_news_page.dart';
 import 'package:halo_mobile/features/circle/circle_page.dart';
 import 'package:halo_mobile/features/circle/moment_detail_page.dart';
 import 'package:halo_mobile/features/conversations/conversations_page.dart';
@@ -358,6 +359,19 @@ GoRouter createAppRouter({
       GoRoute(
         path: '/settings/gateway',
         builder: (context, state) => const SelfHostedGatewayPage(),
+      ),
+      GoRoute(
+        path: '/settings/news',
+        builder: (context, state) {
+          Widget buildPage(AppDependencies? current) =>
+              CircleNewsPage(key: ValueKey(current), store: current?.newsStore);
+          final listenable = dependencyListenable;
+          if (listenable == null) return buildPage(fixedDependencies);
+          return ListenableBuilder(
+            listenable: listenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/settings/service-keys',
