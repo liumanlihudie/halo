@@ -17,8 +17,9 @@ void main() {
     await tester.pumpWidget(const HaloApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('iOS 产品小组'), findsOneWidget);
-    expect(find.text('Halo 助理'), findsOneWidget);
+    // The list is driven by stored conversations now, so the screen is
+    // identified by its own chrome rather than by an invented row.
+    expect(find.text('搜索联系人、群聊、文件和来源'), findsOneWidget);
 
     await tester.tap(find.text('专家团'));
     await tester.pumpAndSettle();

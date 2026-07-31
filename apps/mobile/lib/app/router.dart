@@ -50,7 +50,32 @@ GoRouter createAppRouter({
           return AppShell(navigationShell: navigationShell);
         },
         branches: [
-          _branch('/conversations', const ConversationsPage()),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/conversations',
+                pageBuilder: (context, state) {
+                  Widget buildPage(AppDependencies? current) =>
+                      ConversationsPage(
+                        key: ValueKey(current),
+                        repository: current?.chatRepository,
+                      );
+                  final listenable = dependencyListenable;
+                  if (listenable == null) {
+                    return NoTransitionPage(
+                      child: buildPage(fixedDependencies),
+                    );
+                  }
+                  return NoTransitionPage(
+                    child: ListenableBuilder(
+                      listenable: listenable,
+                      builder: (context, _) => buildPage(resolveDependencies()),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
           _branch('/experts', const ExpertTeamPage()),
           _branch('/circle', const CirclePage()),
           StatefulShellBranch(

@@ -3,10 +3,17 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
-import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
+import 'dart:async';
+
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 
 class ConversationsPage extends StatefulWidget {
-  const ConversationsPage({super.key});
+  const ConversationsPage({this.repository, super.key});
+
+  /// Absent when storage failed to boot; the list then says so rather than
+  /// showing invented conversations.
+  final ChatMessageRepository? repository;
 
   @override
   State<ConversationsPage> createState() => _ConversationsPageState();
@@ -14,13 +21,68 @@ class ConversationsPage extends StatefulWidget {
 
 class _ConversationsPageState extends State<ConversationsPage> {
   String _query = '';
+  List<ConversationFixture>? _rows;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  /// Builds the list from the conversations that actually exist, with each
+  /// row's preview taken from its last stored message. The fixtures this page
+  /// used to render — unread badges, progress percentages, upload failures —
+  /// described a product that was not running.
+  Future<void> _load() async {
+    final repository = widget.repository;
+    if (repository == null) return;
+    final rows = <ConversationFixture>[];
+    for (final identity in ExecutableExpertRegistry.installedExpertIdentities) {
+      final SingleChatConversationProjection conversation;
+      try {
+        conversation = repository.describe(identity.conversationId);
+      } catch (_) {
+        continue;
+      }
+      String preview = '还没有消息';
+      try {
+        final messages = await repository.load(identity.conversationId);
+        final last = messages.lastWhere(
+          (message) => (message.text ?? '').trim().isNotEmpty,
+          orElse: () => messages.isEmpty
+              ? const ChatMessageProjection(
+                  id: '',
+                  kind: ChatMessageKind.systemNotice,
+                )
+              : messages.last,
+        );
+        final text = last.text?.trim();
+        if (text != null && text.isNotEmpty) {
+          preview = text.replaceAll('\n', ' ');
+        }
+      } catch (_) {
+        preview = '消息读取失败';
+      }
+      rows.add(
+        ConversationFixture(
+          id: identity.conversationId,
+          title: conversation.title,
+          preview: preview,
+          time: '',
+          avatarLetter: conversation.avatarLetter,
+        ),
+      );
+    }
+    if (mounted) setState(() => _rows = rows);
+  }
 
   @override
   Widget build(BuildContext context) {
     final query = _query.trim();
+    final all = _rows ?? const <ConversationFixture>[];
     final conversations = query.isEmpty
-        ? HaloFixtures.conversations
-        : HaloFixtures.conversations
+        ? all
+        : all
               .where(
                 (conversation) =>
                     conversation.title.contains(query) ||
@@ -46,17 +108,36 @@ class _ConversationsPageState extends State<ConversationsPage> {
               onChanged: (value) => setState(() => _query = value),
             ),
           ),
-          Expanded(
-            child: ListView.separated(
-              key: const PageStorageKey('conversations'),
-              padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
-              itemCount: conversations.length,
-              separatorBuilder: (_, _) =>
-                  const Divider(height: 1, indent: 61, color: HaloColors.line),
-              itemBuilder: (context, index) =>
-                  _ConversationRow(conversation: conversations[index]),
+          if (_rows == null)
+            const Expanded(
+              child: Center(
+                child: Text('正在读取会话…', style: HaloTextStyles.caption),
+              ),
+            )
+          else if (conversations.isEmpty)
+            Expanded(
+              child: Center(
+                child: Text(
+                  query.isEmpty ? '还没有会话' : '没有匹配的会话',
+                  style: HaloTextStyles.caption,
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                key: const PageStorageKey('conversations'),
+                padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
+                itemCount: conversations.length,
+                separatorBuilder: (_, _) => const Divider(
+                  height: 1,
+                  indent: 61,
+                  color: HaloColors.line,
+                ),
+                itemBuilder: (context, index) =>
+                    _ConversationRow(conversation: conversations[index]),
+              ),
             ),
-          ),
         ],
       ),
     );
