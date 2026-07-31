@@ -17,64 +17,45 @@ import 'package:record/record.dart';
 /// that tap delivers nothing — an audio session the system will not hand over,
 /// a format it will not report — a call with no uplink is worse than one
 /// without echo cancellation, so the recorder takes over.
+/// The call microphone, streamed by the recorder that is proven on device.
+///
+/// The native tap on the playback engine never delivered a byte on hardware,
+/// which silenced the uplink entirely. This recorder carried yesterday's
+/// working calls; what actually killed them was barge-in deactivating the
+/// audio session — fixed separately — not the recorder.
 final class DeviceCallMicrophone implements CallMicrophone {
   DeviceCallMicrophone({AudioRecorder? recorder})
     : _recorder = recorder ?? AudioRecorder();
 
-  static const _mic = EventChannel('halo.speech/mic');
-  static const _nativeGrace = Duration(seconds: 2);
-
   final AudioRecorder _recorder;
-  bool _usingRecorder = false;
 
   @override
   Future<Stream<Uint8List>> start() async {
-    final out = StreamController<Uint8List>.broadcast();
-    StreamSubscription<dynamic>? native;
-    var heard = false;
-
-    native = _mic.receiveBroadcastStream().listen((event) {
-      heard = true;
-      if (event is Uint8List && !out.isClosed) out.add(event);
-    }, onError: (Object _) {});
-
-    Timer(_nativeGrace, () async {
-      if (heard || out.isClosed) return;
-      await native?.cancel();
-      native = null;
-      try {
-        if (!await _recorder.hasPermission()) return;
-        final stream = await _recorder.startStream(
-          const RecordConfig(
-            encoder: AudioEncoder.pcm16bits,
-            sampleRate: 16000,
-            numChannels: 1,
-          ),
-        );
-        _usingRecorder = true;
-        stream.listen((chunk) {
-          if (!out.isClosed) out.add(chunk);
-        });
-      } catch (_) {
-        // Nothing left to try; the call stays one-sided rather than crashing.
-      }
-    });
-
-    out.onCancel = () async {
-      await native?.cancel();
-      if (_usingRecorder) await stop();
-    };
-    return out.stream;
+    if (!await _recorder.hasPermission()) {
+      throw StateError('Microphone permission was refused');
+    }
+    // s16le mono at 16 kHz: the uplink format the realtime dialogue expects.
+    return _recorder.startStream(
+      const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 16000,
+        numChannels: 1,
+      ),
+    );
   }
 
   @override
   Future<void> stop() async {
-    if (!_usingRecorder) return;
-    _usingRecorder = false;
     try {
       await _recorder.stop();
     } catch (_) {
       // Hanging up must succeed even if the recorder is already gone.
+    }
+    // Hand the engine and session back so the next recorder can start.
+    try {
+      await DeviceCallSpeaker._audio.invokeMethod<bool>('teardownCallAudio');
+    } catch (_) {
+      // Already gone.
     }
   }
 }
