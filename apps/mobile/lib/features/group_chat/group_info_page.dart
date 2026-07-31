@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
 import 'package:halo_mobile/features/group_chat/group_store.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 
@@ -153,6 +154,7 @@ class _MemberStrip extends StatelessWidget {
           );
           return _MemberTile(
             key: ValueKey('group-member-${member.expertId}'),
+            svgAsset: ExpertAvatars.assetFor(member.expertId),
             letter: member.avatarLetter,
             label: member.displayName,
             background: HaloColors.accent,
@@ -171,10 +173,12 @@ class _MemberTile extends StatelessWidget {
     required this.letter,
     required this.label,
     required this.background,
+    this.svgAsset,
     this.onTap,
     super.key,
   });
 
+  final String? svgAsset;
   final String letter;
   final String label;
   final Color background;
@@ -189,7 +193,7 @@ class _MemberTile extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         child: Column(
           children: [
-            HaloAvatar(letter: letter, size: 48, backgroundColor: background),
+            HaloAvatar(svgAsset: svgAsset, letter: letter, size: 48, backgroundColor: background),
             const SizedBox(height: 5),
             Text(
               label,

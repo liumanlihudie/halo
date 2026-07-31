@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
@@ -34,15 +35,14 @@ class MomentDetailPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(15, 12, 15, 24),
         children: [
-          const Row(
+          Row(
             children: [
               HaloAvatar(
-                imageUrl:
-                    'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120',
+                svgAsset: ExpertAvatars.assetFor('general'),
                 letter: '助',
                 size: 42,
               ),
-              SizedBox(width: 9),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
@@ -198,6 +199,7 @@ class _ConversationRow extends StatelessWidget {
                     HaloGroupAvatar(tiles: tiles)
                   else
                     HaloAvatar(
+                      svgAsset: ExpertAvatars.assetFor(conversation.id),
                       imageUrl: conversation.imageUrl,
                       letter: conversation.avatarLetter,
                       tone: conversation.avatarTone,

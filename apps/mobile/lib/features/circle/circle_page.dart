@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
 import 'package:halo_mobile/features/circle/circle_post_store.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
@@ -399,6 +400,7 @@ class _MemberRow extends StatelessWidget {
               onTap: () => onOpenMember(id),
               behavior: HitTestBehavior.opaque,
               child: HaloAvatar(
+                svgAsset: ExpertAvatars.assetFor(id),
                 letter: (_registry.catalogById(id)?.displayName ?? id)
                     .characters
                     .first,

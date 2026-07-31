@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
@@ -98,6 +99,7 @@ class _ExpertMarketPageState extends State<ExpertMarketPage> {
                 final executable =
                     _marketRegistry.canonicalIdForMarketId(expert.id) != null;
                 return _MarketExpertRow(
+                  id: expert.id,
                   name: expert.name,
                   category: expert.category,
                   model: executable ? '可执行 · 使用你配置的模型' : '上架准备中',
@@ -193,12 +195,14 @@ class _CategoryChips extends StatelessWidget {
 
 class _MarketExpertRow extends StatelessWidget {
   const _MarketExpertRow({
+    required this.id,
     required this.name,
     required this.category,
     required this.model,
     required this.description,
     required this.onTap,
   });
+  final String id;
   final String name;
   final String category;
   final String model;
@@ -215,7 +219,7 @@ class _MarketExpertRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             children: [
-              HaloAvatar(letter: name.characters.first),
+              HaloAvatar(svgAsset: ExpertAvatars.assetFor(id), letter: name.characters.first),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(

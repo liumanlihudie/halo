@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
@@ -282,7 +283,7 @@ class _ExpertRow extends StatelessWidget {
           child: Row(
             children: [
               HaloAvatar(
-                imageUrl: expert.imageUrl,
+                svgAsset: ExpertAvatars.assetFor(expert.id),
                 letter: expert.avatarLetter,
                 size: 46,
                 tone: expert.avatarTone,

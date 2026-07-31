@@ -7,6 +7,7 @@ import 'package:halo_mobile/features/group_chat/group_chat_history_repository.da
 import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
 import 'package:halo_mobile/features/group_chat/group_store.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/orchestration/orchestration_models.dart';
@@ -178,6 +179,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                         CheckboxListTile(
                           value: selectedIds.contains(member.expertId),
                           secondary: HaloAvatar(
+                            svgAsset: ExpertAvatars.assetFor(member.expertId),
                             letter: member.avatarLetter,
                             size: 36,
                           ),
@@ -430,7 +432,11 @@ class _ExpertGroupBubble extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          HaloAvatar(letter: agent.letter, size: 36),
+          HaloAvatar(
+            svgAsset: ExpertAvatars.assetFor(message.agentId),
+            letter: agent.letter,
+            size: 36,
+          ),
           const SizedBox(width: 8),
           Flexible(
             child: Column(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 
@@ -247,14 +248,19 @@ class HaloAvatar extends StatelessWidget {
   const HaloAvatar({
     this.imageUrl,
     this.letter,
+    this.svgAsset,
     this.size = HaloMetrics.avatarSize,
     this.backgroundColor,
     this.tone = HaloAvatarTone.accent,
     super.key,
-  }) : assert(imageUrl != null || letter != null);
+  }) : assert(imageUrl != null || letter != null || svgAsset != null);
 
   final String? imageUrl;
   final String? letter;
+
+  /// A designed badge bundled with the app. Preferred over [imageUrl]: it is
+  /// always available offline and never a stock photo of a stranger.
+  final String? svgAsset;
   final double size;
   final Color? backgroundColor;
   final HaloAvatarTone tone;
@@ -268,7 +274,9 @@ class HaloAvatar extends StatelessWidget {
       borderRadius: BorderRadius.circular(radius),
       child: SizedBox.square(
         dimension: size,
-        child: imageUrl != null
+        child: svgAsset != null
+            ? SvgPicture.asset(svgAsset!, fit: BoxFit.cover)
+            : imageUrl != null
             ? Image.network(
                 imageUrl!,
                 fit: BoxFit.cover,

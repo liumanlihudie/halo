@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
@@ -92,6 +93,9 @@ class ExpertProfilePage extends StatelessWidget {
                 ? (catalog != null ? '可执行 · 使用你配置的模型' : '上架准备中')
                 : profileModel,
             avatarUrl: avatarUrl,
+            svgAsset: ExpertAvatars.assetFor(
+              marketMode ? expertId : normalizedExpertId,
+            ),
           ),
           ColoredBox(
             color: HaloColors.paper,
@@ -381,12 +385,14 @@ class _ExpertModelRoutingRowState extends State<_ExpertModelRoutingRow> {
 
 class _ProfileHero extends StatelessWidget {
   const _ProfileHero({
+    this.svgAsset,
     required this.name,
     required this.model,
     required this.avatarUrl,
   });
   final String name;
   final String model;
+  final String? svgAsset;
   final String avatarUrl;
 
   @override
@@ -423,6 +429,7 @@ class _ProfileHero extends StatelessWidget {
                         borderRadius: BorderRadius.circular(19),
                       ),
                       child: HaloAvatar(
+                        svgAsset: svgAsset,
                         letter: name.characters.first,
                         imageUrl: avatarUrl,
                         size: 76,

@@ -25,8 +25,6 @@ abstract final class HaloFixtures {
       preview: 'PDF · 个人 AI 通讯竞品分析已完成',
       time: '10:21',
       avatarLetter: '助',
-      imageUrl:
-          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75',
       tag: '可用',
       tagTone: HaloTagTone.green,
     ),
@@ -87,8 +85,6 @@ abstract final class HaloFixtures {
       avatarLetter: '数',
       tag: '免打扰',
       tagTone: HaloTagTone.gray,
-      imageUrl:
-          'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=120&q=75',
     ),
     ConversationFixture(
       id: 'calendar-assistant',
@@ -150,8 +146,6 @@ abstract final class HaloFixtures {
       model: 'ToAPIs / gpt-5-mini',
       status: '可用 · 协调 Agent、汇总成果',
       avatarLetter: '助',
-      imageUrl:
-          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120',
     ),
     ExpertFixture(
       id: 'product',
@@ -160,8 +154,6 @@ abstract final class HaloFixtures {
       model: 'Anthropic / claude-sonnet-4',
       status: '忙碌 · 正在整理需求优先级',
       avatarLetter: '产',
-      imageUrl:
-          'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=120',
     ),
     ExpertFixture(
       id: 'data',
@@ -170,8 +162,6 @@ abstract final class HaloFixtures {
       model: 'DeepSeek / deepseek-chat',
       status: '可用 · 表格、指标和数据洞察',
       avatarLetter: '数',
-      imageUrl:
-          'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=120',
     ),
     ExpertFixture(
       id: 'writing',
@@ -180,8 +170,6 @@ abstract final class HaloFixtures {
       model: 'Anthropic / claude-sonnet-4',
       status: '离线 · 文档、邮件和内容表达',
       avatarLetter: '写',
-      imageUrl:
-          'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=120&q=75',
     ),
     ExpertFixture(
       id: 'contract',
@@ -198,8 +186,6 @@ abstract final class HaloFixtures {
       model: 'DeepSeek / deepseek-chat',
       status: '监控中 · 关注 12 个主题',
       avatarLetter: '监',
-      imageUrl:
-          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=75',
     ),
     ExpertFixture(
       id: 'researcher',
@@ -208,8 +194,6 @@ abstract final class HaloFixtures {
       model: 'Anthropic / claude-sonnet-4',
       status: '可用 · 搜索、来源核验和综述',
       avatarLetter: '研',
-      imageUrl:
-          'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=75',
     ),
     ExpertFixture(
       id: 'calendar',
@@ -303,8 +287,6 @@ abstract final class HaloFixtures {
       title: '我越来越确定：关键不是增加更多 Agent',
       body: '真正有用的是让每个专家知道何时发言、何时保持安静，以及如何把证据交给下一位专家。今天的编排测试已经沉淀为一份 PDF。',
       avatarLetter: '助',
-      imageUrl:
-          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75',
     ),
     CirclePostFixture(
       author: '日程管家',
@@ -322,8 +304,6 @@ abstract final class HaloFixtures {
       title: '一个竞品悄悄调整了语音套餐',
       body: '基础套餐的双工语音时长减少，新增了单独的视频额度。页面和昨日快照共有 4 处变化。',
       avatarLetter: '监',
-      imageUrl:
-          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=75',
       tone: HaloTagTone.amber,
     ),
     CirclePostFixture(
@@ -341,8 +321,6 @@ abstract final class HaloFixtures {
       title: '一个订阅源连续两次读取失败',
       body: '目标站点返回 403。本次没有生成结论，已保留失败原因，可手动重试或更换数据源。',
       avatarLetter: '监',
-      imageUrl:
-          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=100&q=75',
       tone: HaloTagTone.red,
     ),
   ];

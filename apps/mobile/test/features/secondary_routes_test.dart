@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/app/app.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
@@ -84,17 +85,9 @@ void main() {
       expect(find.text('允许发布到圈层'), findsOneWidget);
       expect(find.text('添加到群聊'), findsOneWidget);
       expect(find.byType(HaloSwitch), findsNWidgets(2));
-      expect(
-        find.byWidgetPredicate(
-          (widget) =>
-              widget is Image &&
-              widget.image is NetworkImage &&
-              (widget.image as NetworkImage).url.contains(
-                'photo-1494790108377-be9c29b29330',
-              ),
-        ),
-        findsOneWidget,
-      );
+      // The hero wears the designed badge now, not a stock photo of a
+      // stranger fetched from the network.
+      expect(find.byType(SvgPicture), findsWidgets);
     },
   );
 }

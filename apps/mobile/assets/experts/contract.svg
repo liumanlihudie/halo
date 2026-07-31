@@ -1,0 +1,15 @@
+<svg viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g-contract" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6D7BD1"/>
+      <stop offset="1" stop-color="#3E4FA8"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" rx="28" fill="url(#g-contract)"/>
+  <circle cx="88" cy="26" r="30" fill="#FFFFFF" opacity="0.10"/>
+  <circle cx="20" cy="102" r="24" fill="#FFFFFF" opacity="0.07"/>
+  <rect x="34" y="24" width="46" height="60" rx="8" fill="#FFFFFF" opacity="0.93"/>
+  <path d="M44 40 h26 M44 52 h26 M44 64 h14" stroke="#4A57B5" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="82" cy="82" r="16" fill="#2BD48F"/>
+  <path d="M75 82 l5 5 9 -10" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>

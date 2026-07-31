@@ -8,6 +8,7 @@ import 'package:halo_mobile/features/circle/circle_post_store.dart';
 import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/single_chat/attachments/voice_recorder_service.dart';
 import 'package:halo_mobile/features/single_chat/voice_message_bubble.dart';
+import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_markdown_body.dart';
@@ -940,6 +941,7 @@ class _AgentBubble extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           HaloAvatar(
+            svgAsset: ExpertAvatars.assetFor(conversation.expertId),
             imageUrl: conversation.avatarImageUrl,
             letter: conversation.avatarLetter,
             size: 36,
