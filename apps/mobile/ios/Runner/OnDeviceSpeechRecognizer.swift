@@ -243,14 +243,30 @@ final class OnDeviceSpeechRecognizer: NSObject, FlutterStreamHandler {
   private func applyRoute(speaker: Bool) {
     let session = AVAudioSession.sharedInstance()
     if session.category != .playAndRecord {
-      try? session.setCategory(
-        .playAndRecord,
-        mode: .voiceChat,
-        options: [.allowBluetooth]
-      )
-      try? session.setActive(true)
+      do {
+        try session.setCategory(
+          .playAndRecord,
+          mode: .voiceChat,
+          options: [.allowBluetooth]
+        )
+        try session.setActive(true)
+      } catch {
+        NSLog("halo.route category failed: %@", String(describing: error))
+      }
     }
-    try? session.overrideOutputAudioPort(speaker ? .speaker : .none)
+    do {
+      try session.overrideOutputAudioPort(speaker ? .speaker : .none)
+    } catch {
+      NSLog("halo.route override failed: %@", String(describing: error))
+    }
+    let outputs = session.currentRoute.outputs.map { $0.portType.rawValue }
+    NSLog(
+      "halo.route speaker=%d mode=%@ options=%lu outputs=%@",
+      speaker ? 1 : 0,
+      session.mode.rawValue,
+      session.categoryOptions.rawValue,
+      outputs.joined(separator: ",")
+    )
   }
 
   @objc private func proximityChanged() {
