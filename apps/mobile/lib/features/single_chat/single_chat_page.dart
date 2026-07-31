@@ -14,6 +14,7 @@ import 'package:halo_mobile/foundation/design_system/halo_markdown_body.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/foundation/design_system/halo_wave_keys_indicator.dart';
+import 'package:video_player/video_player.dart';
 
 import 'attachments/chat_attachment_service.dart';
 import 'chat_message_repository.dart';
@@ -652,7 +653,11 @@ class _SingleChatPageState extends State<SingleChatPage> {
                       : null,
                 ),
               ),
-            for (final message in state.messages.reversed)
+            // Reply first, then the prompt it produced, then results — the
+            // order the turn actually unfolded in, not the commit order.
+            for (final message in displayOrderedMessages(
+              state.messages,
+            ).reversed)
               _ProjectedMessage(
                 message: message,
                 conversation: _conversation,
@@ -744,7 +749,8 @@ class _ProjectedMessage extends StatelessWidget {
       // side of the conversation.
       ChatMessageKind.agentImage => _AgentBubble(
         conversation: conversation,
-        child: _GeneratedImageMessage(message.imageUrl),
+        bare: true,
+        child: _GeneratedMediaMessage(message.imageUrl),
       ),
       ChatMessageKind.quote => _AgentBubble(
         conversation: conversation,
@@ -887,6 +893,7 @@ class _AgentBubble extends StatelessWidget {
     required this.conversation,
     required this.child,
     this.modelLabel,
+    this.bare = false,
   });
 
   final SingleChatConversationProjection conversation;
@@ -895,6 +902,10 @@ class _AgentBubble extends StatelessWidget {
   /// The binding actually in effect. Falls back to the seeded label only when
   /// no routing controller is available (prototype routes).
   final String? modelLabel;
+
+  /// Media stands on its own: no paper card, no padding — pictures, video and
+  /// the generation ion field read as objects, not as text in a bubble.
+  final bool bare;
 
   @override
   Widget build(BuildContext context) {
@@ -918,14 +929,17 @@ class _AgentBubble extends StatelessWidget {
                   style: HaloTextStyles.caption,
                 ),
                 const SizedBox(height: 4),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: HaloColors.paper,
-                    borderRadius: BorderRadius.circular(13),
+                if (bare)
+                  child
+                else
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: HaloColors.paper,
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: child,
                   ),
-                  child: child,
-                ),
               ],
             ),
           ),
@@ -1132,24 +1146,17 @@ class _GenerationPlaceholder extends StatefulWidget {
   State<_GenerationPlaceholder> createState() => _GenerationPlaceholderState();
 }
 
-/// An iridescent sweep where the picture will appear — no text at all: the
-/// prompt already arrived as its own message right above, so repeating it
-/// here only added noise.
+/// Multicolour ions surging inside the frame where the picture will appear.
+///
+/// Seven soft glowing blobs drift on individual two-tone sine paths whose
+/// integer frequencies make the loop seamless; radii breathe out of phase, so
+/// the motion never reads as a repeating pattern. No text, no card behind.
 class _GenerationPlaceholderState extends State<_GenerationPlaceholder>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(seconds: 4),
+    duration: const Duration(seconds: 7),
   )..repeat();
-
-  static const _aurora = [
-    Color(0xFF9BB5FF),
-    Color(0xFFC5A3FF),
-    Color(0xFFFFA3D7),
-    Color(0xFFFFD9A3),
-    Color(0xFF8FE8DF),
-    Color(0xFF9BB5FF),
-  ];
 
   @override
   void dispose() {
@@ -1161,40 +1168,84 @@ class _GenerationPlaceholderState extends State<_GenerationPlaceholder>
   Widget build(BuildContext context) {
     return _AgentBubble(
       conversation: widget.conversation,
+      bare: true,
       child: Semantics(
         label: widget.isVideo ? '正在生成视频' : '正在生成图片',
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, _) {
-            final angle = _controller.value * 2 * math.pi;
-            // A slow full rotation of the gradient axis plus a gentle
-            // breathing keeps the surface visibly alive without any motion
-            // violent enough to read as an error.
-            final breath = 0.9 + 0.1 * math.sin(angle * 2);
-            return Opacity(
-              opacity: breath,
-              child: Container(
-                width: 200,
-                height: widget.isVideo ? 120 : 200,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  gradient: LinearGradient(
-                    begin: Alignment(math.cos(angle), math.sin(angle)),
-                    end: Alignment(-math.cos(angle), -math.sin(angle)),
-                    colors: _aurora,
-                  ),
-                ),
-              ),
-            );
-          },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(
+            width: 220,
+            height: widget.isVideo ? 132 : 220,
+            child: AnimatedBuilder(
+              animation: _controller,
+              builder: (context, _) =>
+                  CustomPaint(painter: _IonFieldPainter(_controller.value)),
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _GeneratedImageMessage extends StatelessWidget {
-  const _GeneratedImageMessage(this.path);
+class _IonFieldPainter extends CustomPainter {
+  const _IonFieldPainter(this.t);
+
+  final double t;
+
+  // Integer frequencies keep every path continuous across the loop seam.
+  static const _ions = [
+    (color: Color(0xFF5B8CFF), r: 34.0, fx: 1, fy: 2, px: 0.0, py: 1.3, fr: 3),
+    (color: Color(0xFF9B5BFF), r: 30.0, fx: 2, fy: 1, px: 2.1, py: 0.4, fr: 2),
+    (color: Color(0xFFFF5BD1), r: 26.0, fx: 1, fy: 3, px: 4.0, py: 2.6, fr: 4),
+    (color: Color(0xFF29D3C0), r: 28.0, fx: 3, fy: 2, px: 1.1, py: 5.0, fr: 3),
+    (color: Color(0xFFFFB84D), r: 22.0, fx: 2, fy: 3, px: 5.3, py: 3.7, fr: 5),
+    (color: Color(0xFF66E06B), r: 20.0, fx: 3, fy: 1, px: 3.2, py: 0.9, fr: 2),
+    (color: Color(0xFFFF6B6B), r: 18.0, fx: 1, fy: 1, px: 0.7, py: 4.4, fr: 4),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final tau = 2 * math.pi;
+    for (final ion in _ions) {
+      // Two stacked sinusoids per axis: the secondary wobble is what breaks
+      // the visual regularity of a plain Lissajous orbit.
+      final x =
+          size.width *
+          (0.5 +
+              0.30 * math.sin(tau * ion.fx * t + ion.px) +
+              0.12 * math.sin(tau * (ion.fx + 2) * t + ion.py * 1.7));
+      final y =
+          size.height *
+          (0.5 +
+              0.30 * math.sin(tau * ion.fy * t + ion.py) +
+              0.12 * math.sin(tau * (ion.fy + 1) * t + ion.px * 2.3));
+      final radius =
+          ion.r * (0.8 + 0.2 * math.sin(tau * ion.fr * t + ion.px + ion.py));
+      final center = Offset(x, y);
+      canvas.drawCircle(
+        center,
+        radius * 1.9,
+        Paint()
+          ..color = ion.color.withValues(alpha: 0.35)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 24),
+      );
+      canvas.drawCircle(
+        center,
+        radius,
+        Paint()
+          ..color = ion.color.withValues(alpha: 0.85)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_IonFieldPainter oldDelegate) => oldDelegate.t != t;
+}
+
+class _GeneratedMediaMessage extends StatelessWidget {
+  const _GeneratedMediaMessage(this.path);
 
   final String? path;
 
@@ -1202,18 +1253,198 @@ class _GeneratedImageMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     final source = path;
     if (source == null || source.isEmpty) {
-      return const Text('图片已生成，但文件不可用', style: HaloTextStyles.caption);
+      return const Text('生成完成，但文件不可用', style: HaloTextStyles.caption);
     }
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: Image.file(
-        File(source),
-        width: 220,
-        fit: BoxFit.cover,
-        // The file lives in the sandbox and can be cleared; a broken image is
-        // better than a crash in the middle of a conversation.
-        errorBuilder: (context, _, _) =>
-            const Text('图片已不在本机', style: HaloTextStyles.caption),
+    if (source.toLowerCase().endsWith('.mp4')) {
+      return _GeneratedVideoMessage(source);
+    }
+    return GestureDetector(
+      onTap: () => _openImagePreview(context, source),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Image.file(
+          File(source),
+          width: 220,
+          fit: BoxFit.cover,
+          // The file lives in the sandbox and can be cleared; a broken image
+          // is better than a crash in the middle of a conversation.
+          errorBuilder: (context, _, _) =>
+              const Text('图片已不在本机', style: HaloTextStyles.caption),
+        ),
+      ),
+    );
+  }
+}
+
+void _openImagePreview(BuildContext context, String path) {
+  Navigator.of(context, rootNavigator: true).push(
+    PageRouteBuilder<void>(
+      opaque: false,
+      barrierColor: Colors.black,
+      fullscreenDialog: true,
+      pageBuilder: (context, _, _) => GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: InteractiveViewer(
+          maxScale: 6,
+          child: Center(child: Image.file(File(path), fit: BoxFit.contain)),
+        ),
+      ),
+    ),
+  );
+}
+
+/// A generated clip in the feed: first frame, a play glyph, tap to watch.
+class _GeneratedVideoMessage extends StatefulWidget {
+  const _GeneratedVideoMessage(this.path);
+
+  final String path;
+
+  @override
+  State<_GeneratedVideoMessage> createState() => _GeneratedVideoMessageState();
+}
+
+class _GeneratedVideoMessageState extends State<_GeneratedVideoMessage> {
+  VideoPlayerController? _preview;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final controller = VideoPlayerController.file(File(widget.path));
+    _preview = controller;
+    controller
+        .initialize()
+        .then((_) {
+          if (mounted) setState(() {});
+        })
+        .catchError((Object _) {
+          if (mounted) setState(() => _failed = true);
+        });
+  }
+
+  @override
+  void dispose() {
+    _preview?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_failed) {
+      return const Text('视频已不在本机', style: HaloTextStyles.caption);
+    }
+    final preview = _preview;
+    final ready = preview != null && preview.value.isInitialized;
+    return GestureDetector(
+      onTap: ready ? () => _openVideoPlayer(context, widget.path) : null,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: SizedBox(
+          width: 220,
+          height: ready ? 220 / preview.value.aspectRatio : 132,
+          child: Stack(
+            fit: StackFit.expand,
+            alignment: Alignment.center,
+            children: [
+              if (ready)
+                VideoPlayer(preview)
+              else
+                const ColoredBox(color: Color(0xFF10131B)),
+              const Center(
+                child: Icon(
+                  Icons.play_circle_fill,
+                  size: 46,
+                  color: Colors.white70,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+void _openVideoPlayer(BuildContext context, String path) {
+  Navigator.of(context, rootNavigator: true).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (context) => _FullscreenVideoPage(path: path),
+    ),
+  );
+}
+
+class _FullscreenVideoPage extends StatefulWidget {
+  const _FullscreenVideoPage({required this.path});
+
+  final String path;
+
+  @override
+  State<_FullscreenVideoPage> createState() => _FullscreenVideoPageState();
+}
+
+class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
+  late final VideoPlayerController _controller = VideoPlayerController.file(
+    File(widget.path),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller
+        .initialize()
+        .then((_) {
+          if (!mounted) return;
+          setState(() {});
+          _controller.play();
+        })
+        .catchError((Object _) {
+          if (mounted) setState(() {});
+        });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ready = _controller.value.isInitialized;
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          if (!ready) return;
+          setState(() {
+            _controller.value.isPlaying
+                ? _controller.pause()
+                : _controller.play();
+          });
+        },
+        child: Stack(
+          children: [
+            Center(
+              child: ready
+                  ? AspectRatio(
+                      aspectRatio: _controller.value.aspectRatio,
+                      child: VideoPlayer(_controller),
+                    )
+                  : const CircularProgressIndicator(color: Colors.white54),
+            ),
+            SafeArea(
+              child: Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

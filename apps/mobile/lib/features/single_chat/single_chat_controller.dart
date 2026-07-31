@@ -121,6 +121,67 @@ class GenerationProgress {
   bool get isPending => localPath == null && failure == null;
 }
 
+/// Orders one command's messages the way the turn actually unfolded.
+///
+/// The model speaks first, then calls the tool whose argument is the refined
+/// prompt — but the reply only commits at the end of the turn, which filed it
+/// after the prompt. Display order within a command is therefore normalised
+/// to: user, answer, prompt, notices, assets. Ids that do not follow the
+/// command convention stay exactly where they were.
+List<ChatMessageProjection> displayOrderedMessages(
+  List<ChatMessageProjection> messages,
+) {
+  int? rankOf(String id) {
+    final split = id.indexOf(':');
+    if (split <= 0) return null;
+    final suffix = id.substring(split + 1);
+    if (suffix == 'user') return 0;
+    if (suffix == 'answer') return 1;
+    if (suffix.startsWith('prompt:')) return 2;
+    if (suffix.startsWith('tool-failure:')) return 3;
+    if (suffix.startsWith('asset:')) return 4;
+    return null;
+  }
+
+  final grouped = <String, List<(int rank, int index)>>{};
+  for (final (index, message) in messages.indexed) {
+    final rank = rankOf(message.id);
+    if (rank == null) continue;
+    final commandId = message.id.substring(0, message.id.indexOf(':'));
+    grouped.putIfAbsent(commandId, () => []).add((rank, index));
+  }
+
+  final replacementByFirstIndex = <int, List<ChatMessageProjection>>{};
+  final consumed = <int>{};
+  for (final entries in grouped.values) {
+    if (entries.length < 2) continue;
+    final sorted = [...entries]
+      ..sort((a, b) {
+        final byRank = a.$1.compareTo(b.$1);
+        return byRank != 0 ? byRank : a.$2.compareTo(b.$2);
+      });
+    var firstIndex = entries.first.$2;
+    for (final entry in entries) {
+      if (entry.$2 < firstIndex) firstIndex = entry.$2;
+    }
+    replacementByFirstIndex[firstIndex] = [
+      for (final entry in sorted) messages[entry.$2],
+    ];
+    consumed.addAll(entries.map((entry) => entry.$2));
+  }
+  if (replacementByFirstIndex.isEmpty) return messages;
+
+  final ordered = <ChatMessageProjection>[];
+  for (final (index, message) in messages.indexed) {
+    if (replacementByFirstIndex[index] case final group?) {
+      ordered.addAll(group);
+    } else if (!consumed.contains(index)) {
+      ordered.add(message);
+    }
+  }
+  return ordered;
+}
+
 /// In-flight generation state that must outlive any single chat page.
 ///
 /// A run keeps going after its page closes. The next page for the same
@@ -1087,7 +1148,10 @@ class SingleChatController extends ChangeNotifier {
         );
         if (spoken == null && speech != null && !_disposed) {
           final reason = speech!.lastSynthesisFailure;
-          if (reason != null) {
+          // An unconfigured key is a standing state, not a failure: reporting
+          // it on every single reply buries the conversation in notices. Only
+          // a configured synthesis that then broke is worth a line.
+          if (reason != null && !reason.contains('未配置')) {
             developer.log(
               'voice synthesis failed: $reason',
               name: 'halo.voice',

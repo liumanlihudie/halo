@@ -297,6 +297,36 @@ void main() {
     controller.dispose();
   });
 
+  test('display order puts the reply before the prompt it produced', () {
+    // The model speaks first and calls the tool second, but the reply only
+    // commits at the end of the turn. Rendering must restore the real order:
+    // user, reply, prompt, notice, asset.
+    ChatMessageProjection message(String id, [String? text]) =>
+        ChatMessageProjection(
+          id: id,
+          kind: ChatMessageKind.agentText,
+          text: text ?? id,
+        );
+    final ordered = displayOrderedMessages([
+      message('cmd-1:user'),
+      message('cmd-1:prompt:gen-1'),
+      message('cmd-1:answer'),
+      message('cmd-1:tool-failure:0'),
+      message('cmd-1:asset:0'),
+      message('resumed:task-9'),
+      message('cmd-2:user'),
+    ]);
+    expect(ordered.map((entry) => entry.id), [
+      'cmd-1:user',
+      'cmd-1:answer',
+      'cmd-1:prompt:gen-1',
+      'cmd-1:tool-failure:0',
+      'cmd-1:asset:0',
+      'resumed:task-9',
+      'cmd-2:user',
+    ]);
+  });
+
   test('a reopened page shows a detached run and its committed result', () async {
     // The regression: leaving the chat mid-generation and coming back showed
     // neither the placeholder nor, later, the image — the run was alive but
