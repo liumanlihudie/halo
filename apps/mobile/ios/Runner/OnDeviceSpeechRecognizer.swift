@@ -31,6 +31,12 @@ final class CallAudioOutput {
         )
       else { return }
       format = sourceFormat
+      // Apple's own echo cancellation — the same voice processing FaceTime
+      // uses. Without it the loudspeaker feeds back into the microphone and
+      // the service cuts the reply off as if the user had interrupted. This is
+      // what the vendor SDK bundles an AEC model for; iOS already has one.
+      try? engine.inputNode.setVoiceProcessingEnabled(true)
+      try? engine.outputNode.setVoiceProcessingEnabled(true)
       engine.attach(node)
       engine.connect(node, to: engine.mainMixerNode, format: sourceFormat)
       try? engine.start()
