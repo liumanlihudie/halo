@@ -61,6 +61,9 @@ final class CallAudioOutput {
       }
     }
     node.scheduleBuffer(buffer, completionHandler: nil)
+    // A barge-in stops the node; without this the next reply would queue into
+    // a stopped player and the call would fall silent for good.
+    if !node.isPlaying { node.play() }
   }
 
   /// Captures the microphone on the same engine that plays the call.
@@ -194,6 +197,12 @@ final class CallAudioOutput {
     ringbackFormat = nil
   }
 
+  /// Silences playback without touching capture or the engine, so a barge-in
+  /// stops the expert mid-sentence while the microphone keeps listening.
+  func interrupt() {
+    node.stop()
+  }
+
   /// Drops anything still queued, so an interruption goes quiet at once.
   func stop() {
     stopRingback()
@@ -309,10 +318,16 @@ final class OnDeviceSpeechRecognizer: NSObject, FlutterStreamHandler {
       output.enqueue(data.data)
       result(true)
     case "stopPcm":
+      // Interrupt only. This fires every time the user cuts in (event 450);
+      // tearing the engine and session down here is what killed the call the
+      // moment the user first spoke — capture and playback share that engine
+      // now. Full teardown happens at hang-up via teardownCallAudio.
+      output.interrupt()
+      result(true)
+    case "teardownCallAudio":
       output.stop()
-      // Hand the audio session back. A call leaves it active in playAndRecord
-      // with voice processing, and the next recorder — a voice message — then
-      // cannot start at all.
+      // Hand the audio session back so the next recorder — a voice message —
+      // can start.
       UIDevice.current.isProximityMonitoringEnabled = false
       NotificationCenter.default.removeObserver(
         self,

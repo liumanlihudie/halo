@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
+import 'package:record/record.dart';
 
 /// The device microphone, streaming the PCM shape the dialogue service wants.
 /// The call microphone, captured on the same engine that plays the call.
@@ -7,18 +9,73 @@ import 'package:halo_mobile/features/media/voice_call_controller.dart';
 /// A separate recorder cannot hold the input hardware while playback runs
 /// voice processing on it: capture died as soon as the expert first spoke and
 /// the call went one-sided after a single exchange.
+/// The call microphone.
+///
+/// Capture belongs on the engine that plays the call: a separate recorder
+/// cannot hold the input hardware while playback runs voice processing on it,
+/// which is what made the line go dead after the expert first spoke. But if
+/// that tap delivers nothing — an audio session the system will not hand over,
+/// a format it will not report — a call with no uplink is worse than one
+/// without echo cancellation, so the recorder takes over.
 final class DeviceCallMicrophone implements CallMicrophone {
-  const DeviceCallMicrophone();
+  DeviceCallMicrophone({AudioRecorder? recorder})
+    : _recorder = recorder ?? AudioRecorder();
 
   static const _mic = EventChannel('halo.speech/mic');
+  static const _nativeGrace = Duration(seconds: 2);
+
+  final AudioRecorder _recorder;
+  bool _usingRecorder = false;
 
   @override
-  Future<Stream<Uint8List>> start() async =>
-      _mic.receiveBroadcastStream().map((event) => event as Uint8List);
+  Future<Stream<Uint8List>> start() async {
+    final out = StreamController<Uint8List>.broadcast();
+    StreamSubscription<dynamic>? native;
+    var heard = false;
+
+    native = _mic.receiveBroadcastStream().listen((event) {
+      heard = true;
+      if (event is Uint8List && !out.isClosed) out.add(event);
+    }, onError: (Object _) {});
+
+    Timer(_nativeGrace, () async {
+      if (heard || out.isClosed) return;
+      await native?.cancel();
+      native = null;
+      try {
+        if (!await _recorder.hasPermission()) return;
+        final stream = await _recorder.startStream(
+          const RecordConfig(
+            encoder: AudioEncoder.pcm16bits,
+            sampleRate: 16000,
+            numChannels: 1,
+          ),
+        );
+        _usingRecorder = true;
+        stream.listen((chunk) {
+          if (!out.isClosed) out.add(chunk);
+        });
+      } catch (_) {
+        // Nothing left to try; the call stays one-sided rather than crashing.
+      }
+    });
+
+    out.onCancel = () async {
+      await native?.cancel();
+      if (_usingRecorder) await stop();
+    };
+    return out.stream;
+  }
 
   @override
   Future<void> stop() async {
-    // Cancelling the stream subscription tears the tap down natively.
+    if (!_usingRecorder) return;
+    _usingRecorder = false;
+    try {
+      await _recorder.stop();
+    } catch (_) {
+      // Hanging up must succeed even if the recorder is already gone.
+    }
   }
 }
 
