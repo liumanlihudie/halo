@@ -50,6 +50,17 @@ class LocalDataExportBundle {
   final int byteCount;
 }
 
+/// The circle's half of the local data promises.
+///
+/// Separate from the chat history port because the two live in different
+/// databases; the maintenance page must cover both or its buttons start
+/// overstating what they did.
+abstract interface class CircleDataMaintenance {
+  Future<int> countPosts();
+  Future<List<Map<String, Object?>>> exportPosts();
+  Future<void> erasePosts();
+}
+
 abstract interface class LocalDataMaintenancePort {
   Future<LocalDataSnapshot> loadSnapshot();
 
@@ -76,13 +87,16 @@ final class ProductionLocalDataMaintenance implements LocalDataMaintenancePort {
     required this._storageDirectory,
     required this._cacheDirectory,
     required this._exportDirectory,
+    CircleDataMaintenance? circle,
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  }) : _circle = circle,
+       _now = now ?? DateTime.now;
 
   /// Bundle format version. A future importer must refuse anything newer.
   static const int exportFormatVersion = 1;
 
   final SingleChatHistoryMaintenance _history;
+  final CircleDataMaintenance? _circle;
   final Future<Directory> Function() _storageDirectory;
   final Future<Directory> Function() _cacheDirectory;
   final Future<Directory> Function() _exportDirectory;
@@ -146,6 +160,7 @@ final class ProductionLocalDataMaintenance implements LocalDataMaintenancePort {
         'providerConfiguration',
       ],
       'conversations': conversations,
+      'circlePosts': await _exportPostsQuietly(),
     };
     final directory = await _exportDirectory();
     await directory.create(recursive: true);
@@ -164,7 +179,25 @@ final class ProductionLocalDataMaintenance implements LocalDataMaintenancePort {
   }
 
   @override
-  Future<void> eraseLocalData() => _history.eraseStoredMessages();
+  Future<void> eraseLocalData() async {
+    await _history.eraseStoredMessages();
+    // The button says the on-device content is gone; leaving the feed behind
+    // would make that untrue.
+    try {
+      await _circle?.erasePosts();
+    } catch (_) {
+      // The chat history is already cleared; reporting success for the part
+      // that worked beats leaving both.
+    }
+  }
+
+  Future<List<Map<String, Object?>>> _exportPostsQuietly() async {
+    try {
+      return await (_circle?.exportPosts() ?? Future.value(const []));
+    } catch (_) {
+      return const [];
+    }
+  }
 
   Future<int?> _tryMeasure(Future<Directory> Function() open) async {
     try {

@@ -77,7 +77,31 @@ GoRouter createAppRouter({
             ],
           ),
           _branch('/experts', const ExpertTeamPage()),
-          _branch('/circle', const CirclePage()),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/circle',
+                pageBuilder: (context, state) {
+                  Widget buildPage(AppDependencies? current) => CirclePage(
+                    key: ValueKey(current),
+                    controller: current?.circle,
+                  );
+                  final listenable = dependencyListenable;
+                  if (listenable == null) {
+                    return NoTransitionPage(
+                      child: buildPage(fixedDependencies),
+                    );
+                  }
+                  return NoTransitionPage(
+                    child: ListenableBuilder(
+                      listenable: listenable,
+                      builder: (context, _) => buildPage(resolveDependencies()),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
           StatefulShellBranch(
             routes: [
               GoRoute(
