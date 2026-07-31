@@ -1,15 +1,53 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 
-class GroupInfoPage extends StatelessWidget {
-  const GroupInfoPage({required this.groupId, super.key});
+class GroupInfoPage extends StatefulWidget {
+  const GroupInfoPage({
+    required this.groupId,
+    this.membersRepository = const PrototypeGroupMembersRepository(),
+    super.key,
+  });
+
   final String groupId;
+
+  /// Same source the group chat uses, so the strip cannot drift from who is
+  /// actually in the group.
+  final GroupMembersRepository membersRepository;
+
+  @override
+  State<GroupInfoPage> createState() => _GroupInfoPageState();
+}
+
+class _GroupInfoPageState extends State<GroupInfoPage> {
+  List<GroupChatMember> _members = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadMembers());
+  }
+
+  Future<void> _loadMembers() async {
+    try {
+      final members = await widget.membersRepository.loadMembers(
+        widget.groupId,
+      );
+      if (mounted) setState(() => _members = members);
+    } catch (_) {
+      // An unreadable roster shows no members rather than fixture ones.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final groupId = widget.groupId;
     return HaloPageScaffold(
       title: '群资料',
       compactTitle: true,
@@ -30,7 +68,7 @@ class GroupInfoPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          const _MemberStrip(),
+          _MemberStrip(members: _members),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
             child: HaloSectionLabel('群聊信息'),
@@ -108,57 +146,84 @@ class GroupInfoPage extends StatelessWidget {
 }
 
 class _MemberStrip extends StatelessWidget {
-  const _MemberStrip();
+  const _MemberStrip({required this.members});
+
+  final List<GroupChatMember> members;
 
   @override
   Widget build(BuildContext context) {
-    const members = [
-      (
-        '产',
-        '产品经理',
-        'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75',
-      ),
-      (
-        '交',
-        '交互设计',
-        'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=100&q=75',
-      ),
-      (
-        '技',
-        '技术架构',
-        'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75',
-      ),
-      ('增', '增长顾问', null),
-      ('+', '添加', null),
-    ];
+    final registry = ExecutableExpertRegistry(
+      gateway: const ExpertOutputValidationGateway(),
+    );
     return SizedBox(
       height: 94,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
         scrollDirection: Axis.horizontal,
-        itemCount: members.length,
+        itemCount: members.length + 1,
         separatorBuilder: (_, _) => const SizedBox(width: 10),
-        itemBuilder: (context, index) => SizedBox(
-          width: 58,
-          child: Column(
-            children: [
-              HaloAvatar(
-                letter: members[index].$1,
-                imageUrl: members[index].$3,
-                size: 48,
-                backgroundColor: index == members.length - 1
-                    ? HaloColors.muted
-                    : HaloColors.accent,
-              ),
-              const SizedBox(height: 5),
-              Text(
-                members[index].$2,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: HaloTextStyles.caption,
-              ),
-            ],
-          ),
+        itemBuilder: (context, index) {
+          if (index == members.length) {
+            return const _MemberTile(
+              letter: '+',
+              label: '添加',
+              background: HaloColors.muted,
+            );
+          }
+          final member = members[index];
+          // Membership stores the canonical id; the profile route takes the
+          // profile id. An expert that is not installed has no profile page, so
+          // its avatar stays untappable rather than opening a blank one.
+          final identity = registry.installedIdentityForCanonicalId(
+            member.expertId,
+          );
+          return _MemberTile(
+            key: ValueKey('group-member-${member.expertId}'),
+            letter: member.avatarLetter,
+            label: member.displayName,
+            background: HaloColors.accent,
+            onTap: identity == null
+                ? null
+                : () => context.push('/expert/${identity.profileId}'),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MemberTile extends StatelessWidget {
+  const _MemberTile({
+    required this.letter,
+    required this.label,
+    required this.background,
+    this.onTap,
+    super.key,
+  });
+
+  final String letter;
+  final String label;
+  final Color background;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 58,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          children: [
+            HaloAvatar(letter: letter, size: 48, backgroundColor: background),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: HaloTextStyles.caption,
+            ),
+          ],
         ),
       ),
     );
