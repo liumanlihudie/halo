@@ -478,7 +478,9 @@ List<llm.Tool> buildGenerationTools({
   ),
   llm.Tool<Map<String, dynamic>>(
     name: 'generate_video',
-    description: '根据文字描述生成一段视频。耗时较长，只在用户明确要视频时使用。',
+    description:
+        '根据文字描述生成一段视频。当用户想要视频、短片、动画时使用。'
+        '生成的视频会直接播放给用户，不需要你再描述它的内容。',
     inputSchema: llm.S.object(
       properties: {'prompt': llm.S.string(description: '对要生成的视频的完整描述')},
       required: ['prompt'],

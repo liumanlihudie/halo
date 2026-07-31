@@ -192,7 +192,9 @@ final class DartanticSingleChatPort implements SingleChatPort {
         ],
       );
       final history = <llm.ChatMessage>[
-        llm.ChatMessage.system(_systemPrompt(expert)),
+        llm.ChatMessage.system(
+          _systemPrompt(expert, generationDeclared: generation != null),
+        ),
         for (final turn in request.history)
           if (turn.fromUser)
             llm.ChatMessage.user(turn.text)
@@ -289,9 +291,17 @@ final class DartanticSingleChatPort implements SingleChatPort {
     await Future.wait([for (final run in running) run.outcome.then((_) {})]);
   }
 
-  static String _systemPrompt(ExecutableExpert expert) => [
+  static String _systemPrompt(
+    ExecutableExpert expert, {
+    bool generationDeclared = false,
+  }) => [
     expert.profile.promptPackage.render(),
     renderExpertOutputPrompt(expert),
+    // The one rule that keeps a lazy model from narrating instead of acting:
+    // it has been seen replying with a beautiful prompt and no picture.
+    if (generationDeclared)
+      '用户要求生成图片或视频时，必须调用 generate_image 或 generate_video 工具真正生成。'
+          '用文字描述画面不算生成，绝不能以描述代替工具调用。',
   ].join('\n');
 }
 
