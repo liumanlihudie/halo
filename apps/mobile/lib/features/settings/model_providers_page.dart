@@ -260,16 +260,6 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
         );
         return;
       }
-      // Says the list is unfiltered rather than letting a picker full of chat
-      // models look like a bug.
-      if (routing.lastPurposeListWasUnfiltered && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(ModelPurposeSuitability.undeclaredNotice),
-          ),
-        );
-      }
-      if (!mounted) return;
       final selection = await showModelPickerSheet(
         context,
         options: options,

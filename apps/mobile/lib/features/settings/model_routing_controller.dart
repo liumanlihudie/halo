@@ -52,7 +52,7 @@ final class SqliteModelRoutingPersistence
         ModelRoutingPersistence,
         ModelRoutingRollbackPersistence,
         PurposeModelRoutingPersistence {
-  SqliteModelRoutingPersistence(this._store);
+  const SqliteModelRoutingPersistence(this._store);
 
   final ProviderConfigurationStore _store;
 
@@ -101,27 +101,16 @@ final class SqliteModelRoutingPersistence
     if (catalogStore == null) {
       throw StateError('Provider model catalog persistence is unavailable');
     }
+    // Every model from every enabled provider, unfiltered. Filtering on
+    // declared kinds hid models that were plainly there, because a relay
+    // labels what it feels like labelling.
     final options = <AvailableModelOption>[];
-    var anyProviderDeclares = false;
     for (final provider in await _store.loadEnabled()) {
       final catalog = await catalogStore.loadProviderModelCatalog(
         provider.providerId,
       );
       if (catalog == null) continue;
-      // Whether this provider says anything at all about model kinds. When it
-      // does not, filtering on it would hide every model it has.
-      final declaresModalities = catalog.models.any(
-        (model) => model.declaredModalities.isNotEmpty,
-      );
-      anyProviderDeclares = anyProviderDeclares || declaresModalities;
       for (final model in catalog.models) {
-        if (!ModelPurposeSuitability.allows(
-          purpose,
-          model,
-          providerDeclaresModalities: declaresModalities,
-        )) {
-          continue;
-        }
         options.add(
           AvailableModelOption(
             ref: model.ref,
@@ -131,13 +120,8 @@ final class SqliteModelRoutingPersistence
         );
       }
     }
-    _lastPurposeListWasUnfiltered = !anyProviderDeclares && options.isNotEmpty;
     return List.unmodifiable(options);
   }
-
-  /// True when the last purpose list was offered without a modality filter.
-  bool get lastPurposeListWasUnfiltered => _lastPurposeListWasUnfiltered;
-  var _lastPurposeListWasUnfiltered = false;
 
   @override
   Future<ModelRef?> loadPurposeModel(ModelPurpose purpose) {
@@ -239,23 +223,12 @@ final class ModelRoutingController extends ChangeNotifier {
     final purposes = _persistence;
     if (purposes is! PurposeModelRoutingPersistence) return const [];
     try {
-      final options = await (purposes as PurposeModelRoutingPersistence)
+      return await (purposes as PurposeModelRoutingPersistence)
           .loadModelsForPurpose(purpose);
-      final store = purposes;
-      _lastPurposeListWasUnfiltered = store is SqliteModelRoutingPersistence
-          ? store.lastPurposeListWasUnfiltered
-          : false;
-      return options;
     } catch (_) {
-      _lastPurposeListWasUnfiltered = false;
       return const [];
     }
   }
-
-  /// True when the offered list could not be filtered by kind, because the
-  /// provider declared none.
-  bool get lastPurposeListWasUnfiltered => _lastPurposeListWasUnfiltered;
-  var _lastPurposeListWasUnfiltered = false;
 
   Future<void> loadPurposeModels() async {
     final purposes = _persistence;

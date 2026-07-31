@@ -30,64 +30,17 @@ abstract interface class PurposeModelBindingStore {
   );
 }
 
-/// Decides which models may be offered for a purpose.
+/// What to say when there is nothing at all to choose from.
 ///
-/// **Never asks the model.** A model's own answer about what it can do is
-/// unreliable — an aggregated chat model will happily say it reads images and
-/// then ignore one — so the only inputs here are what the provider declared in
-/// its catalogue and, for vision, the user's explicit choice.
+/// The picker deliberately does **not** filter by declared kind. Aggregators
+/// label models inconsistently or not at all, and every filter written against
+/// those labels ended up hiding models the user could see in their own console.
+/// The user knows which of their models draws; this code only ever knew the
+/// labels.
 abstract final class ModelPurposeSuitability {
-  static const _imageTypes = <String>{
-    'image',
-    'images',
-    'image_generations',
-    'images/generations',
-    'image_generation',
-  };
-
-  static const _videoTypes = <String>{
-    'video',
-    'videos',
-    'video_generations',
-    'videos/generations',
-    'video_generation',
-  };
-
-  /// True when [model] may be offered for [purpose].
-  ///
-  /// [providerDeclaresModalities] is false when the provider's catalogue says
-  /// nothing about *any* model's kind. Filtering on an absent declaration
-  /// would leave the picker empty while the user is looking straight at a list
-  /// of image models, so in that case everything is offered and the picker
-  /// says why — the user knows their own models, and this code does not.
-  static bool allows(
-    ModelPurpose purpose,
-    ModelDescriptor model, {
-    bool providerDeclaresModalities = true,
-  }) {
-    final declared = model.declaredModalities;
-    if (!providerDeclaresModalities && purpose != ModelPurpose.vision) {
-      return true;
-    }
-    return switch (purpose) {
-      ModelPurpose.image => declared.any(_imageTypes.contains),
-      ModelPurpose.video => declared.any(_videoTypes.contains),
-      // Vision is a chat model that accepts image input. Relays do not declare
-      // that anywhere, and asking the model is exactly what produces the
-      // "sure I can read images" answer followed by silence. So every text
-      // model is offered and the user names the one that actually works.
-      ModelPurpose.vision => model.capabilities.textGeneration,
-    };
-  }
-
-  /// What to tell the user when nothing qualifies.
   static String emptyReason(ModelPurpose purpose) => switch (purpose) {
-    ModelPurpose.image => '没有可选的图片模型，试试在服务详情里刷新模型目录',
-    ModelPurpose.video => '没有可选的视频模型，试试在服务详情里刷新模型目录',
-    ModelPurpose.vision => '还没有可用的文字模型',
+    ModelPurpose.image => '还没有可选的模型，先在服务详情里刷新模型目录',
+    ModelPurpose.video => '还没有可选的模型，先在服务详情里刷新模型目录',
+    ModelPurpose.vision => '还没有可选的模型，先在服务详情里刷新模型目录',
   };
-
-  /// Shown above the picker when the provider declared nothing, so a list that
-  /// includes obviously-wrong models reads as honest rather than broken.
-  static const undeclaredNotice = '该服务未声明模型类型，这里列出全部模型，请自行选择';
 }
