@@ -158,15 +158,41 @@ GoRouter createAppRouter({
       ),
       GoRoute(
         path: '/chat/:conversationId/details',
-        builder: (context, state) => ChatDetailsPage(
-          conversationId: state.pathParameters['conversationId']!,
-        ),
+        builder: (context, state) {
+          final conversationId = state.pathParameters['conversationId']!;
+          Widget buildPage(AppDependencies? current) => ChatDetailsPage(
+            key: ValueKey(current),
+            conversationId: conversationId,
+            repository: current?.chatRepository,
+          );
+          if (dependencyListenable == null) {
+            return buildPage(resolveDependencies());
+          }
+          return ListenableBuilder(
+            listenable: dependencyListenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/chat/:conversationId/history',
-        builder: (context, state) => ChatHistoryPage(
-          conversationId: state.pathParameters['conversationId']!,
-        ),
+        builder: (context, state) {
+          final conversationId = state.pathParameters['conversationId']!;
+          final category = state.uri.queryParameters['category'];
+          Widget buildPage(AppDependencies? current) => ChatHistoryPage(
+            key: ValueKey(current),
+            conversationId: conversationId,
+            repository: current?.chatRepository,
+            initialCategory: category,
+          );
+          if (dependencyListenable == null) {
+            return buildPage(resolveDependencies());
+          }
+          return ListenableBuilder(
+            listenable: dependencyListenable,
+            builder: (context, _) => buildPage(resolveDependencies()),
+          );
+        },
       ),
       GoRoute(
         path: '/group/new',

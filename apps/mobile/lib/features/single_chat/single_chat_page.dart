@@ -18,6 +18,7 @@ import 'package:video_player/video_player.dart';
 
 import 'attachments/chat_attachment_service.dart';
 import 'chat_message_repository.dart';
+import 'media_preview.dart';
 import 'message_actions_service.dart';
 import 'composer_draft_store.dart';
 import 'single_chat_controller.dart';
@@ -1283,7 +1284,7 @@ class _GeneratedMediaMessage extends StatelessWidget {
       return _GeneratedVideoMessage(source);
     }
     return GestureDetector(
-      onTap: () => _openImagePreview(context, source),
+      onTap: () => openImagePreview(context, source),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: Image.file(
@@ -1298,23 +1299,6 @@ class _GeneratedMediaMessage extends StatelessWidget {
       ),
     );
   }
-}
-
-void _openImagePreview(BuildContext context, String path) {
-  Navigator.of(context, rootNavigator: true).push(
-    PageRouteBuilder<void>(
-      opaque: false,
-      barrierColor: Colors.black,
-      fullscreenDialog: true,
-      pageBuilder: (context, _, _) => GestureDetector(
-        onTap: () => Navigator.of(context).pop(),
-        child: InteractiveViewer(
-          maxScale: 6,
-          child: Center(child: Image.file(File(path), fit: BoxFit.contain)),
-        ),
-      ),
-    ),
-  );
 }
 
 /// A generated clip in the feed: first frame, a play glyph, tap to watch.
@@ -1360,7 +1344,7 @@ class _GeneratedVideoMessageState extends State<_GeneratedVideoMessage> {
     final preview = _preview;
     final ready = preview != null && preview.value.isInitialized;
     return GestureDetector(
-      onTap: ready ? () => _openVideoPlayer(context, widget.path) : null,
+      onTap: ready ? () => openVideoPlayer(context, widget.path) : null,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: SizedBox(
@@ -1383,91 +1367,6 @@ class _GeneratedVideoMessageState extends State<_GeneratedVideoMessage> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-}
-
-void _openVideoPlayer(BuildContext context, String path) {
-  Navigator.of(context, rootNavigator: true).push(
-    MaterialPageRoute<void>(
-      fullscreenDialog: true,
-      builder: (context) => _FullscreenVideoPage(path: path),
-    ),
-  );
-}
-
-class _FullscreenVideoPage extends StatefulWidget {
-  const _FullscreenVideoPage({required this.path});
-
-  final String path;
-
-  @override
-  State<_FullscreenVideoPage> createState() => _FullscreenVideoPageState();
-}
-
-class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
-  late final VideoPlayerController _controller = VideoPlayerController.file(
-    File(widget.path),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _controller
-        .initialize()
-        .then((_) {
-          if (!mounted) return;
-          setState(() {});
-          _controller.play();
-        })
-        .catchError((Object _) {
-          if (mounted) setState(() {});
-        });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ready = _controller.value.isInitialized;
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          if (!ready) return;
-          setState(() {
-            _controller.value.isPlaying
-                ? _controller.pause()
-                : _controller.play();
-          });
-        },
-        child: Stack(
-          children: [
-            Center(
-              child: ready
-                  ? AspectRatio(
-                      aspectRatio: _controller.value.aspectRatio,
-                      child: VideoPlayer(_controller),
-                    )
-                  : const CircularProgressIndicator(color: Colors.white54),
-            ),
-            SafeArea(
-              child: Align(
-                alignment: Alignment.topRight,
-                child: IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ),
-            ),
-          ],
         ),
       ),
     );

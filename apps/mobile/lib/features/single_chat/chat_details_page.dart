@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
@@ -5,10 +7,75 @@ import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
+import 'package:share_plus/share_plus.dart';
 
+import 'chat_message_repository.dart';
+
+/// Details for one conversation: every control here does what it says.
+///
+/// The rows this page used to show — do-nothing switches, a chat background,
+/// a feedback entry — described a product that was not running and are gone
+/// rather than dead to the touch.
 class ChatDetailsPage extends StatelessWidget {
-  const ChatDetailsPage({required this.conversationId, super.key});
+  const ChatDetailsPage({
+    required this.conversationId,
+    this.repository,
+    this.shareText,
+    super.key,
+  });
+
   final String conversationId;
+
+  /// Absent when storage failed to boot; export then reports that instead of
+  /// sharing an empty transcript.
+  final ChatMessageRepository? repository;
+
+  /// Injectable so tests exercise export without the system share sheet.
+  final Future<void> Function(String text)? shareText;
+
+  Future<void> _exportTranscript(BuildContext context) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final store = repository;
+    if (store == null) {
+      messenger?.showSnackBar(const SnackBar(content: Text('聊天存储不可用，无法导出')));
+      return;
+    }
+    final List<ChatMessageProjection> messages;
+    final String title;
+    try {
+      title = store.describe(conversationId).title;
+      messages = await store.load(conversationId);
+    } catch (_) {
+      messenger?.showSnackBar(const SnackBar(content: Text('聊天记录读取失败')));
+      return;
+    }
+    final lines = <String>['# 与$title的对话', ''];
+    for (final message in messages) {
+      final text = message.text?.trim() ?? '';
+      final media = message.imageUrl;
+      final speaker = switch (message.kind) {
+        ChatMessageKind.userText || ChatMessageKind.userImage => '我',
+        ChatMessageKind.systemNotice => '系统',
+        _ => title,
+      };
+      if (text.isNotEmpty) {
+        lines.add('**$speaker**：$text');
+      } else if (media != null && media.isNotEmpty) {
+        lines.add('**$speaker**：[媒体文件] $media');
+      } else {
+        continue;
+      }
+      lines.add('');
+    }
+    if (lines.length <= 2) {
+      messenger?.showSnackBar(const SnackBar(content: Text('这个对话还没有可导出的消息')));
+      return;
+    }
+    final share =
+        shareText ??
+        (text) => SharePlus.instance.share(ShareParams(text: text));
+    await share(lines.join('\n'));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -47,50 +114,20 @@ class ChatDetailsPage extends StatelessWidget {
               ],
             ),
           ),
-          const _AssetShortcuts(),
+          _AssetShortcuts(conversationId: conversationId),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 15),
-            child: HaloSectionLabel('当前会话'),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 13),
-            child: HaloSettingsGroup(
-              children: [
-                HaloSettingsRow(
-                  label: '消息免打扰',
-                  trailing: HaloSwitch(value: false, onChanged: null),
-                ),
-                HaloSettingsRow(
-                  label: '置顶聊天',
-                  trailing: HaloSwitch(value: false, onChanged: null),
-                ),
-                HaloSettingsRow(
-                  label: '重要消息提醒',
-                  trailing: HaloSwitch(value: true, onChanged: null),
-                ),
-              ],
-            ),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 15),
-            child: HaloSectionLabel('外观与数据'),
+            child: HaloSectionLabel('数据'),
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 13),
             child: HaloSettingsGroup(
               children: [
                 HaloSettingsRow(
-                  label: '设置当前聊天背景',
-                  detail: '默认浅灰',
-                  onTap: () {},
-                ),
-                HaloSettingsRow(
                   label: '导出聊天记录',
-                  detail: 'Markdown / JSON / ZIP',
-                  onTap: () {},
+                  detail: 'Markdown',
+                  onTap: () => unawaited(_exportTranscript(context)),
                 ),
-                HaloSettingsRow(label: '清空聊天记录', onTap: () {}),
-                HaloSettingsRow(label: '反馈专家问题', onTap: () {}),
               ],
             ),
           ),
@@ -134,9 +171,7 @@ class _PeerGrid extends StatelessWidget {
                 child: Column(
                   children: [
                     HaloAvatar(
-                      imageUrl:
-                          installed?.imageUrl ??
-                          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120',
+                      imageUrl: installed?.imageUrl,
                       letter: installed?.avatarLetter ?? '助',
                       tone: installed?.avatarTone ?? HaloAvatarTone.blue,
                     ),
@@ -154,23 +189,31 @@ class _PeerGrid extends StatelessWidget {
           ),
           SizedBox(
             width: 78,
-            child: Column(
-              children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: HaloColors.line),
-                    borderRadius: BorderRadius.circular(HaloRadii.avatar),
-                  ),
-                  child: Icon(
-                    HaloIcon.requirePrototypeClass('ph ph-plus'),
-                    color: HaloColors.muted,
-                  ),
+            child: Semantics(
+              button: true,
+              label: '添加到群聊',
+              child: InkWell(
+                onTap: () => context.push('/group/new'),
+                borderRadius: BorderRadius.circular(HaloRadii.avatar),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: HaloColors.line),
+                        borderRadius: BorderRadius.circular(HaloRadii.avatar),
+                      ),
+                      child: Icon(
+                        HaloIcon.requirePrototypeClass('ph ph-plus'),
+                        color: HaloColors.muted,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text('添加到群聊', style: HaloTextStyles.caption),
+                  ],
                 ),
-                const SizedBox(height: 6),
-                const Text('添加到群聊', style: HaloTextStyles.caption),
-              ],
+              ),
             ),
           ),
         ],
@@ -180,7 +223,9 @@ class _PeerGrid extends StatelessWidget {
 }
 
 class _AssetShortcuts extends StatelessWidget {
-  const _AssetShortcuts();
+  const _AssetShortcuts({required this.conversationId});
+
+  final String conversationId;
 
   @override
   Widget build(BuildContext context) {
@@ -202,7 +247,12 @@ class _AssetShortcuts extends StatelessWidget {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(11),
                   child: InkWell(
-                    onTap: () {},
+                    onTap: () => context.push(
+                      Uri(
+                        path: '/chat/$conversationId/history',
+                        queryParameters: {'category': item.$2},
+                      ).toString(),
+                    ),
                     borderRadius: BorderRadius.circular(11),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 11),

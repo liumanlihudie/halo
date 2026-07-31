@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:halo_mobile/features/single_chat/chat_details_page.dart';
+import 'package:halo_mobile/features/single_chat/chat_history_page.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 import 'package:halo_mobile/features/single_chat/single_chat_controller.dart';
 import 'package:halo_mobile/features/single_chat/message_actions_service.dart';
@@ -681,7 +682,7 @@ void main() {
     },
   );
 
-  testWidgets('chat detail contains history categories and local controls', (
+  testWidgets('chat detail keeps only controls that really work', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -696,7 +697,121 @@ void main() {
     expect(find.text('添加到群聊'), findsOneWidget);
     expect(find.text('图片与视频'), findsOneWidget);
     expect(find.text('AI 成果'), findsOneWidget);
-    expect(find.text('重要消息提醒'), findsOneWidget);
+    expect(find.text('导出聊天记录'), findsOneWidget);
+    // The do-nothing switches described a product that was not running.
+    expect(find.text('重要消息提醒'), findsNothing);
+    expect(find.text('消息免打扰'), findsNothing);
+    expect(find.text('设置当前聊天背景'), findsNothing);
+  });
+
+  testWidgets('export shares the real transcript as markdown', (tester) async {
+    final repository = InMemoryChatMessageRepository(
+      conversations: const {
+        'general-assistant': SingleChatConversationProjection(
+          conversationId: 'general-assistant',
+          expertId: 'general-assistant',
+          title: 'Halo 助理',
+          agentName: 'Halo 助理',
+          modelLabel: '已配置文字模型',
+          avatarLetter: '助',
+        ),
+      },
+    );
+    await repository.append(
+      'general-assistant',
+      const ChatMessageProjection(
+        id: 'cmd:user',
+        kind: ChatMessageKind.userText,
+        text: '生图测试',
+      ),
+    );
+    await repository.append(
+      'general-assistant',
+      const ChatMessageProjection(
+        id: 'cmd:answer',
+        kind: ChatMessageKind.agentText,
+        text: '画好了',
+      ),
+    );
+    String? shared;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: HaloTheme.light(),
+        home: ChatDetailsPage(
+          conversationId: 'general-assistant',
+          repository: repository,
+          shareText: (text) async => shared = text,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('导出聊天记录'));
+    await tester.pumpAndSettle();
+
+    expect(shared, isNotNull);
+    expect(shared, contains('# 与Halo 助理的对话'));
+    expect(shared, contains('**我**：生图测试'));
+    expect(shared, contains('**Halo 助理**：画好了'));
+  });
+
+  testWidgets('history page lists real messages and filters honestly', (
+    tester,
+  ) async {
+    final repository = InMemoryChatMessageRepository(
+      conversations: const {
+        'general-assistant': SingleChatConversationProjection(
+          conversationId: 'general-assistant',
+          expertId: 'general-assistant',
+          title: 'Halo 助理',
+          agentName: 'Halo 助理',
+          modelLabel: '已配置文字模型',
+          avatarLetter: '助',
+        ),
+      },
+    );
+    await repository.append(
+      'general-assistant',
+      const ChatMessageProjection(
+        id: 'cmd:user',
+        kind: ChatMessageKind.userText,
+        text: '帮我查一下 https://example.com/report 的内容',
+      ),
+    );
+    await repository.append(
+      'general-assistant',
+      const ChatMessageProjection(
+        id: 'cmd:asset:0',
+        kind: ChatMessageKind.agentImage,
+        imageUrl: '/tmp/gen-1.png',
+        text: '',
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: HaloTheme.light(),
+        home: ChatHistoryPage(
+          conversationId: 'general-assistant',
+          repository: repository,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 全部: both entries, nothing invented.
+    expect(find.textContaining('example.com/report'), findsOneWidget);
+    expect(find.text('专家生成的图片'), findsOneWidget);
+
+    // AI 成果 keeps only what the expert made.
+    await tester.tap(find.text('AI 成果'));
+    await tester.pumpAndSettle();
+    expect(find.text('专家生成的图片'), findsOneWidget);
+    expect(find.textContaining('example.com/report'), findsNothing);
+
+    // 文件 is honestly empty: no file messages exist.
+    await tester.tap(find.text('文件'));
+    await tester.pumpAndSettle();
+    expect(find.text('这个对话里还没有文件'), findsOneWidget);
   });
 }
 
