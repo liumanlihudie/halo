@@ -1,10 +1,36 @@
 // ignore_for_file: prefer_initializing_formals
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
 import 'package:halo_mobile/model_runtime/unary_http_transport.dart';
+
+/// Deadlines for each stage of the generation flow.
+///
+/// Without these a single blackholed connection — routine behind proxies —
+/// hangs the tool call forever, and with it the whole model turn: the user
+/// watches a loading wave that never ends. Generous bounds, but bounds.
+final class GenerationTransportTimeouts {
+  const GenerationTransportTimeouts({
+    this.connect = const Duration(seconds: 15),
+    this.submit = const Duration(minutes: 3),
+    this.poll = const Duration(seconds: 30),
+    this.upload = const Duration(minutes: 2),
+    this.download = const Duration(minutes: 5),
+  });
+
+  final Duration connect;
+
+  /// Task submission has been observed taking over two minutes on a relay
+  /// that validates the prompt upstream before accepting, so this one is the
+  /// loosest of the JSON deadlines.
+  final Duration submit;
+  final Duration poll;
+  final Duration upload;
+  final Duration download;
+}
 
 /// HTTP for the generation flow: submit, poll, upload a reference, download a
 /// result.
@@ -18,13 +44,15 @@ final class GenerationTransport {
     required EndpointPolicy endpointPolicy,
     EndpointPolicy? downloadPolicy,
     HttpClient Function()? httpClientFactory,
+    GenerationTransportTimeouts timeouts = const GenerationTransportTimeouts(),
   }) : _endpointPolicy = endpointPolicy,
        // Results live on whatever CDN the provider uses, never on the API
        // host itself — holding the download to the provider allowlist rejects
        // every finished generation. Public-https keeps the private-network
        // guard while accepting an unknown host.
        _downloadPolicy = downloadPolicy ?? const PublicEndpointPolicy(),
-       _httpClientFactory = httpClientFactory ?? HttpClient.new;
+       _httpClientFactory = httpClientFactory ?? HttpClient.new,
+       _timeouts = timeouts;
 
   /// A generated image or short video. Beyond this the result is refused
   /// rather than written to a sandbox that has to hold it forever.
@@ -35,17 +63,18 @@ final class GenerationTransport {
   final EndpointPolicy _endpointPolicy;
   final EndpointPolicy _downloadPolicy;
   final HttpClient Function() _httpClientFactory;
+  final GenerationTransportTimeouts _timeouts;
 
   Future<Map<String, Object?>> postJson({
     required Uri endpoint,
     required Map<String, String> headers,
     required Map<String, Object?> body,
-  }) => _json(endpoint, 'POST', headers, jsonBody: body);
+  }) => _json(endpoint, 'POST', headers, _timeouts.submit, jsonBody: body);
 
   Future<Map<String, Object?>> getJson({
     required Uri endpoint,
     required Map<String, String> headers,
-  }) => _json(endpoint, 'GET', headers);
+  }) => _json(endpoint, 'GET', headers, _timeouts.poll);
 
   /// Uploads [file] as multipart/form-data and returns the parsed response.
   Future<Map<String, Object?>> uploadImage({
@@ -76,6 +105,7 @@ final class GenerationTransport {
       endpoint,
       'POST',
       {...headers, 'content-type': 'multipart/form-data; boundary=$boundary'},
+      _timeouts.upload,
       rawBody: <int>[...head, ...bytes, ...tail],
     );
   }
@@ -87,8 +117,9 @@ final class GenerationTransport {
     String stem,
   ) async {
     await _downloadPolicy.validateBeforeConnect(_requireHttps(url));
-    final client = _httpClientFactory();
-    try {
+    final client = _httpClientFactory()
+      ..connectionTimeout = _timeouts.connect;
+    final operation = () async {
       final request = await client.getUrl(url);
       request.followRedirects = false;
       final response = await request.close();
@@ -109,6 +140,14 @@ final class GenerationTransport {
       );
       await file.writeAsBytes(bytes, flush: true);
       return file.path;
+    }();
+    try {
+      return await operation.timeout(_timeouts.download);
+    } on TimeoutException {
+      // The force-close below aborts the socket; the abandoned operation then
+      // errors, which must not surface as an unhandled async error.
+      unawaited(operation.catchError((Object _) => ''));
+      throw const GenerationTransportException('结果下载超时');
     } finally {
       client.close(force: true);
     }
@@ -117,13 +156,15 @@ final class GenerationTransport {
   Future<Map<String, Object?>> _json(
     Uri endpoint,
     String method,
-    Map<String, String> headers, {
+    Map<String, String> headers,
+    Duration deadline, {
     Map<String, Object?>? jsonBody,
     List<int>? rawBody,
   }) async {
     await _endpointPolicy.validateBeforeConnect(_requireHttps(endpoint));
-    final client = _httpClientFactory();
-    try {
+    final client = _httpClientFactory()
+      ..connectionTimeout = _timeouts.connect;
+    final operation = () async {
       final request = await client.openUrl(method, endpoint);
       request.followRedirects = false;
       headers.forEach(request.headers.set);
@@ -158,10 +199,18 @@ final class GenerationTransport {
         throw const GenerationTransportException('模型服务返回了无法解析的内容');
       }
       return decoded;
+    }();
+    try {
+      return await operation.timeout(deadline);
     } on GenerationTransportException {
       rethrow;
     } on GenerationRateLimited {
       rethrow;
+    } on TimeoutException {
+      // The force-close below aborts the socket; the abandoned operation then
+      // errors, which must not surface as an unhandled async error.
+      unawaited(operation.catchError((Object _) => const <String, Object?>{}));
+      throw const GenerationTransportException('模型服务响应超时');
     } catch (_) {
       throw const GenerationTransportException('无法连接模型服务');
     } finally {

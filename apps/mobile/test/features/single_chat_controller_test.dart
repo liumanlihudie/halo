@@ -197,8 +197,12 @@ void main() {
   );
 
   test(
-    'dispose stops the active run and suppresses late notifications',
+    'dispose lets the run finish, persists it, and stays silent',
     () async {
+      // The regression this pins: a user who left the chat while an image was
+      // generating came back to nothing — the answer rolled back and the
+      // downloaded asset was orphaned on disk. Closing the page must not
+      // cancel the run; only stop() does.
       final service = _FakeConversationApplicationService();
       final repository = InMemoryChatMessageRepository();
       final controller = SingleChatController(
@@ -217,18 +221,83 @@ void main() {
       controller.dispose();
       await Future<void>.delayed(Duration.zero);
 
-      expect(service.stoppedRunIds, ['run-1']);
+      expect(service.stoppedRunIds, isEmpty);
       final notificationsAtDispose = notifications;
       service.completeNext(
-        const SingleAgentRunOutcome.completed(answer: '迟到回复'),
+        const SingleAgentRunOutcome.completed(
+          answer: '迟到回复',
+          toolFailures: ['图片没有生成：测试原因'],
+          generatedAssetPaths: ['/tmp/gen-late.png'],
+        ),
       );
       await submission;
       expect(notifications, notificationsAtDispose);
-      expect(await repository.load('conversation-data'), hasLength(1));
+      final persisted = await repository.load('conversation-data');
+      expect(
+        persisted.map((message) => message.text),
+        containsAll(['等待回复', '迟到回复', '图片没有生成：测试原因']),
+      );
+      expect(
+        persisted.map((message) => message.imageUrl),
+        contains('/tmp/gen-late.png'),
+      );
+      final command = repository.commandOutbox.read(
+        'conversation-data',
+        'command-dispose',
+      );
+      expect(command?.status, SingleChatCommandStatus.completed);
     },
   );
 
-  test('dispose stops a delayed run handle exactly once', () async {
+  test('a generation invocation persists the model prompt immediately', () async {
+    // Per spec the model's refined prompt is the first visible reply: it
+    // lands as its own message the moment the tool is invoked — before any
+    // network work — and the placeholder appears beside it.
+    final service = _ProgressSingleChatPort();
+    final repository = InMemoryChatMessageRepository();
+    final controller = SingleChatController(
+      conversationId: 'conversation-data',
+      expertId: 'data-analyst',
+      service: service,
+      repository: repository,
+      commandIdFactory: () => 'command-genprompt',
+    );
+    await controller.initialize();
+    final submission = controller.submit('生图测试');
+    await Future<void>.delayed(Duration.zero);
+
+    service.progress.add(
+      const GenerationProgress.invoked(
+        id: 'gen-1',
+        prompt: '一只戴帽子的橘猫，简笔画',
+        isVideo: false,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(
+      controller.state.messages.map((message) => message.text),
+      contains('一只戴帽子的橘猫，简笔画'),
+    );
+    expect(controller.activeGenerations, hasLength(1));
+    expect(
+      (await repository.load(
+        'conversation-data',
+      )).map((message) => message.text),
+      contains('一只戴帽子的橘猫，简笔画'),
+    );
+
+    service.complete(const SingleAgentRunOutcome.completed(answer: '画好了'));
+    await submission;
+    expect(
+      controller.state.messages.map((message) => message.text),
+      containsAll(['一只戴帽子的橘猫，简笔画', '画好了']),
+    );
+    controller.dispose();
+  });
+
+  test('dispose does not stop a delayed run handle', () async {
     final service = _DelayedStartSingleChatPort();
     final controller = SingleChatController(
       conversationId: 'conversation-data',
@@ -243,30 +312,35 @@ void main() {
     await service.started;
     controller.dispose();
     service.releaseStart();
-    await submission;
     await Future<void>.delayed(Duration.zero);
+    service.complete(
+      const SingleAgentRunOutcome.completed(answer: '页面关了也要送达'),
+    );
+    await submission;
 
-    expect(service.stoppedRunIds, ['run-delayed']);
+    expect(service.stoppedRunIds, isEmpty);
   });
 
   test(
-    'dispose retains dispatch ownership until upstream stop is confirmed',
+    'a disposed run retains dispatch ownership until it finishes',
     () async {
+      // A new page opening the same conversation must not double-dispatch the
+      // command a closed page's run still owns; the run finishes and marks
+      // the command terminal itself.
       final outbox = InMemorySingleChatCommandOutbox();
-      final firstService = _DelayedStopSingleChatPort();
+      final firstService = _FakeConversationApplicationService();
       final firstController = SingleChatController(
         conversationId: 'conversation-data',
         expertId: 'data-analyst',
         service: firstService,
         repository: InMemoryChatMessageRepository(commandOutbox: outbox),
-        commandIdFactory: () => 'command-dispose-stop-fence',
+        commandIdFactory: () => 'command-dispose-fence',
       );
       await firstController.initialize();
 
       final firstSubmission = firstController.submit('停止确认前不可重启');
-      await firstService.started;
+      await Future<void>.delayed(Duration.zero);
       firstController.dispose();
-      await firstService.stopRequested;
 
       final restartedService = _FakeConversationApplicationService();
       final restartedController = SingleChatController(
@@ -279,23 +353,16 @@ void main() {
       await restartedController.initialize();
       final restartedSubmission = restartedController.submit('停止确认前不可重启');
       await Future<void>.delayed(Duration.zero);
-      final duplicateRequestCount = restartedService.requests.length;
+      expect(restartedService.requests, isEmpty);
 
-      firstService.releaseStop();
+      firstService.completeNext(
+        const SingleAgentRunOutcome.completed(answer: '第一轮的答案'),
+      );
       await firstSubmission;
-      if (restartedService.requests.isNotEmpty) {
-        restartedService.completeNext(
-          const SingleAgentRunOutcome.failed(
-            failure: SingleAgentRunFailure.retryable,
-          ),
-        );
-      }
       await restartedSubmission;
-      await Future<void>.delayed(Duration.zero);
-      expect(duplicateRequestCount, 0);
       expect(
-        outbox.read('conversation-data', 'command-dispose-stop-fence')?.status,
-        SingleChatCommandStatus.pending,
+        outbox.read('conversation-data', 'command-dispose-fence')?.status,
+        SingleChatCommandStatus.completed,
       );
       restartedController.dispose();
     },
@@ -690,12 +757,19 @@ void main() {
 
     final restartedOutbox = FileSingleChatCommandOutbox(outboxPath);
     final restartedService = _FakeConversationApplicationService();
+    // A restart takes over only once the dead process's dispatch lease has
+    // expired — dispose deliberately no longer releases it, because the run
+    // it guards may still be delivering. The restarted clock sits past the
+    // lease to model that expiry.
     final restartedController = SingleChatController(
       conversationId: 'conversation-data',
       expertId: 'data-analyst',
       service: restartedService,
       repository: InMemoryChatMessageRepository(commandOutbox: restartedOutbox),
       commandIdFactory: () => '01JSECONDCOMMAND0000000000',
+      nowEpochMs: () =>
+          DateTime.now().millisecondsSinceEpoch +
+          const Duration(minutes: 10).inMilliseconds,
     );
     await restartedController.initialize();
     restartedController.submit('恢复同一用户意图');
@@ -3533,6 +3607,25 @@ class _FakeConversationApplicationService
     }
     stoppedRunIds.add(runId);
   }
+}
+
+class _ProgressSingleChatPort implements SingleChatPort {
+  final progress = StreamController<GenerationProgress>.broadcast();
+  final _outcome = Completer<SingleAgentRunOutcome>();
+
+  @override
+  Future<SingleAgentRunHandle> startSingleAgentRun(
+    StartSingleAgentRunRequest request,
+  ) async => SingleAgentRunHandle(
+    runId: 'run-progress',
+    outcome: _outcome.future,
+    generationProgress: progress.stream,
+  );
+
+  void complete(SingleAgentRunOutcome outcome) => _outcome.complete(outcome);
+
+  @override
+  Future<void> stopSingleAgentRun(String runId) async {}
 }
 
 class _DelayedStartSingleChatPort implements SingleChatPort {

@@ -260,6 +260,10 @@ void main() {
       progressEvents.map((event) => event.failure),
       contains('上游没有接受任务'),
     );
+    // The first event is the invocation, and it carries the MODEL's refined
+    // prompt (the tool-call argument), not the user's message text.
+    expect(progressEvents.first.isInvocation, isTrue);
+    expect(progressEvents.first.prompt, '一只猫');
   });
 }
 

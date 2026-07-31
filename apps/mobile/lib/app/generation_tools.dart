@@ -298,6 +298,12 @@ List<llm.Tool> buildGenerationTools({
       // separating a real attempt from a narrated one.
       // ignore: avoid_print
       print('halo.tools generate_image invoked');
+      // Before any network work: the model's prompt reaches the chat as an
+      // immediate reply, and the placeholder starts covering the submission
+      // wait, which alone has been seen taking minutes.
+      onProgress?.call(
+        GenerationProgress.invoked(id: id, prompt: prompt, isVideo: false),
+      );
       try {
         final asset = await service.generateImage(
           prompt,
@@ -368,6 +374,9 @@ List<llm.Tool> buildGenerationTools({
       final id = 'gen-${DateTime.now().microsecondsSinceEpoch}';
       // ignore: avoid_print
       print('halo.tools generate_video invoked');
+      onProgress?.call(
+        GenerationProgress.invoked(id: id, prompt: prompt, isVideo: true),
+      );
       try {
         final asset = await service.generateVideo(
           prompt,

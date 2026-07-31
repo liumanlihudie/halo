@@ -73,26 +73,41 @@ class StartSingleAgentRunRequest {
 /// One step of a generation, as the chat should show it.
 @immutable
 class GenerationProgress {
+  /// The tool has just been called with the model's refined prompt. Fired
+  /// before any network work so the chat answers instantly: the prompt lands
+  /// as a message of its own and the placeholder appears — task submission
+  /// alone has been seen taking minutes.
+  const GenerationProgress.invoked({
+    required this.id,
+    required this.prompt,
+    required this.isVideo,
+  }) : localPath = null,
+       failure = null,
+       isInvocation = true;
+
   const GenerationProgress.submitted({
     required this.id,
     required this.prompt,
     required this.isVideo,
   }) : localPath = null,
-       failure = null;
+       failure = null,
+       isInvocation = false;
 
   const GenerationProgress.completed({
     required this.id,
     required this.prompt,
     required this.isVideo,
     required this.localPath,
-  }) : failure = null;
+  }) : failure = null,
+       isInvocation = false;
 
   const GenerationProgress.failed({
     required this.id,
     required this.prompt,
     required this.isVideo,
     required this.failure,
-  }) : localPath = null;
+  }) : localPath = null,
+       isInvocation = false;
 
   /// Identifies one generation across its steps, so a placeholder is replaced
   /// rather than accumulating beside its own result.
@@ -101,6 +116,7 @@ class GenerationProgress {
   final bool isVideo;
   final String? localPath;
   final String? failure;
+  final bool isInvocation;
 
   bool get isPending => localPath == null && failure == null;
 }
@@ -718,6 +734,12 @@ class SingleChatController extends ChangeNotifier {
         _activeSubmission = null;
         _activeHandle = null;
       }
+      // A run that outlived its page cleans up what dispose() left running.
+      if (_disposed) {
+        _dispatchLeaseTimer?.cancel();
+        _dispatchLeaseTimer = null;
+        _activeCommitToken = null;
+      }
     });
     return submission;
   }
@@ -812,6 +834,12 @@ class SingleChatController extends ChangeNotifier {
         _activeSubmission = null;
         _activeHandle = null;
       }
+      // A run that outlived its page cleans up what dispose() left running.
+      if (_disposed) {
+        _dispatchLeaseTimer?.cancel();
+        _dispatchLeaseTimer = null;
+        _activeCommitToken = null;
+      }
     });
     return submission;
   }
@@ -901,12 +929,12 @@ class SingleChatController extends ChangeNotifier {
       _activeHandle = handleFuture;
 
       final handle = await handleFuture;
-      if (_disposed ||
-          attempt != _attempt ||
+      // Disposal is deliberately absent here and below: a closed page lets
+      // the run finish and commit. Only stop() and a superseding attempt
+      // discard it. Post-dispose the status is frozen at running, so this
+      // check only bites while the page is alive.
+      if (attempt != _attempt ||
           _state.status != SingleChatRunStatus.running) {
-        if (_disposed) {
-          return;
-        }
         await _stopHandleOnce(handle);
         if (!_mustRetainStoppedClaim(dispatchClaim)) {
           _releaseDispatchClaim(dispatchClaim);
@@ -915,7 +943,7 @@ class SingleChatController extends ChangeNotifier {
       }
 
       final partialSubscription = _subscribeToPartialAnswers(handle, attempt);
-      _subscribeToGenerationProgress(handle, attempt);
+      _subscribeToGenerationProgress(handle, attempt, commandId);
 
       final outcome = await handle.outcome;
       _cancelPartialAnswers(partialSubscription);
@@ -924,10 +952,9 @@ class SingleChatController extends ChangeNotifier {
       _activeGenerations = const [];
       // The run is terminal from here on: the live preview never outlives it.
       _state = _state.copyWith(streamingAnswer: '');
-      if (_disposed ||
-          attempt != _attempt ||
+      if (attempt != _attempt ||
           _state.status == SingleChatRunStatus.stopped) {
-        if (!_disposed && !_mustRetainStoppedClaim(dispatchClaim)) {
+        if (!_mustRetainStoppedClaim(dispatchClaim)) {
           _releaseDispatchClaim(dispatchClaim);
         }
         return;
@@ -953,7 +980,7 @@ class SingleChatController extends ChangeNotifier {
           outcome.answer,
           messageId: '$commandId-answer',
         );
-        if (spoken == null && speech != null) {
+        if (spoken == null && speech != null && !_disposed) {
           final reason = speech!.lastSynthesisFailure;
           if (reason != null) {
             developer.log(
@@ -999,13 +1026,11 @@ class SingleChatController extends ChangeNotifier {
           answer,
           commitToken,
           () =>
-              !_disposed &&
               attempt == _attempt &&
               _state.status == SingleChatRunStatus.running,
         );
         final stale =
             !commitToken.isValid ||
-            _disposed ||
             attempt != _attempt ||
             _state.status != SingleChatRunStatus.running;
         if (stale) {
@@ -1118,14 +1143,16 @@ class SingleChatController extends ChangeNotifier {
         // failure is still findable later.
         await _reportFailure(commandId, outcome.failure);
       }
-      notifyListeners();
+      if (!_disposed) {
+        notifyListeners();
+      }
     } catch (_) {
       _activeCommitToken?.invalidate();
       _activeCommitToken = null;
       if (attempt == _attempt) {
         _cancelPartialAnswers(_partialAnswersSub);
       }
-      if (!_disposed && !_mustRetainStoppedClaim(dispatchClaim)) {
+      if (!_mustRetainStoppedClaim(dispatchClaim)) {
         _releaseDispatchClaim(dispatchClaim);
       }
       if (!_disposed &&
@@ -1178,12 +1205,20 @@ class SingleChatController extends ChangeNotifier {
   void _subscribeToGenerationProgress(
     SingleAgentRunHandle handle,
     int attempt,
+    String commandId,
   ) {
     final steps = handle.generationProgress;
     if (steps == null) return;
     unawaited(_generationSub?.cancel());
     _activeGenerations = const [];
     _generationSub = steps.listen((step) {
+      if (step.isInvocation) {
+        // The model's refined prompt is the first visible reply of a
+        // generation, per spec: prompt message, then placeholder, then the
+        // result. Persisted immediately — submission alone can take minutes,
+        // and the page may not stay open that long.
+        unawaited(_persistGenerationPrompt(commandId, attempt, step));
+      }
       if (_disposed || attempt != _attempt) return;
       final next = [
         for (final existing in _activeGenerations)
@@ -1193,6 +1228,27 @@ class SingleChatController extends ChangeNotifier {
       _activeGenerations = List.unmodifiable(next);
       notifyListeners();
     }, onError: (Object _) {});
+  }
+
+  Future<void> _persistGenerationPrompt(
+    String commandId,
+    int attempt,
+    GenerationProgress step,
+  ) async {
+    final message = ChatMessageProjection(
+      id: '$commandId:prompt:${step.id}',
+      kind: ChatMessageKind.agentText,
+      text: step.prompt,
+    );
+    try {
+      await repository.append(conversationId, message);
+    } catch (_) {
+      // Still shown live below; a duplicate id on a retried tool call is not
+      // worth losing the visible prompt over.
+    }
+    if (_disposed || attempt != _attempt) return;
+    _state = _state.copyWith(messages: [..._state.messages, message]);
+    notifyListeners();
   }
 
   /// Mirrors streamed Answer snapshots into [SingleChatState.streamingAnswer].
@@ -1409,25 +1465,6 @@ class SingleChatController extends ChangeNotifier {
     });
   }
 
-  Future<void> _settleDisposedDispatch({
-    required Future<SingleAgentRunHandle> handleFuture,
-    required SingleChatDispatchClaim dispatchClaim,
-  }) async {
-    SingleAgentRunHandle handle;
-    try {
-      handle = await handleFuture;
-    } catch (_) {
-      _releaseDispatchClaim(dispatchClaim);
-      return;
-    }
-    final stopped = await _stopHandleConfirmed(handle);
-    if (!stopped) {
-      // Keep the durable lease until expiry when cancellation is unconfirmed.
-      return;
-    }
-    _releaseDispatchClaim(dispatchClaim);
-  }
-
   bool _isCommandPending(String commandId) {
     try {
       return repository.commandOutbox.read(conversationId, commandId)?.status ==
@@ -1474,7 +1511,9 @@ class SingleChatController extends ChangeNotifier {
     _dispatchLeaseTimer = Timer.periodic(_dispatchClaimRenewalInterval, (
       timer,
     ) {
-      if (_disposed || !identical(_activeDispatchClaim, claim)) {
+      // Renewal continues after dispose on purpose: the claim guards a run
+      // that outlives the page. The run's terminal paths cancel this timer.
+      if (!identical(_activeDispatchClaim, claim)) {
         timer.cancel();
         return;
       }
@@ -1508,24 +1547,20 @@ class SingleChatController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _cancelPartialAnswers(_partialAnswersSub);
-    _activeCommitToken?.invalidate();
-    _activeCommitToken = null;
-    final dispatchClaim = _activeDispatchClaim;
-    _dispatchLeaseTimer?.cancel();
-    _dispatchLeaseTimer = null;
-    _attempt += 1;
-    final handleFuture = _activeHandle;
-    if (handleFuture != null) {
+    // Closing the page is not a cancellation. A run in flight — which may be
+    // minutes into generating an image — continues to its end and commits
+    // its answer, notices and assets; only an explicit stop() discards. The
+    // run's own terminal paths release the claim and lease when it finishes.
+    if (_activeSubmission == null) {
+      _activeCommitToken?.invalidate();
+      _activeCommitToken = null;
+      final dispatchClaim = _activeDispatchClaim;
+      _dispatchLeaseTimer?.cancel();
+      _dispatchLeaseTimer = null;
       if (dispatchClaim != null) {
-        unawaited(
-          _settleDisposedDispatch(
-            handleFuture: handleFuture,
-            dispatchClaim: dispatchClaim,
-          ),
-        );
-      } else {
-        unawaited(handleFuture.then(_stopHandleOnce, onError: (_) {}));
+        _releaseDispatchClaim(dispatchClaim);
       }
+      _attempt += 1;
     }
     super.dispose();
   }
