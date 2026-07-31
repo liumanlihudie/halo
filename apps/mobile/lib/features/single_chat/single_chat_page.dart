@@ -200,6 +200,9 @@ class _SingleChatPageState extends State<SingleChatPage> {
         service: service ?? const _UnavailableSingleChatPort(),
         repository: resolvedRepository,
         commandIdFactory: _newCommandId,
+        // The shared board is what lets a generation started here stay
+        // visible when this page closes and another opens.
+        generationRegistry: ActiveGenerationRegistry.shared,
         speech: widget.speech,
         reportFailure: widget.circlePublisher == null
             ? null
@@ -599,60 +602,71 @@ class _SingleChatPageState extends State<SingleChatPage> {
       // new message grows the list away from the viewport. Chasing the bottom
       // with a controller instead means the first frame scrolls before the
       // history has loaded, and every new message jolts the position.
-      body: ListView(
-        controller: _scrollController,
-        reverse: true,
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
-        children: [
-          // Newest first in a reversed list: the generation placeholder sits
-          // below the reply that announced it, where the picture will appear.
-          for (final generation
-              in (controller?.activeGenerations ?? const []).reversed)
-            _GenerationPlaceholder(
-              key: ValueKey('generation-${generation.id}'),
-              conversation: _conversation,
-              prompt: generation.prompt,
-              isVideo: generation.isVideo,
-            ),
-          // First child renders at the bottom in a reversed list, so the live
-          // reply sits below the newest message, where it does in the chat.
-          if (state.status == SingleChatRunStatus.running)
-            _AgentBubble(
-              conversation: _conversation,
-              modelLabel: _modelLabel,
-              // While the run streams a live Answer preview, the same bubble
-              // shows the growing markdown instead of the wave indicator.
-              child: state.streamingAnswer.isEmpty
-                  ? const _ProgressMessage()
-                  : HaloMarkdownBody(state.streamingAnswer),
-            ),
-          if (_terminalMessage(state.status) case final terminal?)
-            _AgentBubble(
-              conversation: _conversation,
-              modelLabel: _modelLabel,
-              child: _RunStatusMessage(
-                text: terminal,
-                canRetry: state.canRetry,
-                onRetry: controller!.retry,
-                onConfigure: state.status == SingleChatRunStatus.notConfigured
-                    ? () => context.push('/settings/providers')
-                    : null,
+      //
+      // shrinkWrap + top alignment keep a short history at the top of the
+      // screen instead of pinned to the keyboard; once messages overflow the
+      // viewport the list fills it and behaves exactly as before. The
+      // children are eagerly built either way, so shrink-wrapping adds no
+      // meaningful layout cost here.
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: ListView(
+          controller: _scrollController,
+          reverse: true,
+          shrinkWrap: true,
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          padding: const EdgeInsets.fromLTRB(12, 16, 12, 12),
+          children: [
+            // Newest first in a reversed list: the generation placeholder sits
+            // below the reply that announced it, where the picture will appear.
+            for (final generation
+                in (controller?.activeGenerations ?? const []).reversed)
+              _GenerationPlaceholder(
+                key: ValueKey('generation-${generation.id}'),
+                conversation: _conversation,
+                prompt: generation.prompt,
+                isVideo: generation.isVideo,
               ),
-            ),
-          for (final message in state.messages.reversed)
-            _ProjectedMessage(
-              message: message,
-              conversation: _conversation,
-              modelLabel: _modelLabel,
-              onLongPress: _showMessageActions,
-            ),
-          if (state.historyLoadFailed) const _SystemNotice('历史消息加载失败，可继续当前对话'),
-          if (_conversationNotInstalled)
-            const _SystemNotice('这个联系人还没有可执行的专家，暂时无法对话。')
-          else if (_dependencyLoadFailed)
-            const _SystemNotice('聊天存储暂不可用，请稍后重试'),
-        ],
+            // First child renders at the bottom in a reversed list, so the live
+            // reply sits below the newest message, where it does in the chat.
+            if (state.status == SingleChatRunStatus.running)
+              _AgentBubble(
+                conversation: _conversation,
+                modelLabel: _modelLabel,
+                // While the run streams a live Answer preview, the same bubble
+                // shows the growing markdown instead of the wave indicator.
+                child: state.streamingAnswer.isEmpty
+                    ? const _ProgressMessage()
+                    : HaloMarkdownBody(state.streamingAnswer),
+              ),
+            if (_terminalMessage(state.status) case final terminal?)
+              _AgentBubble(
+                conversation: _conversation,
+                modelLabel: _modelLabel,
+                child: _RunStatusMessage(
+                  text: terminal,
+                  canRetry: state.canRetry,
+                  onRetry: controller!.retry,
+                  onConfigure: state.status == SingleChatRunStatus.notConfigured
+                      ? () => context.push('/settings/providers')
+                      : null,
+                ),
+              ),
+            for (final message in state.messages.reversed)
+              _ProjectedMessage(
+                message: message,
+                conversation: _conversation,
+                modelLabel: _modelLabel,
+                onLongPress: _showMessageActions,
+              ),
+            if (state.historyLoadFailed)
+              const _SystemNotice('历史消息加载失败，可继续当前对话'),
+            if (_conversationNotInstalled)
+              const _SystemNotice('这个联系人还没有可执行的专家，暂时无法对话。')
+            else if (_dependencyLoadFailed)
+              const _SystemNotice('聊天存储暂不可用，请稍后重试'),
+          ],
+        ),
       ),
       bottom: _Composer(
         controller: _textController,

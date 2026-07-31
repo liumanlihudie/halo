@@ -297,6 +297,70 @@ void main() {
     controller.dispose();
   });
 
+  test('a reopened page shows a detached run and its committed result', () async {
+    // The regression: leaving the chat mid-generation and coming back showed
+    // neither the placeholder nor, later, the image — the run was alive but
+    // no page knew. The shared board carries both across pages.
+    final registry = ActiveGenerationRegistry();
+    final service = _ProgressSingleChatPort();
+    final repository = InMemoryChatMessageRepository();
+    final first = SingleChatController(
+      conversationId: 'conversation-data',
+      expertId: 'data-analyst',
+      service: service,
+      repository: repository,
+      commandIdFactory: () => 'command-board',
+      generationRegistry: registry,
+    );
+    await first.initialize();
+    final submission = first.submit('画一张图');
+    await Future<void>.delayed(Duration.zero);
+    service.progress.add(
+      const GenerationProgress.invoked(
+        id: 'gen-board',
+        prompt: '一只猫',
+        isVideo: false,
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    first.dispose();
+
+    final second = SingleChatController(
+      conversationId: 'conversation-data',
+      expertId: 'data-analyst',
+      service: _FakeConversationApplicationService(),
+      repository: repository,
+      commandIdFactory: () => 'command-board-second',
+      generationRegistry: registry,
+    );
+    await second.initialize();
+    expect(second.activeGenerations, hasLength(1));
+    expect(second.activeGenerations.single.prompt, '一只猫');
+
+    service.complete(
+      const SingleAgentRunOutcome.completed(
+        answer: '这是你的图',
+        generatedAssetPaths: ['/tmp/gen-board.png'],
+      ),
+    );
+    await submission;
+    for (var i = 0; i < 4; i += 1) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(second.activeGenerations, isEmpty);
+    expect(
+      second.state.messages.map((message) => message.text),
+      containsAll(['画一张图', '一只猫', '这是你的图']),
+    );
+    expect(
+      second.state.messages.map((message) => message.imageUrl),
+      contains('/tmp/gen-board.png'),
+    );
+    second.dispose();
+  });
+
   test('dispose does not stop a delayed run handle', () async {
     final service = _DelayedStartSingleChatPort();
     final controller = SingleChatController(

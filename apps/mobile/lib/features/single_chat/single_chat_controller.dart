@@ -121,6 +121,72 @@ class GenerationProgress {
   bool get isPending => localPath == null && failure == null;
 }
 
+/// In-flight generation state that must outlive any single chat page.
+///
+/// A run keeps going after its page closes. The next page for the same
+/// conversation reads its pending placeholders here, follows their progress,
+/// and is told when the run finishes — the moment to reload what the run
+/// committed. Without this, leaving the chat made a running generation
+/// invisible even though it still delivered.
+class ActiveGenerationRegistry {
+  ActiveGenerationRegistry();
+
+  /// One board for the whole app: pages come and go, this does not.
+  static final shared = ActiveGenerationRegistry();
+
+  final _pending = <String, List<GenerationProgress>>{};
+  final _listeners =
+      <String, List<({void Function() listener, Object? identity})>>{};
+
+  List<GenerationProgress> pendingFor(String conversationId) =>
+      List.unmodifiable(_pending[conversationId] ?? const []);
+
+  void update(
+    String conversationId,
+    List<GenerationProgress> pending, {
+    Object? origin,
+  }) {
+    if (pending.isEmpty) {
+      _pending.remove(conversationId);
+    } else {
+      _pending[conversationId] = List.of(pending);
+    }
+    _notify(conversationId, origin);
+  }
+
+  /// A run for [conversationId] reached its end: placeholders are gone and
+  /// the repository holds whatever it produced.
+  void finishRun(String conversationId, {Object? origin}) {
+    _pending.remove(conversationId);
+    _notify(conversationId, origin);
+  }
+
+  /// Registers [listener] and returns its unsubscribe. Changes whose origin
+  /// is [identity] are not echoed back — a controller keeps its own state
+  /// current directly, and a self-echo triggering a reload has already been
+  /// seen resetting the redispatch guard mid-stop.
+  void Function() subscribe(
+    String conversationId,
+    void Function() listener, {
+    Object? identity,
+  }) {
+    final list = _listeners.putIfAbsent(conversationId, () => []);
+    final record = (listener: listener, identity: identity);
+    list.add(record);
+    return () {
+      list.remove(record);
+      if (list.isEmpty) _listeners.remove(conversationId);
+    };
+  }
+
+  void _notify(String conversationId, Object? origin) {
+    for (final record in [...?_listeners[conversationId]]) {
+      if (origin != null && identical(record.identity, origin)) continue;
+      record.listener();
+    }
+  }
+}
+
 class SingleAgentRunHandle {
   const SingleAgentRunHandle({
     required this.runId,
@@ -429,7 +495,11 @@ class SingleChatController extends ChangeNotifier {
     this.speech,
     this.reportFailure,
     SingleChatEpochClock? nowEpochMs,
+    ActiveGenerationRegistry? generationRegistry,
   }) : _nowEpochMs = nowEpochMs ?? _controllerEpochMilliseconds,
+       // A fresh board by default keeps tests isolated; production wiring
+       // passes [ActiveGenerationRegistry.shared] so runs survive pages.
+       _generationRegistry = generationRegistry ?? ActiveGenerationRegistry(),
        assert(expertId != '');
 
   final String conversationId;
@@ -476,6 +546,15 @@ class SingleChatController extends ChangeNotifier {
   String? get activeText => _lastText;
 
   Future<void> initialize() async {
+    // Runs started by an earlier page for this conversation are still live on
+    // the shared board; showing their placeholders is what makes leaving and
+    // returning mid-generation seamless.
+    _registryUnsubscribe ??= _generationRegistry.subscribe(
+      conversationId,
+      _onGenerationBoardChanged,
+      identity: this,
+    );
+    _activeGenerations = _generationRegistry.pendingFor(conversationId);
     try {
       final loadedMessages = await repository.load(conversationId);
       if (_disposed) {
@@ -695,6 +774,22 @@ class SingleChatController extends ChangeNotifier {
   /// prompt plus a placeholder until the provider returns something.
   List<GenerationProgress> _activeGenerations = const [];
   List<GenerationProgress> get activeGenerations => _activeGenerations;
+  final ActiveGenerationRegistry _generationRegistry;
+  void Function()? _registryUnsubscribe;
+
+  /// The shared board changed: another page's run progressed or finished.
+  void _onGenerationBoardChanged() {
+    if (_disposed) return;
+    _activeGenerations = _generationRegistry.pendingFor(conversationId);
+    // A finished detached run has already committed what it produced; reload
+    // unless a local run is mid-flight and will update the state itself.
+    if (_activeGenerations.isEmpty &&
+        _state.status != SingleChatRunStatus.running) {
+      unawaited(initialize());
+    }
+    notifyListeners();
+  }
+
   StreamSubscription<GenerationProgress>? _generationSub;
 
   final List<String> _pendingImagePaths = [];
@@ -733,6 +828,12 @@ class SingleChatController extends ChangeNotifier {
       if (_attempt == attempt) {
         _activeSubmission = null;
         _activeHandle = null;
+      }
+      // The board entry ends with the run, not the page: a listening page
+      // reloads the committed result on this signal. Superseded attempts skip
+      // it — a newer run owns the board by then.
+      if (_attempt == attempt) {
+        _generationRegistry.finishRun(conversationId, origin: this);
       }
       // A run that outlived its page cleans up what dispose() left running.
       if (_disposed) {
@@ -834,6 +935,12 @@ class SingleChatController extends ChangeNotifier {
         _activeSubmission = null;
         _activeHandle = null;
       }
+      // The board entry ends with the run, not the page: a listening page
+      // reloads the committed result on this signal. Superseded attempts skip
+      // it — a newer run owns the board by then.
+      if (_attempt == attempt) {
+        _generationRegistry.finishRun(conversationId, origin: this);
+      }
       // A run that outlived its page cleans up what dispose() left running.
       if (_disposed) {
         _dispatchLeaseTimer?.cancel();
@@ -933,8 +1040,7 @@ class SingleChatController extends ChangeNotifier {
       // the run finish and commit. Only stop() and a superseding attempt
       // discard it. Post-dispose the status is frozen at running, so this
       // check only bites while the page is alive.
-      if (attempt != _attempt ||
-          _state.status != SingleChatRunStatus.running) {
+      if (attempt != _attempt || _state.status != SingleChatRunStatus.running) {
         await _stopHandleOnce(handle);
         if (!_mustRetainStoppedClaim(dispatchClaim)) {
           _releaseDispatchClaim(dispatchClaim);
@@ -952,8 +1058,7 @@ class SingleChatController extends ChangeNotifier {
       _activeGenerations = const [];
       // The run is terminal from here on: the live preview never outlives it.
       _state = _state.copyWith(streamingAnswer: '');
-      if (attempt != _attempt ||
-          _state.status == SingleChatRunStatus.stopped) {
+      if (attempt != _attempt || _state.status == SingleChatRunStatus.stopped) {
         if (!_mustRetainStoppedClaim(dispatchClaim)) {
           _releaseDispatchClaim(dispatchClaim);
         }
@@ -1219,13 +1324,21 @@ class SingleChatController extends ChangeNotifier {
         // and the page may not stay open that long.
         unawaited(_persistGenerationPrompt(commandId, attempt, step));
       }
-      if (_disposed || attempt != _attempt) return;
+      if (attempt != _attempt) return;
       final next = [
         for (final existing in _activeGenerations)
           if (existing.id != step.id) existing,
         if (step.isPending) step,
       ];
       _activeGenerations = List.unmodifiable(next);
+      // Mirrored past disposal on purpose: the next page for this
+      // conversation shows these placeholders from the shared board.
+      _generationRegistry.update(
+        conversationId,
+        _activeGenerations,
+        origin: this,
+      );
+      if (_disposed) return;
       notifyListeners();
     }, onError: (Object _) {});
   }
@@ -1407,6 +1520,8 @@ class SingleChatController extends ChangeNotifier {
     _attempt += 1;
     _activeSubmission = null;
     _activeHandle = null;
+    // Stop is the one true discard: its placeholders leave the board too.
+    _generationRegistry.finishRun(conversationId, origin: this);
     notifyListeners();
     final commandId = _lastCommandId;
     if (commandId != null) {
@@ -1546,6 +1661,8 @@ class SingleChatController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _registryUnsubscribe?.call();
+    _registryUnsubscribe = null;
     _cancelPartialAnswers(_partialAnswersSub);
     // Closing the page is not a cancellation. A run in flight — which may be
     // minutes into generating an image — continues to its end and commits
