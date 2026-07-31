@@ -144,7 +144,12 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
         final credential = await _secretResolver.resolve(record.secretRef);
         final key = credential?.value;
         if (key == null || key.isEmpty) return null;
-        return VolcanoSpeechConfig(apiKey: key);
+        // The dialogue entry stores three joined values; synthesis and
+        // transcription authenticate with the access token alone, so a joined
+        // secret would be rejected outright and the reply would silently come
+        // back without audio.
+        final token = key.contains(':') ? key.split(':').last : key;
+        return token.isEmpty ? null : VolcanoSpeechConfig(apiKey: token);
       }
       return null;
     } catch (_) {
