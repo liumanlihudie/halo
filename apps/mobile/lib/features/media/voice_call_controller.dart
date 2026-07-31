@@ -99,7 +99,20 @@ final class VoiceCallController extends ChangeNotifier {
     // before the session is a voice-chat session can leave it stuck.
     await _routeAudio?.call(_speakerOn);
     await ringback?.call(true);
-    final dialog = await _openDialog();
+    // Reading the credential goes through a platform channel; without a bound
+    // the screen sits on 正在接通 forever when that never answers.
+    final VolcanoRealtimeDialog? dialog;
+    try {
+      dialog = await _openDialog().timeout(const Duration(seconds: 8));
+    } on TimeoutException {
+      await ringback?.call(false);
+      _set(VoiceCallStatus.failed, failure: '读取语音凭证超时，请重试');
+      return;
+    } on RealtimeDialogException catch (error) {
+      await ringback?.call(false);
+      _set(VoiceCallStatus.failed, failure: error.safeMessage);
+      return;
+    }
     if (dialog == null) {
       await ringback?.call(false);
       _set(VoiceCallStatus.failed, failure: '尚未配置语音服务');

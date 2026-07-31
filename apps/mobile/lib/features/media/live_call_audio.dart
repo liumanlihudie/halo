@@ -1,8 +1,28 @@
+import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:halo_mobile/features/media/voice_call_controller.dart';
 import 'package:record/record.dart';
 
 /// The device microphone, streaming the PCM shape the dialogue service wants.
+/// The call microphone, captured on the same engine that plays the call.
+///
+/// A separate recorder cannot hold the input hardware while playback runs
+/// voice processing on it: capture died as soon as the expert first spoke and
+/// the call went one-sided after a single exchange.
+/// The call microphone.
+///
+/// Capture belongs on the engine that plays the call: a separate recorder
+/// cannot hold the input hardware while playback runs voice processing on it,
+/// which is what made the line go dead after the expert first spoke. But if
+/// that tap delivers nothing — an audio session the system will not hand over,
+/// a format it will not report — a call with no uplink is worse than one
+/// without echo cancellation, so the recorder takes over.
+/// The call microphone, streamed by the recorder that is proven on device.
+///
+/// The native tap on the playback engine never delivered a byte on hardware,
+/// which silenced the uplink entirely. This recorder carried yesterday's
+/// working calls; what actually killed them was barge-in deactivating the
+/// audio session — fixed separately — not the recorder.
 final class DeviceCallMicrophone implements CallMicrophone {
   DeviceCallMicrophone({AudioRecorder? recorder})
     : _recorder = recorder ?? AudioRecorder();
@@ -30,6 +50,12 @@ final class DeviceCallMicrophone implements CallMicrophone {
       await _recorder.stop();
     } catch (_) {
       // Hanging up must succeed even if the recorder is already gone.
+    }
+    // Hand the engine and session back so the next recorder can start.
+    try {
+      await DeviceCallSpeaker._audio.invokeMethod<bool>('teardownCallAudio');
+    } catch (_) {
+      // Already gone.
     }
   }
 }

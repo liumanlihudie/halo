@@ -47,7 +47,7 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
   /// answers instead, so a voice message is never lost to a missing key.
   @override
   Future<String> transcribe(String recordingPath) async {
-    final config = await _config();
+    final config = await _speechConfig();
     if (config != null) {
       try {
         return await VolcanoSpeechTranscriber(
@@ -71,7 +71,7 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
   @override
   Future<String?> synthesize(String text, {required String messageId}) async {
     _lastSynthesisFailure = null;
-    final config = await _config();
+    final config = await _speechConfig();
     if (config == null) {
       _lastSynthesisFailure = '未配置豆包语音 Key';
       return null;
@@ -116,6 +116,12 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
     // App ID, App Key, Access Token. Two parts means the documented fixed app
     // key is in use.
     final parts = config.apiKey.split(':');
+    // An empty middle segment means "use the documented fixed app key", which
+    // is how the settings page writes a blank App Key. Treating that as a
+    // malformed credential is what left a call sitting on 正在接通.
+    if (parts.length == 3 && parts[1].isEmpty) {
+      parts.removeAt(1);
+    }
     if (parts.length == 3 && parts.every((part) => part.isNotEmpty)) {
       return VolcanoRealtimeDialog(
         appId: parts[0],
@@ -138,6 +144,17 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
     throw const RealtimeDialogException('通话凭证需填 App ID、App Key 与 Access Token');
   }
 
+  /// The credential synthesis and transcription authenticate with: the access
+  /// token alone, taken out of a joined dialogue credential when that is what
+  /// is stored.
+  Future<VolcanoSpeechConfig?> _speechConfig() async {
+    final config = await _config();
+    if (config == null) return null;
+    final key = config.apiKey;
+    final token = key.contains(':') ? key.split(':').last : key;
+    return token.isEmpty ? null : VolcanoSpeechConfig(apiKey: token);
+  }
+
   Future<VolcanoSpeechConfig?> _config([
     KeyOnlyService service = KeyOnlyService.doubaoSpeech,
   ]) async {
@@ -158,12 +175,11 @@ final class ProductionSingleChatSpeech implements SingleChatSpeech {
         final credential = await _secretResolver.resolve(record.secretRef);
         final key = credential?.value;
         if (key == null || key.isEmpty) return null;
-        // The dialogue entry stores three joined values; synthesis and
-        // transcription authenticate with the access token alone, so a joined
-        // secret would be rejected outright and the reply would silently come
-        // back without audio.
-        final token = key.contains(':') ? key.split(':').last : key;
-        return token.isEmpty ? null : VolcanoSpeechConfig(apiKey: token);
+        // The stored value is kept whole here. Synthesis and transcription
+        // take the access token out of it themselves; stripping it this early
+        // threw away the App ID a call needs, which is how a call came to
+        // report a malformed credential.
+        return VolcanoSpeechConfig(apiKey: key);
       }
       return null;
     } catch (_) {

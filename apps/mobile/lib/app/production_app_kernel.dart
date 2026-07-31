@@ -219,11 +219,14 @@ final class ProductionAppKernelFactory {
         newsStore = null;
       }
       ServiceCredentialsController? serviceCredentials;
+      // Every credential read and write goes through this one store. Saving
+      // through the fallback and reading straight from the Keychain is how a
+      // key that saved fine became invisible to calls and voice messages.
+      final credentialStore = FallbackCredentialStore(
+        primary: _credentials,
+        directory: supportDirectory,
+      );
       if (credentialPersistence != null) {
-        final credentialStore = FallbackCredentialStore(
-          primary: _credentials,
-          directory: supportDirectory,
-        );
         serviceCredentials = ServiceCredentialsController(
           credentials: credentialStore,
           persistence: credentialPersistence,
@@ -277,7 +280,10 @@ final class ProductionAppKernelFactory {
           ? null
           : ProductionSingleChatSpeech(
               persistence: credentialPersistence,
-              secretResolver: KeychainSecretResolver(store: _credentials),
+              // The same store the key was saved through. Reading straight from
+              // the Keychain here is how a key saved by the fallback became
+              // invisible to calls and voice messages.
+              secretResolver: KeychainSecretResolver(store: credentialStore),
               audioDirectory: Directory(
                 '${supportDirectory.path}${Platform.pathSeparator}voice',
               ),

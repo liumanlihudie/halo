@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -99,6 +100,9 @@ final class VolcanoRealtimeDialog {
     'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
   );
 
+  /// How long the service has to complete the handshake.
+  static const handshakeTimeout = Duration(seconds: 12);
+
   /// The app key the dialogue resource documents as a fixed value. Accounts
   /// issued their own can pass it instead.
   static const defaultAppKey = 'PlgvMymc7f3tQnJ6';
@@ -120,7 +124,7 @@ final class VolcanoRealtimeDialog {
     final sessionId = _newId();
     final WebSocket socket;
     try {
-      socket = await _connect(
+      socket = await _connectWithin(
         endpoint,
         // Every one of these is required by the dialogue handshake.
         headers: {
@@ -164,7 +168,15 @@ final class VolcanoRealtimeDialog {
       cancelOnError: true,
     );
     socket.add(_jsonFrame(event: 1, sessionId: null, payload: const {}));
-    await connected.future;
+    // Without this the screen sits on 正在接通 forever when the service never
+    // answers the handshake: a silent hang is the one outcome a call must not
+    // have.
+    try {
+      await connected.future.timeout(handshakeTimeout);
+    } on TimeoutException {
+      await stop();
+      throw const RealtimeDialogException('接通超时，请重试');
+    }
     return events.stream;
   }
 
@@ -181,6 +193,10 @@ final class VolcanoRealtimeDialog {
       ),
     );
   }
+
+  /// Opens the socket, refusing to wait forever for one that never answers.
+  Future<WebSocket> _connectWithin(Uri uri, {Map<String, dynamic>? headers}) =>
+      _connect(uri, headers: headers).timeout(handshakeTimeout);
 
   /// Pushes one chunk of microphone audio (PCM s16le, mono).
   void sendAudio(Uint8List pcm) {
@@ -255,9 +271,18 @@ final class VolcanoRealtimeDialog {
     required String speakingStyle,
     required Completer<void> connected,
   }) {
-    if (frame is! List<int>) return;
+    if (frame is! List<int>) {
+      developer.log('non-binary frame ignored', name: 'halo.call');
+      return;
+    }
     final parsed = _parseFrame(Uint8List.fromList(frame));
-    if (parsed == null) return;
+    if (parsed == null) {
+      developer.log('unparseable frame', name: 'halo.call');
+      return;
+    }
+    // Event numbers only: which step the handshake reached is the one thing
+    // that cannot be guessed from outside.
+    developer.log('event ${parsed.event}', name: 'halo.call');
     switch (parsed.event) {
       case 50:
         // Connection accepted: start the session carrying this expert's own
@@ -312,7 +337,18 @@ final class VolcanoRealtimeDialog {
         }
       case 359:
         _events?.add(const RealtimeReplyEnded());
-      case 152 || 153:
+      case 51 || 153 || 599:
+        // The service says why it refused; saying nothing turns a fixable
+        // problem into a hang.
+        final reason =
+            _textOf(parsed.payload, ['error', 'message', 'status_code']) ??
+            '语音通话被服务端拒绝';
+        _events?.add(RealtimeDialogFailed(reason));
+        if (!connected.isCompleted) {
+          connected.completeError(RealtimeDialogException(reason));
+        }
+        unawaited(stop());
+      case 152:
         unawaited(stop());
     }
   }
