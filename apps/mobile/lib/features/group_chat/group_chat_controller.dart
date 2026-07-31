@@ -93,6 +93,7 @@ class GroupChatController extends ChangeNotifier {
     required this.membersRepository,
     required this.historyRepository,
     this.commandIdGenerator = const SecureGroupChatCommandIdGenerator(),
+    this.publishSummary,
   });
 
   final GroupChatRunPort? runPort;
@@ -100,6 +101,16 @@ class GroupChatController extends ChangeNotifier {
   final GroupMembersRepository membersRepository;
   final GroupChatHistoryRepository historyRepository;
   final GroupChatCommandIdGenerator commandIdGenerator;
+  final Set<String> _publishedSummaryRunIds = {};
+
+  /// Publishes a finished summary to the circle. Absent when circle storage is
+  /// unavailable, in which case the summary simply stays in the group.
+  final Future<void> Function({
+    required String runId,
+    required List<String> memberExpertIds,
+    required String summary,
+  })?
+  publishSummary;
 
   StreamSubscription<OrchestrationEvent>? _subscription;
   Future<void> _watcherCancellation = Future<void>.value();
@@ -401,6 +412,7 @@ class GroupChatController extends ChangeNotifier {
         _finishAgentMessage(event, GroupChatMessageStatus.failed);
       case OrchestrationEventType.summaryCompleted:
         summary = event.text;
+        _publishSummaryOnce(event);
       case OrchestrationEventType.runCompleted:
         status = OrchestrationRunStatus.completed;
         stage = ConversationStage.completed;
@@ -566,6 +578,24 @@ class GroupChatController extends ChangeNotifier {
 
   void _notifyIfCurrent(int generation) {
     if (_isCurrent(generation)) notifyListeners();
+  }
+
+  /// Publishes at most once per run, even if the event stream replays.
+  void _publishSummaryOnce(OrchestrationEvent event) {
+    final publish = publishSummary;
+    final text = event.text?.trim();
+    if (publish == null || text == null || text.isEmpty) return;
+    if (!_publishedSummaryRunIds.add(event.runId)) return;
+    unawaited(
+      publish(
+        runId: event.runId,
+        memberExpertIds: [for (final member in _members) member.expertId],
+        summary: text,
+      ).catchError((Object _) {
+        // The summary is already in the group; failing to mirror it into the
+        // feed is not worth surfacing over the discussion itself.
+      }),
+    );
   }
 
   @override

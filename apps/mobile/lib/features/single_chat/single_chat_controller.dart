@@ -363,6 +363,7 @@ class SingleChatController extends ChangeNotifier {
     required this.commandIdFactory,
     this.verifier = const RejectingVerifierReceiptRegistry(),
     this.speech,
+    this.reportFailure,
     SingleChatEpochClock? nowEpochMs,
   }) : _nowEpochMs = nowEpochMs ?? _controllerEpochMilliseconds,
        assert(expertId != '');
@@ -370,6 +371,14 @@ class SingleChatController extends ChangeNotifier {
   final String conversationId;
   final String expertId;
   final SingleChatPort service;
+
+  /// Records a failed turn somewhere durable. Absent in prototype wiring and
+  /// in tests, where a failure only has to reach the screen.
+  final Future<void> Function({
+    required String commandId,
+    required String reason,
+  })?
+  reportFailure;
   final ChatMessageRepository repository;
 
   /// Speech services for voice messages. Absent until the owner configures
@@ -1021,6 +1030,9 @@ class SingleChatController extends ChangeNotifier {
               outcome.failure == SingleAgentRunFailure.retryable ||
               outcome.failure == SingleAgentRunFailure.malformedOutput,
         );
+        // The user may already have put the phone down; the feed is where a
+        // failure is still findable later.
+        await _reportFailure(commandId, outcome.failure);
       }
       notifyListeners();
     } catch (_) {
@@ -1042,6 +1054,35 @@ class SingleChatController extends ChangeNotifier {
         );
         notifyListeners();
       }
+    }
+  }
+
+  /// Records a failed turn where the user can find it after the fact.
+  ///
+  /// Deliberately best-effort and never awaited by the caller's outcome: the
+  /// run already failed, and failing to write about the failure must not make
+  /// that worse.
+  Future<void> _reportFailure(
+    String commandId,
+    SingleAgentRunFailure failure,
+  ) async {
+    final report = reportFailure;
+    if (report == null) return;
+    final reason = switch (failure) {
+      SingleAgentRunFailure.notConfigured => '这条消息没能发出：还没有配置可用的模型',
+      SingleAgentRunFailure.authentication => '这条消息没能发出：模型服务拒绝了当前凭证',
+      SingleAgentRunFailure.quotaLimited => '这条消息没能发出：模型服务额度不足',
+      SingleAgentRunFailure.contentFiltered => '这条消息没能发出：内容被模型服务拒绝',
+      // Retryable and malformed output are ordinary hiccups that the retry
+      // button already covers; writing about them would fill the feed with
+      // noise the user resolved seconds later.
+      _ => null,
+    };
+    if (reason == null) return;
+    try {
+      await report(commandId: commandId, reason: reason);
+    } catch (_) {
+      // Nothing to escalate: the failure is already on screen.
     }
   }
 

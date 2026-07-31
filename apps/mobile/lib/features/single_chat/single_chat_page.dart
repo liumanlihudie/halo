@@ -201,6 +201,17 @@ class _SingleChatPageState extends State<SingleChatPage> {
         repository: resolvedRepository,
         commandIdFactory: _newCommandId,
         speech: widget.speech,
+        reportFailure: widget.circlePublisher == null
+            ? null
+            : ({required commandId, required reason}) async {
+                await widget.circlePublisher!.publishFailure(
+                  canonicalExpertId: described.expertId,
+                  conversationId: widget.conversationId,
+                  commandId: commandId,
+                  reason: reason,
+                  sourceLabel: '来自与${described.agentName}的对话',
+                );
+              },
         verifier: verifier,
       )..addListener(_onChatChanged);
       setState(() {

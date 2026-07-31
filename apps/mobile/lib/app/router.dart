@@ -188,6 +188,11 @@ GoRouter createAppRouter({
             key: ValueKey(current),
             groupId: groupId,
             runPort: current?.groupChatPort,
+            membersRepository:
+                current?.groupMembers ??
+                const PrototypeGroupMembersRepository(),
+            groupStore: current?.groupStore,
+            circlePublisher: current?.circlePublisher,
           );
           final listenable = dependencyListenable;
           if (listenable == null) return buildPage(fixedDependencies);
