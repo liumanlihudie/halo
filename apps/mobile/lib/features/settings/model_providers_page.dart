@@ -6,6 +6,7 @@ import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/features/settings/model_picker_sheet.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
+import 'package:halo_mobile/model_runtime/model_purpose.dart';
 
 class ModelProvidersPage extends StatefulWidget {
   const ModelProvidersPage({
@@ -60,6 +61,7 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
 
   void _loadRouting() {
     widget.routingController?.load().catchError((Object _) => null);
+    widget.routingController?.loadPurposeModels().catchError((Object _) {});
   }
 
   @override
@@ -122,16 +124,30 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
                     : _chooseGlobalModel,
               ),
               HaloSettingsRow(
-                label: '默认图片模型',
-                detail: '尚未配置',
+                label: ModelPurpose.image.displayName,
+                detail: _purposeDetail(ModelPurpose.image),
                 prototypeIconClass: 'ph ph-image',
-                onTap: () {},
+                onTap: widget.routingController == null
+                    ? null
+                    : () => _choosePurposeModel(ModelPurpose.image),
               ),
               HaloSettingsRow(
-                label: '默认视频模型',
-                detail: '尚未配置',
+                label: ModelPurpose.video.displayName,
+                detail: _purposeDetail(ModelPurpose.video),
                 prototypeIconClass: 'ph ph-video-camera',
-                onTap: () {},
+                onTap: widget.routingController == null
+                    ? null
+                    : () => _choosePurposeModel(ModelPurpose.video),
+              ),
+              HaloSettingsRow(
+                label: ModelPurpose.vision.displayName,
+                // Nothing declares whether a chat model reads images, so the
+                // row says what it is for rather than implying detection.
+                detail: _purposeDetail(ModelPurpose.vision),
+                prototypeIconClass: 'ph ph-eye',
+                onTap: widget.routingController == null
+                    ? null
+                    : () => _choosePurposeModel(ModelPurpose.vision),
               ),
               // A "Router 模型" row used to sit here. No document ever defined
               // its behaviour, and model choice is already resolved by
@@ -215,6 +231,50 @@ class _ModelProvidersPageState extends State<ModelProvidersPage> {
     final option = routing?.optionFor(routing.globalDefault);
     if (option == null) return '尚未配置';
     return '${option.providerName} / ${option.ref.modelId}';
+  }
+
+  String _purposeDetail(ModelPurpose purpose) {
+    final routing = widget.routingController;
+    if (routing == null) return '暂不可用';
+    final ref = routing.purposeModel(purpose);
+    if (ref == null) return '未设置';
+    for (final option in routing.availableModels) {
+      if (option.ref == ref) return option.modelName;
+    }
+    return ref.modelId;
+  }
+
+  Future<void> _choosePurposeModel(ModelPurpose purpose) async {
+    final routing = widget.routingController;
+    if (routing == null) return;
+    try {
+      await routing.loadPurposeModels();
+      final options = await routing.modelsForPurpose(purpose);
+      if (!mounted) return;
+      if (options.isEmpty) {
+        // Says which models were looked for rather than showing an empty
+        // sheet that reads like a bug.
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(ModelPurposeSuitability.emptyReason(purpose))),
+        );
+        return;
+      }
+      final selection = await showModelPickerSheet(
+        context,
+        options: options,
+        selectedModel: routing.purposeModel(purpose),
+      );
+      final model = selection?.model;
+      if (model == null || !mounted) return;
+      await routing.setPurposeModel(purpose, model);
+    } on ModelRoutingException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.safeMessage)));
+    } on StateError {
+      return;
+    }
   }
 
   Future<void> _chooseGlobalModel() async {
