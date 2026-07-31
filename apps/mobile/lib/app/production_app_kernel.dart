@@ -15,6 +15,8 @@ import 'package:halo_mobile/app/generation_transport.dart';
 import 'package:halo_mobile/app/production_single_chat_speech.dart';
 import 'package:halo_mobile/app/production_vision_describer.dart';
 import 'package:halo_mobile/model_runtime/model_purpose.dart';
+import 'package:halo_mobile/features/circle/circle_controller.dart';
+import 'package:halo_mobile/features/circle/circle_post_store.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
@@ -157,6 +159,22 @@ final class ProductionAppKernelFactory {
               )
             : null,
       );
+      SqliteCirclePostStore? circleStore;
+      CircleController? circleController;
+      try {
+        circleStore = SqliteCirclePostStore.open(
+          prepareCircleDatabaseFile(
+            '${supportDirectory.path}${Platform.pathSeparator}'
+            'halo_circle.sqlite',
+          ).path,
+        );
+        circleController = CircleController(store: circleStore);
+      } catch (_) {
+        // The feed is not worth failing app startup for: the page reports it
+        // as unavailable and everything else keeps working.
+        circleStore = null;
+        circleController = null;
+      }
       // Voice and video calls are optional, so a store that cannot record
       // service credentials degrades to "unavailable" rather than failing app
       // startup: the settings page already disables its fields and says so.
@@ -225,7 +243,11 @@ final class ProductionAppKernelFactory {
                     '${supportDirectory.path}${Platform.pathSeparator}voice',
                   ),
                 ),
+          circle: circleController,
           localData: ProductionLocalDataMaintenance(
+            circle: circleStore == null
+                ? null
+                : _CircleDataMaintenance(circleStore),
             history: chatRepository as SingleChatHistoryMaintenance,
             storageDirectory: () async => supportDirectory,
             cacheDirectory: getTemporaryDirectory,
@@ -572,4 +594,20 @@ final class _StoreModelBindingDefaults implements ModelBindingDefaults {
   @override
   Future<void> setGlobalDefault(ModelRef? model) =>
       _store.setGlobalDefaultModel(model);
+}
+
+/// Adapts the circle store to what the local data page needs.
+final class _CircleDataMaintenance implements CircleDataMaintenance {
+  const _CircleDataMaintenance(this._store);
+
+  final CirclePostStore _store;
+
+  @override
+  Future<int> countPosts() => _store.countPosts();
+
+  @override
+  Future<List<Map<String, Object?>>> exportPosts() => _store.exportPosts();
+
+  @override
+  Future<void> erasePosts() => _store.erasePosts();
 }
