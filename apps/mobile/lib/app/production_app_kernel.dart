@@ -20,6 +20,8 @@ import 'package:halo_mobile/model_runtime/local_secret_store.dart';
 import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
 import 'package:halo_mobile/features/circle/circle_post_store.dart';
+import 'package:halo_mobile/features/circle/circle_publisher.dart';
+import 'package:halo_mobile/features/group_chat/group_store.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
@@ -162,6 +164,7 @@ final class ProductionAppKernelFactory {
               )
             : null,
       );
+      SqliteGroupStore? groupStore;
       SqliteCirclePostStore? circleStore;
       CircleController? circleController;
       try {
@@ -172,11 +175,17 @@ final class ProductionAppKernelFactory {
           ).path,
         );
         circleController = CircleController(store: circleStore);
+        // Same file as the circle: both are small tables of things the user
+        // assembled, and one fewer database is one fewer thing to migrate.
+        groupStore = SqliteGroupStore.open(
+          '${supportDirectory.path}${Platform.pathSeparator}halo_circle.sqlite',
+        );
       } catch (_) {
         // The feed is not worth failing app startup for: the page reports it
         // as unavailable and everything else keeps working.
         circleStore = null;
         circleController = null;
+        groupStore = null;
       }
       // Voice and video calls are optional, so a store that cannot record
       // service credentials degrades to "unavailable" rather than failing app
@@ -275,6 +284,21 @@ final class ProductionAppKernelFactory {
                       })
                       ..ringback = DeviceCallSpeaker.ringback,
           circle: circleController,
+          circlePublisher: circleStore == null
+              ? null
+              : CirclePublisher(store: circleStore),
+          groupStore: groupStore,
+          groupMembers: groupStore == null
+              ? null
+              : CompositeGroupMembersRepository(
+                  store: groupStore,
+                  expertDisplayNames: {
+                    for (final profile in ExecutableExpertRegistry(
+                      gateway: const ExpertOutputValidationGateway(),
+                    ).all)
+                      profile.id: profile.displayName,
+                  },
+                ),
           localData: ProductionLocalDataMaintenance(
             circle: circleStore == null
                 ? null

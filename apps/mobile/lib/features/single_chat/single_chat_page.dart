@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/features/circle/circle_post_store.dart';
+import 'package:halo_mobile/features/circle/circle_publisher.dart';
 import 'package:halo_mobile/features/single_chat/attachments/voice_recorder_service.dart';
 import 'package:halo_mobile/features/single_chat/voice_message_bubble.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
@@ -28,6 +30,7 @@ class SingleChatPage extends StatefulWidget {
     this.messageActions,
     this.voiceRecorder,
     this.speech,
+    this.circlePublisher,
     this.verifier = const RejectingVerifierReceiptRegistry(),
     this.allowEphemeralRepositoryForTesting = false,
     super.key,
@@ -40,6 +43,10 @@ class SingleChatPage extends StatefulWidget {
   /// Speech synthesis and transcription. Absent when no 豆包语音 key is stored,
   /// which disables voice rather than failing a text conversation.
   final SingleChatSpeech? speech;
+
+  /// Publishes an answer to the circle. Absent when circle storage failed to
+  /// open, in which case the menu simply does not offer it.
+  final CirclePublisher? circlePublisher;
   final ChatMessageRepository? repository;
   final FutureOr<ChatMessageRepository> Function()? repositoryLoader;
 
@@ -340,6 +347,31 @@ class _SingleChatPageState extends State<SingleChatPage> {
     );
   }
 
+  Future<void> _publishToCircle(
+    ChatMessageProjection message,
+    String text,
+  ) async {
+    final publisher = widget.circlePublisher;
+    if (publisher == null) return;
+    final result = await publisher.publishFromConversation(
+      canonicalExpertId: _conversation.expertId,
+      conversationId: widget.conversationId,
+      messageId: message.id,
+      body: text,
+      sourceLabel: '来自与${_conversation.agentName}的对话',
+    );
+    if (!mounted) return;
+    final message_ = switch (result) {
+      CirclePublishResult.published => '已发布到圈层',
+      // Says which state stopped it, so the fix is obvious.
+      CirclePublishResult.duplicate => '这条已经在圈层里了',
+      CirclePublishResult.blocked => '该专家已被禁止发布到圈层',
+    };
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message_)));
+  }
+
   /// Long-press menu, resolved from what the message actually carries.
   void _showMessageActions(ChatMessageProjection message) {
     final text = message.text?.trim() ?? '';
@@ -351,6 +383,12 @@ class _SingleChatPageState extends State<SingleChatPage> {
         ('ph ph-copy', '复制', () => _messageActions.copyText(text)),
         ('ph ph-share-network', '分享', () => _messageActions.shareText(text)),
       ],
+      // Only the expert's own answers: publishing the user's own message to a
+      // feed of expert activity would file it under the wrong author.
+      if (widget.circlePublisher != null &&
+          message.kind == ChatMessageKind.agentText &&
+          text.isNotEmpty)
+        ('ph ph-globe', '发布到圈层', () => _publishToCircle(message, text)),
       if (imagePath != null) ...[
         (
           'ph ph-download-simple',

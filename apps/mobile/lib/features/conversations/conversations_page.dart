@@ -1,19 +1,24 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
-import 'dart:async';
-
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/group_chat/group_store.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 
 class ConversationsPage extends StatefulWidget {
-  const ConversationsPage({this.repository, super.key});
+  const ConversationsPage({this.groupStore, this.repository, super.key});
 
   /// Absent when storage failed to boot; the list then says so rather than
   /// showing invented conversations.
   final ChatMessageRepository? repository;
+
+  /// Groups the user created. Without it only the shipped conversations are
+  /// listed — which is what made a created group impossible to find again.
+  final GroupStore? groupStore;
 
   @override
   State<ConversationsPage> createState() => _ConversationsPageState();
@@ -21,19 +26,29 @@ class ConversationsPage extends StatefulWidget {
 
 class _ConversationsPageState extends State<ConversationsPage> {
   String _query = '';
-  List<ConversationFixture>? _rows;
+  List<ConversationFixture> _createdGroups = const [];
 
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_loadCreatedGroups());
   }
 
-  /// Builds the list from the conversations that actually exist, with each
-  /// row's preview taken from its last stored message. The fixtures this page
-  /// used to render — unread badges, progress percentages, upload failures —
-  /// described a product that was not running.
-  Future<void> _load() async {
+  @override
+  void didUpdateWidget(ConversationsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.groupStore != widget.groupStore) {
+      unawaited(_loadCreatedGroups());
+      unawaited(_loadConversations());
+    }
+  }
+
+  List<ConversationFixture>? _conversations;
+
+  /// Builds the single-chat rows from the conversations that actually exist,
+  /// each previewing its last stored message. The fixtures this page used to
+  /// render described a product that was not running.
+  Future<void> _loadConversations() async {
     final repository = widget.repository;
     if (repository == null) return;
     final rows = <ConversationFixture>[];
@@ -44,21 +59,15 @@ class _ConversationsPageState extends State<ConversationsPage> {
       } catch (_) {
         continue;
       }
-      String preview = '还没有消息';
+      var preview = '还没有消息';
       try {
         final messages = await repository.load(identity.conversationId);
-        final last = messages.lastWhere(
-          (message) => (message.text ?? '').trim().isNotEmpty,
-          orElse: () => messages.isEmpty
-              ? const ChatMessageProjection(
-                  id: '',
-                  kind: ChatMessageKind.systemNotice,
-                )
-              : messages.last,
-        );
-        final text = last.text?.trim();
-        if (text != null && text.isNotEmpty) {
-          preview = text.replaceAll('\n', ' ');
+        for (final message in messages.reversed) {
+          final text = message.text?.trim();
+          if (text != null && text.isNotEmpty) {
+            preview = text.replaceAll('\n', ' ');
+            break;
+          }
         }
       } catch (_) {
         preview = '消息读取失败';
@@ -73,13 +82,42 @@ class _ConversationsPageState extends State<ConversationsPage> {
         ),
       );
     }
-    if (mounted) setState(() => _rows = rows);
+    if (mounted) setState(() => _conversations = rows);
+  }
+
+  Future<void> _loadCreatedGroups() async {
+    final store = widget.groupStore;
+    if (store == null) return;
+    try {
+      final groups = await store.loadGroups();
+      if (!mounted) return;
+      setState(() {
+        _createdGroups = [
+          for (final group in groups)
+            ConversationFixture(
+              id: group.groupId,
+              title: group.name,
+              // No invented last message: nothing has been said yet, and a
+              // fabricated preview is the thing this app keeps removing.
+              preview: '${group.memberExpertIds.length} 位专家 · 还没有消息',
+              time: '',
+              avatarLetter: group.name.isEmpty
+                  ? '群'
+                  : String.fromCharCode(group.name.runes.first),
+            ),
+        ];
+      });
+    } catch (_) {
+      // Leaves the shipped list alone.
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final query = _query.trim();
-    final all = _rows ?? const <ConversationFixture>[];
+    // Newest first: a group just created should be at the top, where the user
+    // is already looking.
+    final all = [..._createdGroups, ...?_conversations];
     final conversations = query.isEmpty
         ? all
         : all
@@ -108,36 +146,17 @@ class _ConversationsPageState extends State<ConversationsPage> {
               onChanged: (value) => setState(() => _query = value),
             ),
           ),
-          if (_rows == null)
-            const Expanded(
-              child: Center(
-                child: Text('正在读取会话…', style: HaloTextStyles.caption),
-              ),
-            )
-          else if (conversations.isEmpty)
-            Expanded(
-              child: Center(
-                child: Text(
-                  query.isEmpty ? '还没有会话' : '没有匹配的会话',
-                  style: HaloTextStyles.caption,
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: ListView.separated(
-                key: const PageStorageKey('conversations'),
-                padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
-                itemCount: conversations.length,
-                separatorBuilder: (_, _) => const Divider(
-                  height: 1,
-                  indent: 61,
-                  color: HaloColors.line,
-                ),
-                itemBuilder: (context, index) =>
-                    _ConversationRow(conversation: conversations[index]),
-              ),
+          Expanded(
+            child: ListView.separated(
+              key: const PageStorageKey('conversations'),
+              padding: const EdgeInsets.fromLTRB(15, 0, 15, 14),
+              itemCount: conversations.length,
+              separatorBuilder: (_, _) =>
+                  const Divider(height: 1, indent: 61, color: HaloColors.line),
+              itemBuilder: (context, index) =>
+                  _ConversationRow(conversation: conversations[index]),
             ),
+          ),
         ],
       ),
     );

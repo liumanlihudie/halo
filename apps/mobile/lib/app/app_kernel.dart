@@ -7,6 +7,9 @@ import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/features/group_chat/group_chat_controller.dart';
 import 'package:halo_mobile/features/settings/provider_settings_controller.dart';
 import 'package:halo_mobile/features/circle/circle_controller.dart';
+import 'package:halo_mobile/features/circle/circle_publisher.dart';
+import 'package:halo_mobile/features/group_chat/group_members_repository.dart';
+import 'package:halo_mobile/features/group_chat/group_store.dart';
 import 'package:halo_mobile/features/settings/local_data_maintenance.dart';
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
@@ -26,6 +29,9 @@ class AppDependencies {
     this.speech,
     this.callFactory,
     this.circle,
+    this.circlePublisher,
+    this.groupStore,
+    this.groupMembers,
     this.allowEphemeralChatRepositoryForTesting = false,
   });
 
@@ -56,6 +62,15 @@ class AppDependencies {
   /// The circle feed. Absent when its storage failed to open, in which case
   /// the page says so instead of showing fixtures.
   final CircleController? circle;
+
+  /// Publishes an answer from a conversation into the feed.
+  final CirclePublisher? circlePublisher;
+
+  /// Groups the user created. Absent when its storage failed to open.
+  final GroupStore? groupStore;
+
+  /// Members for both created and shipped groups.
+  final GroupMembersRepository? groupMembers;
   final bool allowEphemeralChatRepositoryForTesting;
 }
 

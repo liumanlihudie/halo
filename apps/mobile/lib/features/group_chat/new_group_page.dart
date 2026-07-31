@@ -1,46 +1,83 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/features/group_chat/group_store.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 
 class NewGroupPage extends StatefulWidget {
-  const NewGroupPage({super.key});
+  const NewGroupPage({this.store, super.key});
+
+  /// Absent when storage failed to open; the page then says creation is
+  /// unavailable rather than pretending to make a group.
+  final GroupStore? store;
 
   @override
   State<NewGroupPage> createState() => _NewGroupPageState();
 }
 
 class _NewGroupPageState extends State<NewGroupPage> {
-  final selected = <String>{'product', 'architect', 'growth'};
+  final _selected = <String>{};
+  final _nameController = TextEditingController();
+  var _busy = false;
 
-  static const choices = [
-    (
-      'product',
-      '产品经理',
-      '需求拆解与产品判断',
-      'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=100&q=75',
-      '产',
-    ),
-    (
-      'architect',
-      '技术架构师',
-      '实现路径与工程风险',
-      'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=100&q=75',
-      '技',
-    ),
-    ('growth', '增长顾问', '分发、留存和商业化', null, '增'),
-    (
-      'writing',
-      '写作顾问',
-      '文档结构与表达',
-      'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=100&q=75',
-      '写',
-    ),
+  /// Only installed, chat-capable experts: offering one that cannot answer
+  /// would build a group with a silent member.
+  static final _candidates = [
+    for (final identity in ExecutableExpertRegistry.installedExpertIdentities)
+      (
+        identity.canonicalExpertId,
+        _registry.catalogById(identity.canonicalExpertId)?.displayName ??
+            identity.canonicalExpertId,
+        _registry.catalogById(identity.canonicalExpertId)?.description ?? '',
+      ),
   ];
+
+  static final _registry = ExecutableExpertRegistry(
+    gateway: const ExpertOutputValidationGateway(),
+  );
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final store = widget.store;
+    if (store == null || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final group = await store.createGroup(
+        name: _nameController.text,
+        memberExpertIds: _selected.toList(),
+      );
+      if (!mounted) return;
+      // Straight into the group that was just made, not a seeded one.
+      context.go('/group/${group.groupId}');
+    } on ArgumentError catch (error) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${error.message ?? '无法创建群聊'}')));
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('创建失败，请重试')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final canCreate =
+        widget.store != null &&
+        !_busy &&
+        _selected.length >= 2 &&
+        _nameController.text.trim().isNotEmpty;
     return HaloPageScaffold(
       title: '创建 AI 群聊',
       compactTitle: true,
@@ -53,13 +90,11 @@ class _NewGroupPageState extends State<NewGroupPage> {
       ),
       actions: [
         TextButton(
-          onPressed: selected.length >= 2
-              ? () => context.go('/group/group-product')
-              : null,
-          child: const Text(
-            '完成',
+          onPressed: canCreate ? _create : null,
+          child: Text(
+            _busy ? '创建中…' : '完成',
             style: TextStyle(
-              color: HaloColors.accentDeep,
+              color: canCreate ? HaloColors.accentDeep : HaloColors.muted,
               fontSize: 12,
               fontWeight: FontWeight.w700,
             ),
@@ -69,119 +104,95 @@ class _NewGroupPageState extends State<NewGroupPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(15, 9, 15, 24),
         children: [
-          const HaloSearchField(placeholder: '搜索 Agent'),
+          if (widget.store == null)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: Text(
+                '本机存储当前不可用，暂时无法创建群聊。',
+                style: TextStyle(fontSize: 10, color: HaloColors.muted),
+              ),
+            ),
           const HaloSectionLabel('群名称'),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-            decoration: BoxDecoration(
-              color: HaloColors.soft,
-              borderRadius: BorderRadius.circular(HaloRadii.card),
-            ),
-            child: const Text('新项目评审组', style: HaloTextStyles.body),
-          ),
-          HaloSectionLabel('选择成员 · 已选 ${selected.length} 个'),
-          for (final choice in choices)
-            _AgentChoiceRow(
-              name: choice.$2,
-              description: choice.$3,
-              imageUrl: choice.$4,
-              letter: choice.$5,
-              selected: selected.contains(choice.$1),
-              onTap: () => setState(
-                () => selected.contains(choice.$1)
-                    ? selected.remove(choice.$1)
-                    : selected.add(choice.$1),
-              ),
-            ),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => context.push('/market'),
-              child: SizedBox(
-                height: 62,
-                child: Row(
-                  children: [
-                    const HaloAvatar(letter: '+', size: 46),
-                    const SizedBox(width: 11),
-                    const Expanded(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('从 AI 市场添加', style: HaloTextStyles.rowTitle),
-                          SizedBox(height: 4),
-                          Text('发现更多专业 Agent', style: HaloTextStyles.caption),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      HaloIcon.requirePrototypeClass('ph ph-caret-right'),
-                      size: 14,
-                      color: HaloColors.muted,
-                    ),
-                  ],
-                ),
+          TextField(
+            controller: _nameController,
+            enabled: widget.store != null && !_busy,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(
+              hintText: '给这个群起个名字',
+              filled: true,
+              fillColor: HaloColors.soft,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(11)),
+                borderSide: BorderSide.none,
               ),
             ),
           ),
+          HaloSectionLabel(
+            _selected.length < 2
+                ? '选择成员 · 至少 2 位'
+                : '选择成员 · 已选 ${_selected.length} 个',
+          ),
+          for (final candidate in _candidates)
+            _MemberChoice(
+              key: ValueKey('group-candidate-${candidate.$1}'),
+              name: candidate.$2,
+              description: candidate.$3,
+              selected: _selected.contains(candidate.$1),
+              onTap: widget.store == null || _busy
+                  ? null
+                  : () => setState(
+                      () => _selected.contains(candidate.$1)
+                          ? _selected.remove(candidate.$1)
+                          : _selected.add(candidate.$1),
+                    ),
+            ),
         ],
       ),
     );
   }
 }
 
-class _AgentChoiceRow extends StatelessWidget {
-  const _AgentChoiceRow({
+class _MemberChoice extends StatelessWidget {
+  const _MemberChoice({
     required this.name,
     required this.description,
-    required this.letter,
     required this.selected,
     required this.onTap,
-    this.imageUrl,
+    super.key,
   });
 
   final String name;
   final String description;
-  final String letter;
-  final String? imageUrl;
   final bool selected;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          height: 62,
-          child: Row(
-            children: [
-              HaloAvatar(imageUrl: imageUrl, letter: letter, size: 46),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name, style: HaloTextStyles.rowTitle),
-                    const SizedBox(height: 4),
-                    Text(description, style: HaloTextStyles.caption),
-                  ],
-                ),
-              ),
-              if (selected)
-                const HaloTag('已选', tone: HaloTagTone.green)
-              else
-                Icon(
-                  HaloIcon.requirePrototypeClass('ph ph-plus'),
-                  size: 18,
-                  color: HaloColors.muted,
-                ),
-            ],
-          ),
-        ),
+    return ListTile(
+      onTap: onTap,
+      contentPadding: EdgeInsets.zero,
+      leading: HaloAvatar(
+        letter: name.isEmpty ? '专' : String.fromCharCode(name.runes.first),
+        size: 42,
+        backgroundColor: HaloColors.accent,
       ),
+      title: Text(
+        name,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+      ),
+      subtitle: Text(
+        description,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: HaloTextStyles.caption,
+      ),
+      trailing: selected
+          ? const HaloTag('已选', tone: HaloTagTone.green)
+          : Icon(
+              HaloIcon.requirePrototypeClass('ph ph-plus'),
+              size: 18,
+              color: HaloColors.muted,
+            ),
     );
   }
 }
