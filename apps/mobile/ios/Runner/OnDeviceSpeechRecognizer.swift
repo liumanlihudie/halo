@@ -70,9 +70,26 @@ final class CallAudioOutput {
   /// died the moment the expert first spoke and the call went one-sided.
   func startCapture(_ onAudio: @escaping (Data) -> Void) {
     stopCapture()
+    // The session must be live before the input node is asked anything: an
+    // inactive session reports a 0 Hz format, and installing a tap with that
+    // raises rather than fails.
+    do {
+      let session = AVAudioSession.sharedInstance()
+      try session.setCategory(
+        .playAndRecord,
+        mode: .voiceChat,
+        options: [.defaultToSpeaker, .allowBluetooth]
+      )
+      try session.setActive(true)
+    } catch {
+      return
+    }
     prepare()
     let input = engine.inputNode
     let inputFormat = input.outputFormat(forBus: 0)
+    guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+      return
+    }
     guard
       let target = AVAudioFormat(
         commonFormat: .pcmFormatInt16,
