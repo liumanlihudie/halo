@@ -141,6 +141,8 @@ final class ProductionGenerationService implements GenerationService {
       if (taskId is! String || taskId.isEmpty) {
         throw const GenerationUnavailable('模型服务没有返回任务号');
       }
+      // ignore: avoid_print
+      print('halo.tools task accepted purpose=${purpose.name}');
       // Accepted and queued: from here there is genuinely something to wait
       // for, which is when a placeholder stops being a guess.
       onSubmitted?.call();
@@ -289,6 +291,10 @@ List<llm.Tool> buildGenerationTools({
       final prompt = input['prompt'];
       if (prompt is! String) return {'ok': false, 'error': '缺少描述'};
       final id = 'gen-${DateTime.now().microsecondsSinceEpoch}';
+      // Fires only when the model actually calls the tool — the one signal
+      // separating a real attempt from a narrated one.
+      // ignore: avoid_print
+      print('halo.tools generate_image invoked');
       try {
         final asset = await service.generateImage(
           prompt,
@@ -357,6 +363,8 @@ List<llm.Tool> buildGenerationTools({
       final prompt = input['prompt'];
       if (prompt is! String) return {'ok': false, 'error': '缺少描述'};
       final id = 'gen-${DateTime.now().microsecondsSinceEpoch}';
+      // ignore: avoid_print
+      print('halo.tools generate_video invoked');
       try {
         final asset = await service.generateVideo(
           prompt,

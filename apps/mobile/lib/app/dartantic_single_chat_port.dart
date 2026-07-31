@@ -1,7 +1,6 @@
 // ignore_for_file: prefer_initializing_formals
 
 import 'dart:async';
-import 'dart:developer' as developer;
 
 import 'package:dartantic_ai/dartantic_ai.dart' as dartantic;
 import 'package:dartantic_interface/dartantic_interface.dart' as llm;
@@ -157,6 +156,15 @@ final class DartanticSingleChatPort implements SingleChatPort {
       // either gets a real description or fails loudly.
       final visionContext = await _describeImages(request);
       final generation = _generation;
+      // Ground truth for "were tools even declared": safe counts only.
+      // print() lands in os_log as "flutter:", which `log show` can read;
+      // developer.log only reaches the VM service and was invisible there.
+      // Safe text only: booleans and a command id.
+      // ignore: avoid_print
+      print(
+        'halo.tools run=${request.clientCommandId} declared '
+        'generation=${generation != null} search=${_webSearch != null}',
+      );
       final agent = await _agents.agentFor(
         request.expertId,
         tools: [
@@ -187,11 +195,22 @@ final class DartanticSingleChatPort implements SingleChatPort {
           ? request.text
           : '$visionContext\n\n${request.text}';
       final stream = agent.sendStream(prompt, history: history);
+      var appendedChunks = 0;
       await for (final chunk in stream) {
         if (cancelled.isCompleted) break;
         final text = chunk.output;
         if (text.isEmpty) continue;
+        // Some relays close the stream by re-sending the entire message as
+        // one final delta, which doubles every reply. Only a chunk that equals
+        // a buffer built from several chunks counts as that echo — a repeated
+        // delta after a single chunk is ordinary repeated content.
+        if (appendedChunks >= 2 &&
+            text.length > 8 &&
+            text == answer.toString()) {
+          continue;
+        }
         answer.write(text);
+        appendedChunks += 1;
         if (!partials.isClosed) partials.add(answer.toString());
       }
     } on VisionUnavailable {
@@ -210,10 +229,8 @@ final class DartanticSingleChatPort implements SingleChatPort {
       // Diagnostic only: the exception *type*, never provider text, headers or
       // model output. Without it a failed send is indistinguishable from any
       // other, and the only way to find the cause is to guess.
-      developer.log(
-        'single-chat run failed: ${error.runtimeType}',
-        name: 'halo.chat',
-      );
+      // ignore: avoid_print
+      print('halo.chat single-chat run failed: ${error.runtimeType}');
       // Transport or provider error. Whatever text already arrived is still
       // the model's reply and is kept; only an empty run fails.
       final partial = expert.sanitizePlainAnswer(answer.toString());
