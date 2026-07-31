@@ -135,7 +135,11 @@ class ModelDescriptor {
     required this.ref,
     required String displayName,
     required this.capabilities,
-  }) : displayName = displayName {
+    Set<String> declaredModalities = const {},
+  }) : displayName = displayName,
+       declaredModalities = Set.unmodifiable(
+         declaredModalities.map((type) => type.toLowerCase()),
+       ) {
     if (!isSafeRuntimeDisplayText(displayName)) {
       throw ArgumentError.value(displayName, 'displayName');
     }
@@ -150,6 +154,11 @@ class ModelDescriptor {
   final ModelRef ref;
   final String displayName;
   final ModelCapabilities capabilities;
+
+  /// Endpoint types the provider declared for this model, lowercased and
+  /// otherwise verbatim. Empty means the provider declared nothing, which is
+  /// not a claim that the model is text-only.
+  final Set<String> declaredModalities;
 }
 
 enum ChatFinishReason { completed, length, contentFiltered, unknown }

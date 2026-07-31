@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:halo_mobile/features/settings/service_credentials_controller.dart';
+import 'package:halo_mobile/model_runtime/model_purpose.dart';
 import 'package:halo_mobile/model_runtime/model_runtime_models.dart';
 import 'package:halo_mobile/model_runtime/provider_config.dart';
 import 'package:halo_mobile/model_runtime/provider_configuration_store.dart';
@@ -12,7 +13,8 @@ final class SqliteProviderConfigurationStore
     implements
         ProviderConfigurationStore,
         ProviderModelCatalogStore,
-        ServiceCredentialPersistence {
+        ServiceCredentialPersistence,
+        PurposeModelBindingStore {
   SqliteProviderConfigurationStore._(this._database) {
     _initialize();
   }
@@ -1219,6 +1221,17 @@ final class SqliteProviderConfigurationStore
       )) {
         throw const FormatException();
       }
+      final modalityRows = _database.select(
+        'SELECT model_id, modality FROM provider_model_modalities '
+        'WHERE provider_id = ?',
+        [providerId],
+      );
+      final modalities = <String, Set<String>>{};
+      for (final row in modalityRows) {
+        modalities
+            .putIfAbsent(row['model_id']! as String, () => <String>{})
+            .add(row['modality']! as String);
+      }
       return PersistedProviderModelCatalog(
         providerId: providerId,
         models: [
@@ -1237,6 +1250,8 @@ final class SqliteProviderConfigurationStore
                   row['supports_temperature'],
                 ),
               ),
+              declaredModalities:
+                  modalities[row['model_id']! as String] ?? const {},
             ),
         ],
         discoveredAt: DateTime.fromMillisecondsSinceEpoch(
@@ -2314,6 +2329,68 @@ final class SqliteProviderConfigurationStore
   /// here keeps the direction of travel single: this store never touches key
   /// material, it only records where the material lives.
   @override
+  Future<ModelRef?> loadPurposeModel(ModelPurpose purpose) => Future.sync(() {
+    _requireOpen();
+    final rows = _database.select(
+      'SELECT provider_id, model_id FROM purpose_model_bindings '
+      'WHERE purpose = ?',
+      [purpose.storageId],
+    );
+    if (rows.isEmpty) return null;
+    return ModelRef(
+      providerId: rows.single['provider_id']! as String,
+      modelId: rows.single['model_id']! as String,
+    );
+  });
+
+  @override
+  Future<void> setPurposeModel(ModelPurpose purpose, ModelRef? model) =>
+      Future.sync(() {
+        _requireOpen();
+        _database.execute('BEGIN IMMEDIATE');
+        try {
+          _database.execute(
+            'DELETE FROM purpose_model_bindings WHERE purpose = ?',
+            [purpose.storageId],
+          );
+          if (model != null) {
+            _database.execute(
+              'INSERT INTO purpose_model_bindings '
+              '(purpose, provider_id, model_id) VALUES (?, ?, ?)',
+              [purpose.storageId, model.providerId, model.modelId],
+            );
+          }
+          _database.execute('COMMIT');
+        } catch (_) {
+          _database.execute('ROLLBACK');
+          rethrow;
+        }
+      });
+
+  /// Declared endpoint types per model for [providerId], keyed by model id.
+  @override
+  Future<Map<String, Set<String>>> loadProviderModelModalities(
+    String providerId,
+  ) => Future.sync(() {
+    _requireOpen();
+    final rows = _database.select(
+      'SELECT model_id, modality FROM provider_model_modalities '
+      'WHERE provider_id = ? ORDER BY model_id, modality',
+      [providerId],
+    );
+    final grouped = <String, Set<String>>{};
+    for (final row in rows) {
+      grouped
+          .putIfAbsent(row['model_id']! as String, () => <String>{})
+          .add(row['modality']! as String);
+    }
+    return Map.unmodifiable({
+      for (final entry in grouped.entries)
+        entry.key: Set<String>.unmodifiable(entry.value),
+    });
+  });
+
+  @override
   Future<SecretRef?> putServiceCredential(
     String serviceId,
     SecretRef secretRef, {
@@ -2808,6 +2885,13 @@ final class SqliteProviderConfigurationStore
             catalog.discoveredAt.millisecondsSinceEpoch,
           ],
         );
+        for (final modality in (model.declaredModalities.toList()..sort())) {
+          _database.execute(
+            'INSERT INTO provider_model_modalities '
+            '(provider_id, model_id, modality) VALUES (?, ?, ?)',
+            [providerId, model.ref.modelId, modality],
+          );
+        }
       }
     }
     _database.execute(
