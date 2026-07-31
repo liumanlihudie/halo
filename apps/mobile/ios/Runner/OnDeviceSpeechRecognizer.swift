@@ -56,8 +56,11 @@ final class CallAudioOutput {
             let target = buffer.floatChannelData?[0]
       else { return }
       for index in 0..<sampleCount {
-        // 16-bit little endian to float, the format the engine mixes in.
-        target[index] = Float(Int16(littleEndian: source[index])) / 32768.0
+        // 16-bit little endian to float, with a fixed boost clamped so loud
+        // peaks do not clip: voice processing on the session still attenuates
+        // playback, and the raw level came out too quiet to use comfortably.
+        let sample = Float(Int16(littleEndian: source[index])) / 32768.0
+        target[index] = max(-1.0, min(1.0, sample * 1.8))
       }
     }
     node.scheduleBuffer(buffer, completionHandler: nil)
@@ -143,8 +146,10 @@ final class CallAudioOutput {
     guard !prepared else { return }
     prepared = true
     // Apple's own echo cancellation, the same voice processing FaceTime uses.
+    // Input side only: it is what cancels the echo, while enabling it on the
+    // output as well runs the reply through call-style attenuation and made
+    // the whole conversation quiet.
     try? engine.inputNode.setVoiceProcessingEnabled(true)
-    try? engine.outputNode.setVoiceProcessingEnabled(true)
   }
 
   /// The classic two-tone ringback, repeating until the call connects.
