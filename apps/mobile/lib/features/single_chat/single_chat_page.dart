@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -624,7 +625,6 @@ class _SingleChatPageState extends State<SingleChatPage> {
               _GenerationPlaceholder(
                 key: ValueKey('generation-${generation.id}'),
                 conversation: _conversation,
-                prompt: generation.prompt,
                 isVideo: generation.isVideo,
               ),
             // First child renders at the bottom in a reversed list, so the live
@@ -1118,43 +1118,76 @@ class _FileMessage extends StatelessWidget {
 /// Carries the prompt the expert actually sent, so the wait is legible: the
 /// user can see what is being drawn instead of watching an unexplained spinner
 /// for what can be minutes.
-class _GenerationPlaceholder extends StatelessWidget {
+class _GenerationPlaceholder extends StatefulWidget {
   const _GenerationPlaceholder({
     required this.conversation,
-    required this.prompt,
     required this.isVideo,
     super.key,
   });
 
   final SingleChatConversationProjection conversation;
-  final String prompt;
   final bool isVideo;
+
+  @override
+  State<_GenerationPlaceholder> createState() => _GenerationPlaceholderState();
+}
+
+/// An iridescent sweep where the picture will appear — no text at all: the
+/// prompt already arrived as its own message right above, so repeating it
+/// here only added noise.
+class _GenerationPlaceholderState extends State<_GenerationPlaceholder>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 4),
+  )..repeat();
+
+  static const _aurora = [
+    Color(0xFF9BB5FF),
+    Color(0xFFC5A3FF),
+    Color(0xFFFFA3D7),
+    Color(0xFFFFD9A3),
+    Color(0xFF8FE8DF),
+    Color(0xFF9BB5FF),
+  ];
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return _AgentBubble(
-      conversation: conversation,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            isVideo ? '正在生成视频' : '正在生成图片',
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 4),
-          Text(prompt, style: HaloTextStyles.caption),
-          const SizedBox(height: 9),
-          Container(
-            width: 200,
-            height: isVideo ? 120 : 200,
-            decoration: BoxDecoration(
-              color: HaloColors.soft,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: const _ProgressMessage(),
-          ),
-        ],
+      conversation: widget.conversation,
+      child: Semantics(
+        label: widget.isVideo ? '正在生成视频' : '正在生成图片',
+        child: AnimatedBuilder(
+          animation: _controller,
+          builder: (context, _) {
+            final angle = _controller.value * 2 * math.pi;
+            // A slow full rotation of the gradient axis plus a gentle
+            // breathing keeps the surface visibly alive without any motion
+            // violent enough to read as an error.
+            final breath = 0.9 + 0.1 * math.sin(angle * 2);
+            return Opacity(
+              opacity: breath,
+              child: Container(
+                width: 200,
+                height: widget.isVideo ? 120 : 200,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  gradient: LinearGradient(
+                    begin: Alignment(math.cos(angle), math.sin(angle)),
+                    end: Alignment(-math.cos(angle), -math.sin(angle)),
+                    colors: _aurora,
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }
