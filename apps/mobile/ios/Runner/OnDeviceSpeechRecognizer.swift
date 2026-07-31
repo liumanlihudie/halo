@@ -19,7 +19,6 @@ final class CallAudioOutput {
   private let node = AVAudioPlayerNode()
   private let ringback = AVAudioPlayerNode()
   private var capture: ((Data) -> Void)?
-  private var prepared = false
   private var ringbackFormat: AVAudioFormat?
   private var format: AVAudioFormat?
 
@@ -35,7 +34,6 @@ final class CallAudioOutput {
         )
       else { return }
       format = sourceFormat
-      prepare()
       engine.attach(node)
       engine.connect(node, to: engine.mainMixerNode, format: sourceFormat)
       try? engine.start()
@@ -56,11 +54,10 @@ final class CallAudioOutput {
             let target = buffer.floatChannelData?[0]
       else { return }
       for index in 0..<sampleCount {
-        // 16-bit little endian to float, with a fixed boost clamped so loud
-        // peaks do not clip: voice processing on the session still attenuates
-        // playback, and the raw level came out too quiet to use comfortably.
-        let sample = Float(Int16(littleEndian: source[index])) / 32768.0
-        target[index] = max(-1.0, min(1.0, sample * 1.8))
+        // 16-bit little endian to float, unscaled. The boost that used to sit
+        // here compensated for voice-processing attenuation; with echo control
+        // back on the session's voiceChat mode there is nothing to compensate.
+        target[index] = Float(Int16(littleEndian: source[index])) / 32768.0
       }
     }
     node.scheduleBuffer(buffer, completionHandler: nil)
@@ -90,7 +87,6 @@ final class CallAudioOutput {
     } catch {
       return
     }
-    prepare()
     let input = engine.inputNode
     let inputFormat = input.outputFormat(forBus: 0)
     guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
@@ -141,16 +137,12 @@ final class CallAudioOutput {
     }
   }
 
-  /// Starts the engine with echo cancellation, shared by capture and playback.
-  private func prepare() {
-    guard !prepared else { return }
-    prepared = true
-    // Apple's own echo cancellation, the same voice processing FaceTime uses.
-    // Input side only: it is what cancels the echo, while enabling it on the
-    // output as well runs the reply through call-style attenuation and made
-    // the whole conversation quiet.
-    try? engine.inputNode.setVoiceProcessingEnabled(true)
-  }
+  // No engine-level voice processing: it looked more correct but rebuilds the
+  // input unit under the live recorder — every first call went out mute, and
+  // whether later ones worked was a race. Echo is held down the way the first
+  // working build did it: barge-in stops playback the moment the caller
+  // speaks, and the earpiece keeps the mic from hearing the reply at all.
+  // Nothing here may touch the input node while a call is capturing.
 
   /// The classic two-tone ringback, repeating until the call connects.
   func startRingback() {
@@ -214,11 +206,6 @@ final class CallAudioOutput {
     stopCapture()
     node.stop()
     engine.stop()
-    prepared = false
-    // Voice processing holds the input hardware; leaving it on keeps the
-    // microphone busy after the call has ended.
-    try? engine.inputNode.setVoiceProcessingEnabled(false)
-    try? engine.outputNode.setVoiceProcessingEnabled(false)
     engine.reset()
     format = nil
   }
@@ -248,15 +235,26 @@ final class OnDeviceSpeechRecognizer: NSObject, FlutterStreamHandler {
     ).setStreamHandler(instance)
   }
 
-  @objc private func proximityChanged() {
-    let nearEar = UIDevice.current.proximityState
+  /// Points the output at the loudspeaker or the earpiece without rebuilding
+  /// anything. Re-setting the category here looked harmless but tears down
+  /// and recreates the input unit under the live recorder — the uplink died
+  /// on the first route flip and the earpiece lagged behind the toggle. The
+  /// port override alone is instant and leaves capture untouched.
+  private func applyRoute(speaker: Bool) {
     let session = AVAudioSession.sharedInstance()
-    try? session.setCategory(
-      .playAndRecord,
-      mode: .voiceChat,
-      options: nearEar ? [.allowBluetooth] : [.defaultToSpeaker, .allowBluetooth]
-    )
-    try? session.overrideOutputAudioPort(nearEar ? .none : .speaker)
+    if session.category != .playAndRecord {
+      try? session.setCategory(
+        .playAndRecord,
+        mode: .voiceChat,
+        options: [.allowBluetooth]
+      )
+      try? session.setActive(true)
+    }
+    try? session.overrideOutputAudioPort(speaker ? .speaker : .none)
+  }
+
+  @objc private func proximityChanged() {
+    applyRoute(speaker: !UIDevice.current.proximityState)
   }
 
   func onListen(
@@ -280,19 +278,8 @@ final class OnDeviceSpeechRecognizer: NSObject, FlutterStreamHandler {
       // A call must come out of the loudspeaker unless the user asks for the
       // earpiece; playAndRecord defaults to the receiver, which sounds broken.
       let speaker = (call.arguments as? [String: Any])?["speaker"] as? Bool ?? true
-      do {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-          .playAndRecord,
-          mode: .voiceChat,
-          options: speaker ? [.defaultToSpeaker, .allowBluetooth] : [.allowBluetooth]
-        )
-        try session.setActive(true)
-        try session.overrideOutputAudioPort(speaker ? .speaker : .none)
-        result(true)
-      } catch {
-        result(FlutterError(code: "audio_route_failed", message: nil, details: nil))
-      }
+      applyRoute(speaker: speaker)
+      result(true)
     case "startRingback":
       // A synthesised ringback, so dialling sounds like dialling without
       // shipping an audio file.
