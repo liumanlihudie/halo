@@ -249,6 +249,10 @@ final class ProviderSettingsController extends ChangeNotifier {
       newRef = _secretRefs.next();
       await _credentials.set(newRef, draft.apiKey);
       final config = _buildConfig(draft, newRef);
+      // Ground truth for where a failed save died: whether this line was
+      // reached separates local validation from the network fetch.
+      // ignore: avoid_print
+      print('halo.settings fetching catalog for ${draft.providerId}');
       final catalog = _requireCompleteCatalog(
         config,
         await _catalogFetcher.fetch(config),
@@ -320,6 +324,10 @@ final class ProviderSettingsController extends ChangeNotifier {
       }
       _setState(draft.providerId, ProviderSettingsState.ready);
     } catch (error) {
+      // Diagnostic only: the exception TYPE, never its message, which could
+      // carry upstream or credential-adjacent text.
+      // ignore: avoid_print
+      print('halo.settings save failed: ${error.runtimeType}');
       if (error is ProviderSettingsException) rethrow;
       var newRefDeleted = true;
       if (newRef != null && !preserveNewRefForRecovery) {
