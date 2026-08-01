@@ -580,6 +580,11 @@ final class ProviderSettingsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Providers this app can build a configuration for. The detail page's
+  /// save button keys off this set — Kimi was once filled in and unsavable
+  /// because a page-local copy of it had not learned about moonshot.
+  static const supportedProviderIds = {'toapis', 'deepseek', 'moonshot'};
+
   ProviderConfig _buildConfig(
     ProviderSettingsDraft draft,
     SecretRef secretRef,

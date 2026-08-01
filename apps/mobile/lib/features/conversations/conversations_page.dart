@@ -7,6 +7,7 @@ import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
+import 'package:halo_mobile/experts/team_membership_store.dart';
 import 'package:halo_mobile/features/group_chat/group_store.dart';
 import 'package:halo_mobile/features/single_chat/chat_message_repository.dart';
 
@@ -32,12 +33,25 @@ class _ConversationsPageState extends State<ConversationsPage> {
   @override
   void initState() {
     super.initState();
+    TeamMembershipStore.instance.addListener(_onMembershipChanged);
     // Both, on first build. Loading only the groups left the single chats
     // missing until some dependency happened to change.
     unawaited(_loadCreatedGroups());
     // Must load here too: without it the list is empty on first open and only
     // fills in if a dependency happens to change afterwards.
     unawaited(_loadConversations());
+    // Loading the removal choices notifies, and the listener re-filters.
+    unawaited(TeamMembershipStore.instance.ensureLoaded());
+  }
+
+  void _onMembershipChanged() {
+    if (mounted) unawaited(_loadConversations());
+  }
+
+  @override
+  void dispose() {
+    TeamMembershipStore.instance.removeListener(_onMembershipChanged);
+    super.dispose();
   }
 
   @override
@@ -61,6 +75,9 @@ class _ConversationsPageState extends State<ConversationsPage> {
     if (repository == null) return;
     final rows = <ConversationFixture>[];
     for (final identity in ExecutableExpertRegistry.installedExpertIdentities) {
+      // A removed expert keeps its history but leaves the list; restoring it
+      // from the market brings the conversation right back.
+      if (TeamMembershipStore.instance.isRemoved(identity.profileId)) continue;
       final SingleChatConversationProjection conversation;
       try {
         conversation = repository.describe(identity.conversationId);

@@ -159,6 +159,40 @@ void main() {
       expect(unsupportedInk.onTap, isNull);
     },
   );
+
+  testWidgets('moonshot save enables once a key is entered', (tester) async {
+    // The page-local supported set once omitted moonshot: Kimi's key could
+    // be filled in and never saved.
+    final controller = ProviderSettingsController(
+      credentials: _Credentials(),
+      catalogFetcher: _Fetcher(),
+      persistence: _Persistence(),
+      runtime: _Reloader(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProviderDetailPage(
+          providerId: 'moonshot',
+          controller: controller,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final keyField = find.byWidgetPredicate(
+      (widget) => widget is TextField && widget.obscureText,
+    );
+    await tester.enterText(keyField, 'sk-kimi-test-key-not-real');
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '保存到本机'))
+          .onPressed,
+      isNotNull,
+    );
+  });
 }
 
 final class _Fetcher implements ProviderModelCatalogFetcher {

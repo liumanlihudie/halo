@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:halo_mobile/domain/models/halo_fixture_models.dart';
 import 'package:halo_mobile/experts/expert_prompt_package.dart';
 import 'package:halo_mobile/experts/market_catalog.dart';
+import 'package:halo_mobile/experts/team_membership_store.dart';
 import 'package:halo_mobile/foundation/design_system/expert_avatars.dart';
 import 'package:halo_mobile/foundation/design_system/halo_components.dart';
 import 'package:halo_mobile/foundation/design_system/halo_icons.dart';
@@ -34,11 +35,24 @@ final _teamRegistry = ExecutableExpertRegistry(
 
 class _ExpertTeamPageState extends State<ExpertTeamPage> {
   final TextEditingController _searchController = TextEditingController();
+  final _membership = TeamMembershipStore.instance;
   bool _searchVisible = false;
   String _query = '';
 
   @override
+  void initState() {
+    super.initState();
+    _membership.addListener(_onMembershipChanged);
+    _membership.ensureLoaded();
+  }
+
+  void _onMembershipChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    _membership.removeListener(_onMembershipChanged);
     _searchController.dispose();
     super.dispose();
   }
@@ -62,7 +76,12 @@ class _ExpertTeamPageState extends State<ExpertTeamPage> {
 
   @override
   Widget build(BuildContext context) {
-    final matches = HaloFixtures.installedExperts.where(_matchesQuery).toList();
+    final matches = HaloFixtures.installedExperts
+        .where(
+          (expert) =>
+              !_membership.isRemoved(expert.id) && _matchesQuery(expert),
+        )
+        .toList();
     final searching = _query.trim().isNotEmpty;
     return HaloPageScaffold(
       title: '专家团',

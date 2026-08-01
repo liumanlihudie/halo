@@ -48,7 +48,9 @@ class _ProviderDetailPageState extends State<ProviderDetailPage> {
   Widget build(BuildContext context) {
     final provider = ModelProviderInfo.fromId(widget.providerId);
     final controller = widget.controller;
-    final supported = const {'toapis', 'deepseek'}.contains(widget.providerId);
+    final supported = ProviderSettingsController.supportedProviderIds.contains(
+      widget.providerId,
+    );
     final configured =
         controller?.hasConfigurationFor(widget.providerId) ?? false;
     final snapshot = controller?.snapshotFor(widget.providerId);

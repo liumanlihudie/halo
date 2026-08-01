@@ -8,12 +8,62 @@ import 'package:halo_mobile/foundation/design_system/halo_tokens.dart';
 import 'package:halo_mobile/features/settings/model_picker_sheet.dart';
 import 'package:halo_mobile/features/settings/model_routing_controller.dart';
 import 'package:halo_mobile/experts/market_catalog.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:halo_mobile/experts/team_membership_store.dart';
 import 'package:halo_mobile/mock/fixtures/halo_fixtures.dart';
 
 /// Read-only catalog lookups only; execution stays with the app kernel.
 final _catalogRegistry = ExecutableExpertRegistry(
   gateway: const ExpertOutputValidationGateway(),
 );
+
+Future<void> _showProfileMenu(
+  BuildContext context, {
+  required String profileId,
+  required String name,
+}) async {
+  final membership = TeamMembershipStore.instance;
+  await membership.ensureLoaded();
+  if (!context.mounted) return;
+  final removed = membership.isRemoved(profileId);
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (sheet) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Icon(
+              removed ? Icons.person_add_alt : Icons.person_remove_outlined,
+              color: removed ? null : Colors.red,
+            ),
+            title: Text(
+              removed ? '恢复到专家团' : '移出专家团',
+              style: TextStyle(color: removed ? null : Colors.red),
+            ),
+            subtitle: Text(
+              removed ? '$name 会重新出现在专家团和对话列表' : '$name 将从专家团和对话列表隐藏，市场里随时可以恢复',
+            ),
+            onTap: () async {
+              Navigator.of(sheet).pop();
+              if (removed) {
+                await membership.restore(profileId);
+              } else {
+                await membership.remove(profileId);
+              }
+              if (context.mounted) {
+                ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+                  SnackBar(content: Text(removed ? '已恢复 $name' : '已移出 $name')),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
 class ExpertProfilePage extends StatelessWidget {
   const ExpertProfilePage({
@@ -82,7 +132,23 @@ class ExpertProfilePage extends StatelessWidget {
               ? 'ph ph-share-network'
               : 'ph ph-dots-three',
           semanticLabel: marketMode ? '分享' : '更多',
-          onPressed: () {},
+          onPressed: marketMode
+              ? () {
+                  // Sharing an expert shares what it is: its prompt.
+                  final entry = market;
+                  if (entry == null) return;
+                  SharePlus.instance.share(
+                    ShareParams(
+                      text: '${entry.name}\n\n${entry.prompt}',
+                      subject: entry.name,
+                    ),
+                  );
+                }
+              : () => _showProfileMenu(
+                  context,
+                  profileId: normalizedExpertId,
+                  name: name,
+                ),
         ),
       ],
       body: ListView(
